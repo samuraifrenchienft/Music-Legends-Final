@@ -67,6 +67,17 @@ class DatabaseManager:
             if "era" not in card_columns:
                 cursor.execute("ALTER TABLE cards ADD COLUMN era TEXT")
             
+            # Server activity tracking (for auto-drops)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS server_activity (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    server_id INTEGER NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    activity_type TEXT DEFAULT 'message',
+                    INDEX(server_id, timestamp)
+                )
+            """)
+            
             # User collections (card ownership)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user_cards (

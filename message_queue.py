@@ -50,11 +50,11 @@ class RedisMessageQueue:
         )
         
         # Store message
-        await self._store_message(message)
+        self._store_message(message)
         
         # Add to queue
         score = message.next_attempt_at
-        await self.redis.zadd(f"queue:{queue_name}", {message.id: score})
+        self.redis.zadd(f"queue:{queue_name}", {message.id: score})
         
         logging.info(f"Enqueued message {message.id} to {queue_name}")
         return message.id
@@ -63,7 +63,7 @@ class RedisMessageQueue:
         """Dequeue next available message"""
         # Get next message by score (earliest)
         now = datetime.now().timestamp()
-        result = await self.redis.zrangebyscore(f"queue:{queue_name}", 0, now, start=0, num=1)
+        result = self.redis.zrangebyscore(f"queue:{queue_name}", 0, now, start=0, num=1)
         
         if not result:
             return None
@@ -78,13 +78,13 @@ class RedisMessageQueue:
         self.processing.add(message_id)
         
         # Get message data
-        message_data = await self.redis.hgetall(f"msg:{message_id}")
+        message_data = self.redis.hgetall(f"msg:{message_id}")
         if not message_data:
             self.processing.discard(message_id)
             return None
         
         # Remove from queue
-        await self.redis.zrem(f"queue:{queue_name}", {message_id})
+        self.redis.zrem(f"queue:{queue_name}", message_id)
         
         message = QueueMessage(
             id=message_id,
@@ -105,7 +105,7 @@ class RedisMessageQueue:
         self.processing.discard(message.id)
         
         # Delete message data
-        await self.redis.delete(f"msg:{message.id}")
+        self.redis.delete(f"msg:{message.id}")
         
         logging.info(f"Completed message {message.id}")
     
@@ -123,17 +123,17 @@ class RedisMessageQueue:
             message.next_attempt_at = datetime.now().timestamp() + backoff_seconds
             
             # Update message
-            await self._store_message(message)
+            self._store_message(message)
             
             # Re-add to queue
-            await self.redis.zadd(f"queue:{message.queue}", {message.id: message.next_attempt_at})
+            self.redis.zadd(f"queue:{message.queue}", {message.id: message.next_attempt_at})
             
             logging.info(f"Retrying message {message.id} (attempt {message.attempts})")
         
         # Remove from processing
         self.processing.discard(message.id)
     
-    async def _store_message(self, message: QueueMessage):
+    def _store_message(self, message: QueueMessage):
         """Store message data"""
         data = {
             'id': message.id,
@@ -144,7 +144,7 @@ class RedisMessageQueue:
             'created_at': message.created_at,
             'next_attempt_at': message.next_attempt_at
         }
-        await self.redis.hset(f"msg:{message.id}", mapping=data)
+        self.redis.hset(f"msg:{message.id}", mapping=data)
     
     async def _send_to_dlq(self, message: QueueMessage, error: str = None):
         """Send message to dead letter queue"""
@@ -153,7 +153,7 @@ class RedisMessageQueue:
             'error': error,
             'failed_at': datetime.now().isoformat()
         }
-        await self.redis.lpush(self.dead_letter_queue, json.dumps(dlq_data))
+        self.redis.lpush(self.dead_letter_queue, json.dumps(dlq_data))
         logging.error(f"Sent message {message.id} to DLQ: {error}")
     
     async def _handle_drop(self, payload: Dict[str, Any]):
