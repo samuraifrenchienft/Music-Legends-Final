@@ -1,0 +1,11 @@
+git+https://github.com/Rapptz/discord.py
+python-dotenv
+pathlib
+uuid
+requests
+spotipy
+stripe
+redis
+rq
+aioredis
+apscheduler

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Legends - Discord Card Game Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #ffffff;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .hero {
+            text-align: center;
+            padding: 60px 0;
+        }
+        
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: #ff6b6b;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+        
+        .cta-button:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .cta-button.secondary {
+            background: #4ecdc4;
+        }
+        
+        .cta-button.secondary:hover {
+            background: #45b7b8;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            padding: 60px 0;
+        }
+        
+        .feature-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .stats {
+            background: rgba(0,0,0,0.2);
+            padding: 40px 0;
+            text-align: center;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        .stat-item h4 {
+            font-size: 2.5rem;
+            color: #ff6b6b;
+            margin-bottom: 10px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .hero p {
+                font-size: 1.1rem;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="hero">
+            <h1>🎵 Music Legends</h1>
+            <p>Create custom music card packs, battle with friends, and earn from your creations - all on Discord!</p>
+            <div>
+                <a href="https://discord.gg/yourserver" class="cta-button">Join Discord</a>
+                <a href="https://github.com/samuraifrenchienft/Music-Legends" class="cta-button secondary">View on GitHub</a>
+            </div>
+        </header>
+
+        <section id="features" class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🎴</div>
+                <h3>Create Custom Packs</h3>
+                <p>Build your own music card packs with your favorite artists using seamless Spotify integration</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⚔️</div>
+                <h3>Epic Battles</h3>
+                <p>Battle friends with your music cards using stats generated from real Spotify data</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">💰</div>
+                <h3>Creator Economy</h3>
+                <p>Earn real revenue from your pack creations with our 70/30 revenue sharing system</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🎵</div>
+                <h3>Spotify Integration</h3>
+                <p>Automatic stat generation based on artist popularity, followers, and genres</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🏆</div>
+                <h3>Daily Rewards</h3>
+                <p>Claim daily packs and earn victory tokens through PvP battles</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🚀</div>
+                <h3>Production Ready</h3>
+                <p>Complete Discord bot with Stripe payments and creator tools ready to deploy</p>
+            </div>
+        </section>
+
+        <section class="stats">
+            <h2>Bot Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <h4>5+</h4>
+                    <p>Card Stats</p>
+                </div>
+                <div class="stat-item">
+                    <h4>3</h4>
+                    <p>Pack Sizes</p>
+                </div>
+                <div class="stat-item">
+                    <h4>70/30</h4>
+                    <p>Revenue Split</p>
+                </div>
+                <div class="stat-item">
+                    <h4>24/7</h4>
+                    <p>Online</p>
+                </div>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>© 2024 Music Legends Bot | Built with Discord.py, Spotify API, and Stripe</p>
+            <p>Ready to transform your Discord server into a music card game universe!</p>
+            <p><a href="https://github.com/samuraifrenchienft/Music-Legends" style="color: #4ecdc4;">GitHub Repository</a></p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -1,0 +1,86 @@
+# docker-compose.yml
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: music_legends_redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build: .
+    command: python queue/worker.py
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.txt
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; r=redis.Redis(host='redis', port=6379); r.ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  bot:
+    build: .
+    command: python main.py
+    depends_on:
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    env_file:
+      - .env.txt
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import discord; print('bot healthy')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  monitoring:
+    image: rediscommander/redis-commander:latest
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: music_legends_network

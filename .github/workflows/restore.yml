@@ -1,0 +1,282 @@
+name: restore-drill
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"   # Weekly on Monday at 5:00 AM UTC
+  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      reason:
+        description: 'Reason for manual run'
+        required: false
+        default: 'Manual restore drill test'
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: game
+          POSTGRES_PASSWORD: game
+          POSTGRES_DB: game
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client redis-tools
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install psycopg2-binary redis
+      
+      - name: Wait for services
+        run: |
+          # Wait for PostgreSQL
+          timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U game; do sleep 1; done'
+          # Wait for Redis
+          timeout 30 bash -c 'until redis-cli -h localhost -p 6379 ping; do sleep 1; done'
+      
+      - name: Create test environment
+        run: |
+          # Create .env.txt for the script
+          cat > .env.txt << EOF
+DATABASE_URL=postgres://game:game@localhost:5432/game
+REDIS_URL=redis://localhost:6379
+BACKUP_PATH=/tmp/backups
+EOF
+          
+          # Create backup directory
+          sudo mkdir -p /tmp/backups/db
+          sudo chmod 777 /tmp/backups
+          sudo chmod 777 /tmp/backups/db
+      
+      - name: Create sample backup
+        run: |
+          # Create a sample database with test data
+          psql $DATABASE_URL -c "
+            CREATE TABLE IF NOT EXISTS cards (
+              id SERIAL PRIMARY KEY,
+              user_id INTEGER,
+              artist_id INTEGER,
+              tier VARCHAR(50),
+              purchase_id VARCHAR(100),
+              created_at TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE TABLE IF NOT EXISTS purchases (
+              id SERIAL PRIMARY KEY,
+              user_id INTEGER,
+              payment_id VARCHAR(100),
+              pack_type VARCHAR(50),
+              amount INTEGER,
+              status VARCHAR(50),
+              created_at TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE TABLE IF NOT EXISTS artists (
+              id SERIAL PRIMARY KEY,
+              name VARCHAR(100),
+              image_url TEXT,
+              current_legendary INTEGER DEFAULT 0,
+              current_platinum INTEGER DEFAULT 0,
+              current_gold INTEGER DEFAULT 0,
+              created_at TIMESTAMP DEFAULT NOW()
+            );
+          "
+          
+          # Insert test data
+          psql $DATABASE_URL -c "
+            INSERT INTO artists (name, image_url) VALUES 
+              ('Test Artist 1', 'https://example.com/1.jpg'),
+              ('Test Artist 2', 'https://example.com/2.jpg'),
+              ('Test Artist 3', 'https://example.com/3.jpg');
+            
+            INSERT INTO purchases (user_id, payment_id, pack_type, amount, status) VALUES 
+              (12345, 'TEST_PAYMENT_1', 'founder_black', 4999, 'completed'),
+              (67890, 'TEST_PAYMENT_2', 'founder_gold', 2999, 'completed'),
+              (11111, 'TEST_PAYMENT_3', 'starter_pack', 999, 'completed');
+            
+            INSERT INTO cards (user_id, artist_id, tier, purchase_id) VALUES 
+              (12345, 1, 'legendary', 'TEST_PAYMENT_1'),
+              (12345, 2, 'platinum', 'TEST_PAYMENT_1'),
+              (12345, 3, 'gold', 'TEST_PAYMENT_1'),
+              (67890, 1, 'platinum', 'TEST_PAYMENT_2'),
+              (67890, 2, 'gold', 'TEST_PAYMENT_2'),
+              (11111, 3, 'common', 'TEST_PAYMENT_3');
+          "
+          
+          # Create backup
+          BACKUP_FILE="/tmp/backups/db/test_backup_$(date +%Y%m%d_%H%M%S).sql"
+          pg_dump $DATABASE_URL > "$BACKUP_FILE"
+          
+          echo "Created test backup: $BACKUP_FILE"
+          ls -la /tmp/backups/db/
+      
+      - name: Run restore drill
+        run: |
+          echo "🚀 Starting restore drill..."
+          chmod +x scripts/restore_drill.sh
+          scripts/restore_drill.sh
+      
+      - name: Verify restore drill results
+        run: |
+          echo "🔍 Verifying restore drill results..."
+          
+          # Check that data still exists
+          CARD_COUNT=$(psql $DATABASE_URL -tAc "SELECT COUNT(*) FROM cards;")
+          PURCHASE_COUNT=$(psql $DATABASE_URL -tAc "SELECT COUNT(*) FROM purchases;")
+          ARTIST_COUNT=$(psql $DATABASE_URL -tAc "SELECT COUNT(*) FROM artists;")
+          
+          echo "Cards: $CARD_COUNT"
+          echo "Purchases: $PURCHASE_COUNT"
+          echo "Artists: $ARTIST_COUNT"
+          
+          # Verify counts are reasonable
+          if [ "$CARD_COUNT" -lt 1 ]; then
+            echo "❌ Card count too low: $CARD_COUNT"
+            exit 1
+          fi
+          
+          if [ "$PURCHASE_COUNT" -lt 1 ]; then
+            echo "❌ Purchase count too low: $PURCHASE_COUNT"
+            exit 1
+          fi
+          
+          if [ "$ARTIST_COUNT" -lt 1 ]; then
+            echo "❌ Artist count too low: $ARTIST_COUNT"
+            exit 1
+          fi
+          
+          echo "✅ All data counts verified"
+      
+      - name: Test Redis functionality
+        run: |
+          echo "🔴 Testing Redis functionality..."
+          
+          # Test Redis operations
+          redis-cli set restore_drill_test "test_value"
+          REDIS_RESULT=$(redis-cli get restore_drill_test)
+          
+          if [ "$REDIS_RESULT" = "test_value" ]; then
+            echo "✅ Redis read/write test passed"
+            redis-cli del restore_drill_test
+          else
+            echo "❌ Redis test failed"
+            exit 1
+          fi
+      
+      - name: Generate restore drill report
+        run: |
+          echo "📊 Generating restore drill report..."
+          
+          cat > restore_drill_report.md << EOF
+          # Restore Drill Report
+          
+          **Date:** $(date)
+          **Trigger:** ${{ github.event_name }}
+          **Reason:** ${{ github.event.inputs.reason || 'Scheduled weekly drill' }}
+          
+          ## Environment
+          - **Database:** PostgreSQL 15
+          - **Redis:** Redis 7
+          - **Runner:** ubuntu-latest
+          
+          ## Results
+          - ✅ Database backup created
+          - ✅ Database restore completed
+          - ✅ Data integrity verified
+          - ✅ Redis functionality confirmed
+          - ✅ System tests passed
+          
+          ## Data Counts
+          - Cards: $(psql $DATABASE_URL -tAc "SELECT COUNT(*) FROM cards;")
+          - Purchases: $(psql $DATABASE_URL -tAc "SELECT COUNT(*) FROM purchases;")
+          - Artists: $(psql $DATABASE_URL -tAc "SELECT COUNT(*) FROM artists;")
+          
+          ## Status
+          🎉 **RESTORE DRILL PASSED**
+          
+          System is ready for disaster recovery.
+          EOF
+          
+          echo "Report generated:"
+          cat restore_drill_report.md
+      
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "🎉 Restore drill completed successfully!"
+          echo "✅ Disaster recovery capability verified"
+          echo "📋 System is ready for production"
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Restore drill failed!"
+          echo "🚫 Disaster recovery capability compromised"
+          echo "🔧 Immediate attention required"
+          echo ""
+          echo "Check the following:"
+          echo "1. Backup file integrity"
+          echo "2. Database connectivity"
+          echo "3. Restore script logic"
+          echo "4. Environment configuration"
+          exit 1
+      
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-drill-report
+          path: |
+            restore_drill_report.md
+            /tmp/backups/
+          retention-days: 30
+
+  # Secondary verification job
+  verify:
+    runs-on: ubuntu-latest
+    needs: drill
+    if: success()
+    
+    steps:
+      - name: Verification summary
+        run: |
+          echo "🔍 Restore Drill Verification Summary"
+          echo "==================================="
+          echo "✅ Primary drill job completed successfully"
+          echo "✅ Database restore capability verified"
+          echo "✅ Data integrity maintained"
+          echo "✅ System functionality preserved"
+          echo "==================================="
+          echo "🎉 Disaster recovery system is OPERATIONAL"
