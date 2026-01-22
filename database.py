@@ -73,9 +73,14 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     server_id INTEGER NOT NULL,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    activity_type TEXT DEFAULT 'message',
-                    INDEX(server_id, timestamp)
+                    activity_type TEXT DEFAULT 'message'
                 )
+            """)
+            
+            # Create index for server_activity
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_server_activity_lookup 
+                ON server_activity(server_id, timestamp)
             """)
             
             # User collections (card ownership)
