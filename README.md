@@ -1,103 +1,25 @@
-# 🎵 Music Legends - Discord Card Game Bot with Creator Economy
+# 🎵 Music Legends — Discord Card Game
 
-Create custom music card packs, battle with friends, and earn from your creations - all on Discord!
+Music Legends is a Discord card game where players open packs, collect artist cards, and battle friends.
 
-## 🎮 Features
+## 🎮 For Players (How to Play)
 
-### 📦 **Pack Creation System**
-- **Custom Packs**: Create packs with 5, 10, or 15 cards
-- **Spotify Integration**: Seamless artist selection with real data
-- **Automatic Stats**: Stats generated from Spotify popularity/followers
-- **Creator Economy**: Earn 30% revenue from pack sales
+- **Open a pack:** `/pack`
+- **View your cards:** `/collection`
+- **Show your battle deck:** `/deck`
+- **Challenge someone:** `/battle @user`
 
-### ⚔️ **Battle System**
-- **PvP Battles**: Best-of-3 card duels
-- **Smart Categories**: Impact, Skill, Longevity, Culture, Hype
-- **Victory Tokens**: Earn guaranteed pack rewards
-- **Ticket System**: Controlled PvP economy
+Full rules and tips:
+- `GAMEPLAY_GUIDE.md`
 
-### 💰 **Monetization**
-- **Stripe Payments**: Real payment processing
-- **Revenue Split**: 70% platform / 30% creator
-- **Daily Packs**: Free daily pack claims
-- **Creator Tools**: Complete pack management
+## 🛠️ For Server Owners (Hosting the Game in Your Server)
 
-## 🛠️ Tech Stack
+If your server already has the Music Legends bot added, you can start immediately.
 
-- **Discord.py v2.7.0** - Bot framework
-- **Spotify Web API** - Artist data and stats
-- **Stripe** - Payment processing
-- **SQLite** - Database storage
-- **Flask** - Webhook server
+Recommended admin setup:
+- `docs/DROP_SYSTEM_GUIDE.md` (drops)
 
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.8+
-- Discord Bot Token
-- Spotify API credentials (optional)
-- Stripe account (for payments)
-
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/samuraifrenchienft/Music-Legends.git
-cd Music-Legends
-```
-
-2. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-3. **Set up environment variables**
-```bash
-cp .env.txt.example .env.txt
-# Edit .env.txt with your credentials
-```
-
-**Required for basic functionality:**
-- `BOT_TOKEN` - Your Discord bot token
-- `APPLICATION_ID` - Your Discord application ID  
-- `TEST_SERVER_ID` - Your test server ID (or 0 for global)
-
-**Optional for enhanced features:**
-- `SPOTIFY_CLIENT_ID` & `SPOTIFY_CLIENT_SECRET` - Spotify API access
-- `STRIPE_SECRET_KEY` & `STRIPE_WEBHOOK_SECRET` - Payment processing
-- `YOUTUBE_API_KEY` - Music video integration
-
-4. **Run the bot**
-```bash
-python main.py
-```
-
-## 📋 Environment Variables
-
-Copy `.env.txt.example` to `.env.txt` and configure:
-
-### Required (Basic Functionality)
-```env
-BOT_TOKEN=your_discord_bot_token
-APPLICATION_ID=your_application_id
-TEST_SERVER_ID=your_test_server_id
-```
-
-### Optional (Enhanced Features)
-```env
-# Spotify Integration
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-
-# Stripe Payments
-STRIPE_SECRET_KEY=sk_test_your_stripe_key
-STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
-
-# YouTube Integration
-YOUTUBE_API_KEY=your_youtube_api_key
-```
-
-**Note**: The bot works with just the required Discord credentials. All other features have mock fallbacks when API keys aren't provided.
+## 🎯 Commands (Quick Reference)
 
 ## 🎯 Commands
 
@@ -186,20 +108,16 @@ YOUTUBE_API_KEY=your_youtube_api_key
 
 ## 🌐 Deployment
 
-### Discord Bot
-1. Create Discord application and bot
-2. Invite bot to server with required permissions
-3. Set up slash commands (auto-sync on startup)
+## 🧩 Self‑Hosting / Developer Setup (Optional)
 
-### Stripe Webhook
-1. Deploy `stripe_webhook.py` to hosting service
-2. Configure webhook endpoint in Stripe dashboard
-3. Set webhook secret in environment variables
+If you’re running your own instance of the bot (Railway/Docker/local), use these docs:
 
-### Database
-- SQLite database created automatically
-- No external database required
-- All data persisted locally
+- `SETUP.md`
+- `DOCKER_DEPLOYMENT.md`
+
+Notes:
+
+- Payments/webhooks are optional and only needed if you enable paid features.
 
 ## 🔧 Configuration
 
