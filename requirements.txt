@@ -11,3 +11,5 @@ aioredis
 apscheduler
 Pillow
 aiohttp
+eth-account
+web3
