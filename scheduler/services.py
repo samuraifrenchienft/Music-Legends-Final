@@ -27,9 +27,9 @@ class RewardsService:
             # Grant daily rewards to active users
             cursor.execute("""
                 UPDATE user_inventory 
-                SET gold = COALESCECE(gold, 0) + 50,
-                    dust = COALESCECE(dust, 0) + 25,
-                    tickets = COALESCECE(tickets, 0) + 5
+                SET gold = COALESCE(gold, 0) + 50,
+                    dust = COALESCE(dust, 0) + 25,
+                    tickets = COALESCE(tickets, 0) + 5
                 WHERE user_id IN (
                     SELECT DISTINCT user_id FROM user_cards 
                     WHERE acquisition_date >= date('now', '-7 days')
