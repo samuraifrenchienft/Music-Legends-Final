@@ -13,3 +13,4 @@ Pillow
 aiohttp
 eth-account
 web3
+google-api-python-client

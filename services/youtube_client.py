@@ -1,28 +1,33 @@
 # services/youtube_client.py
-import requests
 import os
 import asyncio
-import aiohttp
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
 
+# Import Google API client
+try:
+    from googleapiclient.discovery import build
+    GOOGLE_API_AVAILABLE = True
+except ImportError:
+    GOOGLE_API_AVAILABLE = False
+    print("google-api-python-client not installed - using mock data only")
+
 class YouTubeClient:
-    """YouTube API client for Music Legends bot"""
+    """YouTube API client for Music Legends bot using Google API Python Client"""
     
     def __init__(self):
         self.api_key = YOUTUBE_KEY
-        self.base_url = "https://www.googleapis.com/youtube/v3"
-        self.session = None
+        self.youtube = None
         
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
-        return self
-        
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
+        # Initialize YouTube client if API available and key configured
+        if GOOGLE_API_AVAILABLE and self.api_key:
+            try:
+                self.youtube = build("youtube", "v3", developerKey=self.api_key)
+            except Exception as e:
+                print(f"Failed to initialize YouTube client: {e}")
+                self.youtube = None
     
     def _check_api_key(self) -> bool:
         """Check if API key is configured"""
@@ -52,88 +57,91 @@ class YouTubeClient:
         }
     
     async def search_channel(self, name: str) -> Optional[Dict[str, Any]]:
-        """Search for a YouTube channel by name"""
-        if not self._check_api_key():
-            print(f"YouTube API key not configured - using mock data for {name}")
+        """Search for a YouTube channel by name using async executor"""
+        if not self.youtube:
+            print(f"YouTube API not available - using mock data for {name}")
             return self._mock_channel_search(name)
         
-        if not self.session:
-            self.session = aiohttp.ClientSession()
+        loop = asyncio.get_running_loop()
         
-        url = f"{self.base_url}/search"
-        params = {
-            "part": "snippet",
-            "q": name,
-            "type": "channel",
-            "maxResults": 1,
-            "key": self.api_key
-        }
-
+        def _search():
+            """Blocking YouTube API call"""
+            try:
+                request = self.youtube.search().list(
+                    q=name,
+                    part="snippet",
+                    type="channel",
+                    maxResults=1
+                )
+                return request.execute()
+            except Exception as e:
+                print(f"YouTube API error: {e}")
+                return None
+        
         try:
-            async with self.session.get(url, params=params) as response:
-                if response.status != 200:
-                    return None
-                    
-                data = await response.json()
-
-                if not data.get("items"):
-                    return None
-
-                ch = data["items"][0]
-
-                return {
-                    "name": ch["snippet"]["title"],
-                    "channel_id": ch["id"]["channelId"],
-                    "image": ch["snippet"]["thumbnails"]["high"]["url"],
-                    "description": ch["snippet"]["description"],
-                    "published_at": ch["snippet"]["publishedAt"]
-                }
+            # Run blocking call in executor
+            result = await loop.run_in_executor(None, _search)
+            
+            if not result or not result.get("items"):
+                return None
+            
+            ch = result["items"][0]
+            snippet = ch["snippet"]
+            
+            return {
+                "name": snippet["title"],
+                "channel_id": ch["id"]["channelId"],
+                "image": snippet["thumbnails"]["high"]["url"] if snippet.get("thumbnails", {}).get("high") else "",
+                "description": snippet.get("description", ""),
+                "published_at": snippet.get("publishedAt", "")
+            }
         except Exception as e:
             print(f"Error searching channel: {e}")
-            return None
+            return self._mock_channel_search(name)
 
     async def channel_stats(self, channel_id: str) -> Optional[Dict[str, Any]]:
-        """Get channel statistics and details"""
-        if not self._check_api_key():
-            print(f"YouTube API key not configured - using mock stats for {channel_id}")
+        """Get channel statistics and details using async executor"""
+        if not self.youtube:
+            print(f"YouTube API not available - using mock stats for {channel_id}")
             return self._mock_channel_stats(channel_id)
         
-        if not self.session:
-            self.session = aiohttp.ClientSession()
+        loop = asyncio.get_running_loop()
         
-        url = f"{self.base_url}/channels"
-        params = {
-            "part": "statistics,topicDetails,snippet",
-            "id": channel_id,
-            "key": self.api_key
-        }
-
+        def _get_stats():
+            """Blocking YouTube API call"""
+            try:
+                request = self.youtube.channels().list(
+                    part="statistics,topicDetails,snippet",
+                    id=channel_id
+                )
+                return request.execute()
+            except Exception as e:
+                print(f"YouTube API error: {e}")
+                return None
+        
         try:
-            async with self.session.get(url, params=params) as response:
-                if response.status != 200:
-                    return None
-                    
-                data = await response.json()
-
-                if not data.get("items"):
-                    return None
-
-                c = data["items"][0]
-                stats = c["statistics"]
-                snippet = c["snippet"]
-
-                return {
-                    "subs": int(stats.get("subscriberCount", 0)),
-                    "views": int(stats.get("viewCount", 0)),
-                    "videos": int(stats.get("videoCount", 0)),
-                    "topics": c.get("topicDetails", {}).get("topicCategories", []),
-                    "created_at": snippet["publishedAt"],
-                    "country": snippet.get("country"),
-                    "custom_url": snippet.get("customUrl")
-                }
+            # Run blocking call in executor
+            result = await loop.run_in_executor(None, _get_stats)
+            
+            if not result or not result.get("items"):
+                return None
+            
+            c = result["items"][0]
+            stats = c.get("statistics", {})
+            snippet = c.get("snippet", {})
+            
+            return {
+                "subs": int(stats.get("subscriberCount", 0)),
+                "views": int(stats.get("viewCount", 0)),
+                "videos": int(stats.get("videoCount", 0)),
+                "topics": c.get("topicDetails", {}).get("topicCategories", []),
+                "created_at": snippet.get("publishedAt", ""),
+                "country": snippet.get("country"),
+                "custom_url": snippet.get("customUrl")
+            }
         except Exception as e:
             print(f"Error getting channel stats: {e}")
-            return None
+            return self._mock_channel_stats(channel_id)
 
     async def search_videos(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         """Search for videos by query"""
