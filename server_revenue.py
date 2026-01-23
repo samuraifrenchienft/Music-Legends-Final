@@ -16,6 +16,10 @@ class ServerRevenueManager:
     MAX_SHARE = 0.30   # 30% cap
     MAX_NFTS = 2       # Max 2 NFTs counted
     
+    # Payout thresholds
+    MIN_PAYOUT_CENTS = 2500  # $25.00 minimum weekly payout
+    PAYOUT_FREQUENCY_DAYS = 7  # Weekly payouts
+    
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
         self.init_revenue_tables()
@@ -238,6 +242,9 @@ class ServerRevenueManager:
             
             transaction_count = cursor.fetchone()[0]
             
+            # Check if eligible for payout
+            eligible_for_payout = pending_payout >= self.MIN_PAYOUT_CENTS
+            
             return {
                 'server_id': server_id,
                 'owner_user_id': owner_user_id,
@@ -249,8 +256,31 @@ class ServerRevenueManager:
                 'total_earned': total_earned / 100,
                 'pending_payout': pending_payout / 100,
                 'total_transactions': transaction_count,
-                'last_payout_date': last_payout
+                'last_payout_date': last_payout,
+                'eligible_for_payout': eligible_for_payout,
+                'min_payout_threshold': self.MIN_PAYOUT_CENTS / 100
             }
+    
+    def get_servers_ready_for_payout(self) -> list:
+        """Get all servers with pending payout >= $25"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT server_id, owner_user_id, pending_payout_cents
+                FROM server_owners
+                WHERE pending_payout_cents >= ?
+                AND stripe_connect_status = 'connected'
+            """, (self.MIN_PAYOUT_CENTS,))
+            
+            return [
+                {
+                    'server_id': row[0],
+                    'owner_user_id': row[1],
+                    'pending_payout': row[2] / 100
+                }
+                for row in cursor.fetchall()
+            ]
 
 # Global instance
 server_revenue = ServerRevenueManager()

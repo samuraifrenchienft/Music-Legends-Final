@@ -39,9 +39,12 @@ class NFTEntitlementManager:
     MAX_NFTS_COUNTED = 2       # Max 2 NFTs
     MAX_REVENUE_SHARE = 0.30   # 30% cap
     
-    # Snapshot cadence
-    SNAPSHOT_INTERVAL_HOURS = 24
-    VERIFICATION_STALE_DAYS = 7
+    # NFT boost feature flag (disabled until NFTs ready)
+    NFT_BOOSTS_ENABLED = False  # Set to True when NFTs are ready
+    
+    # Snapshot cadence - runs BEFORE PAYOUTS ONLY (not 24h)
+    SNAPSHOT_ON_PAYOUT_ONLY = True
+    VERIFICATION_STALE_DAYS = 30  # Longer since we verify before payouts
     
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
@@ -230,8 +233,15 @@ class NFTEntitlementManager:
             
             # Calculate entitlement
             eligible_nfts = min(total_nfts, self.MAX_NFTS_COUNTED)
-            revenue_share = self.BASE_REVENUE_SHARE + (eligible_nfts * self.NFT_BOOST)
-            revenue_share = min(revenue_share, self.MAX_REVENUE_SHARE)
+            
+            # NFT boosts disabled until NFTs are ready - keep at 10%
+            if self.NFT_BOOSTS_ENABLED:
+                revenue_share = self.BASE_REVENUE_SHARE + (eligible_nfts * self.NFT_BOOST)
+                revenue_share = min(revenue_share, self.MAX_REVENUE_SHARE)
+            else:
+                # Boosts disabled - everyone gets 10% regardless of NFTs
+                revenue_share = self.BASE_REVENUE_SHARE
+                eligible_nfts = 0  # Don't count NFTs when disabled
             
             # Update entitlement cache
             cursor.execute("""
@@ -342,24 +352,48 @@ class NFTEntitlementManager:
                 'last_verified': last_verified
             }
     
-    def needs_snapshot_refresh(self, discord_user_id: int) -> bool:
-        """Check if snapshot needs refresh (24h interval)"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+    def run_pre_payout_snapshots(self, discord_user_ids: List[int]) -> Dict:
+        """
+        Run snapshots for all server owners before payout
+        This is the ONLY automatic snapshot trigger
+        """
+        results = {
+            'total': len(discord_user_ids),
+            'success': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        import asyncio
+        
+        async def snapshot_all():
+            for user_id in discord_user_ids:
+                try:
+                    result = await self.snapshot_nft_ownership(user_id)
+                    if result['success']:
+                        results['success'] += 1
+                    else:
+                        results['failed'] += 1
+                        results['errors'].append({
+                            'user_id': user_id,
+                            'error': result.get('error')
+                        })
+                except Exception as e:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'user_id': user_id,
+                        'error': str(e)
+                    })
             
-            cursor.execute("""
-                SELECT last_verified FROM entitlement_cache
-                WHERE discord_user_id = ?
-            """, (discord_user_id,))
-            
-            result = cursor.fetchone()
-            if not result:
-                return True
-            
-            last_verified = datetime.fromisoformat(result[0])
-            hours_since = (datetime.now() - last_verified).total_seconds() / 3600
-            
-            return hours_since >= self.SNAPSHOT_INTERVAL_HOURS
+            return results
+        
+        # Run async snapshots
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        final_results = loop.run_until_complete(snapshot_all())
+        loop.close()
+        
+        return final_results
 
 # Global instance
 nft_entitlement = NFTEntitlementManager()

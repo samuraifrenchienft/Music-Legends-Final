@@ -45,7 +45,7 @@ class Bot(commands.Bot):
             'cogs.trading',                   # Trading system
             'cogs.founder_shop',              # Pack shop (Silver/Black packs)
             'cogs.server_revenue_commands',   # Server revenue tracking
-            'cogs.nft_entitlement_commands'   # NFT entitlement (snapshot-based, no gameplay impact)
+            'cogs.wallet_connect_commands'    # Wallet connect with exact UX copy (NFT boosts disabled until ready)
             # Note: card_game, gameplay, packs, and start_game removed - all essential commands now in essential_commands
         ]
         
