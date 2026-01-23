@@ -7,8 +7,8 @@ from discord import app_commands, Interaction
 from discord.ext import commands
 import os
 import sqlite3
-from database import DatabaseManager, db
-from card_economy import CardEconomyManager, economy_manager
+from database import DatabaseManager
+from card_economy import CardEconomyManager
 from stripe_payments import StripePaymentManager
 
 class EssentialCommandsCog(commands.Cog):
