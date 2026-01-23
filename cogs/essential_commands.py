@@ -16,6 +16,7 @@ class EssentialCommandsCog(commands.Cog):
         self.bot = bot
         self.db = DatabaseManager()
         self.economy = CardEconomyManager(self.db)
+        self.economy.initialize_economy_tables()  # Initialize drop tables
         self.stripe = StripePaymentManager()
     
     @app_commands.command(name="collection", description="View your card collection")
