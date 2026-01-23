@@ -135,7 +135,7 @@ class EssentialCommandsCog(commands.Cog):
     
     @app_commands.command(name="start_game", description="🎮 Start Music Legends in this server!")
     async def start_game(self, interaction: Interaction):
-        """Initialize Music Legends with real artist cards from YouTube"""
+        """Initialize Music Legends with starter artist cards"""
         
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("🔒 Only server administrators can start the game!", ephemeral=True)
@@ -143,94 +143,72 @@ class EssentialCommandsCog(commands.Cog):
         
         await interaction.response.defer()
         
-        embed = discord.Embed(
-            title="🎵🎮 MUSIC LEGENDS IS NOW LIVE! 🎮🎵",
-            description="""
-**Welcome to Music Legends - The Ultimate Card Battle Game!**
-
-🎴 **Collect cards** of your favorite music artists
-⚔️ **Battle friends** with strategic card decks  
-🎁 **Open daily packs** for rare cards
-💰 **Trade & sell** cards in the marketplace
-
-🚀 **Getting Started:**
-• `/drop` - Create a card drop for the community
-• `/collection` - View your card collection
-• `/battle @friend` - Challenge someone to a card battle
-• `/pack_add_artist_smart` - Add artists from YouTube
-
-*Creating starter cards from YouTube... Please wait!*
-            """,
-            color=discord.Color.purple()
-        )
-        
-        await interaction.followup.send(embed=embed)
-        
+        # Create starter cards directly without YouTube API
         starter_artists = [
-            "Taylor Swift", "Drake", "Bad Bunny", "The Weeknd", 
-            "Ariana Grande", "Ed Sheeran", "Billie Eilish", "Post Malone",
-            "Dua Lipa", "Olivia Rodrigo", "Doja Cat", "Harry Styles",
-            "Bruno Mars", "Adele", "Justin Bieber", "Kendrick Lamar",
-            "Rihanna", "Maroon 5", "Coldplay", "Imagine Dragons",
-            "BTS", "Blackpink", "Travis Scott", "Cardi B",
-            "Eminem", "Kanye West", "Lady Gaga", "Beyoncé"
+            {"name": "Taylor Swift", "tier": "legendary", "genre": "Pop", "power": 95},
+            {"name": "Drake", "tier": "legendary", "genre": "Hip-Hop", "power": 94},
+            {"name": "Bad Bunny", "tier": "legendary", "genre": "Latin", "power": 93},
+            {"name": "The Weeknd", "tier": "platinum", "genre": "R&B", "power": 88},
+            {"name": "Ariana Grande", "tier": "platinum", "genre": "Pop", "power": 87},
+            {"name": "Ed Sheeran", "tier": "platinum", "genre": "Pop", "power": 86},
+            {"name": "Billie Eilish", "tier": "platinum", "genre": "Alternative", "power": 85},
+            {"name": "Post Malone", "tier": "gold", "genre": "Hip-Hop", "power": 78},
+            {"name": "Dua Lipa", "tier": "gold", "genre": "Pop", "power": 77},
+            {"name": "Olivia Rodrigo", "tier": "gold", "genre": "Pop", "power": 76},
+            {"name": "Doja Cat", "tier": "gold", "genre": "Pop", "power": 75},
+            {"name": "Harry Styles", "tier": "gold", "genre": "Pop", "power": 74},
+            {"name": "Bruno Mars", "tier": "platinum", "genre": "Pop", "power": 89},
+            {"name": "Adele", "tier": "legendary", "genre": "Pop", "power": 92},
+            {"name": "Justin Bieber", "tier": "platinum", "genre": "Pop", "power": 84},
+            {"name": "Kendrick Lamar", "tier": "legendary", "genre": "Hip-Hop", "power": 96},
+            {"name": "Rihanna", "tier": "legendary", "genre": "Pop", "power": 91},
+            {"name": "Eminem", "tier": "legendary", "genre": "Hip-Hop", "power": 97},
+            {"name": "Kanye West", "tier": "platinum", "genre": "Hip-Hop", "power": 90},
+            {"name": "Beyoncé", "tier": "legendary", "genre": "R&B", "power": 98}
         ]
         
-        created_cards = []
-        failed_artists = []
+        created_count = 0
         
-        from services.game_integration import game_integration
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.cursor()
+            
+            for artist in starter_artists:
+                try:
+                    card_id = f"starter_{artist['name'].lower().replace(' ', '_')}"
+                    
+                    # Calculate stats from power level
+                    base_stat = artist['power'] // 5
+                    
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO cards 
+                        (card_id, name, rarity, card_type, era, impact, skill, longevity, culture, hype, type)
+                        VALUES (?, ?, ?, 'artist', 'Modern', ?, ?, ?, ?, ?, 'artist')
+                    """, (
+                        card_id, 
+                        artist['name'], 
+                        artist['tier'],
+                        base_stat,
+                        base_stat,
+                        base_stat,
+                        base_stat,
+                        base_stat
+                    ))
+                    
+                    if cursor.rowcount > 0:
+                        created_count += 1
+                        
+                except Exception as e:
+                    print(f"Error creating card for {artist['name']}: {e}")
+            
+            conn.commit()
         
-        for artist_name in starter_artists:
-            try:
-                artist_data = await game_integration.create_artist_from_youtube(artist_name)
-                
-                if artist_data:
-                    card_data = {
-                        'card_id': f"artist_{artist_data['id']}",
-                        'name': artist_data['name'],
-                        'rarity': artist_data['tier'],
-                        'image_url': artist_data.get('image', ''),
-                        'spotify_url': f"https://youtube.com/channel/{artist_data['youtube_channel_id']}",
-                        'card_type': 'artist',
-                        'era': 'Modern',
-                        'impact': artist_data['game_data']['power_level'] // 5,
-                        'skill': artist_data['game_data']['power_level'] // 5,
-                        'longevity': artist_data['game_data']['power_level'] // 5,
-                        'culture': artist_data['game_data']['power_level'] // 5,
-                        'hype': artist_data['game_data']['power_level'] // 5
-                    }
-                    
-                    with sqlite3.connect(self.db.db_path) as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO cards 
-                            (card_id, name, rarity, image_url, spotify_url, card_type, era, impact, skill, longevity, culture, hype)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            card_data['card_id'], card_data['name'], card_data['rarity'],
-                            card_data['image_url'], card_data['spotify_url'], card_data['card_type'],
-                            card_data['era'], card_data['impact'], card_data['skill'],
-                            card_data['longevity'], card_data['culture'], card_data['hype']
-                        ))
-                        conn.commit()
-                    
-                    created_cards.append(card_data)
-                else:
-                    failed_artists.append(artist_name)
-                    
-            except Exception as e:
-                print(f"Error creating card for {artist_name}: {e}")
-                failed_artists.append(artist_name)
-        
-        if created_cards:
+        if created_count > 0:
             success_embed = discord.Embed(
                 title="✅ Game Successfully Started!",
                 description=f"""
 🎉 **Music Legends is ready to play!**
 
-📊 **Cards Created:** {len(created_cards)} real artist cards
-🎵 **Source:** YouTube music channels
+📊 **Cards Created:** {created_count} starter artist cards
 ⭐ **Tiers:** Community, Gold, Platinum, Legendary
 
 🎮 **Try these commands:**
@@ -245,7 +223,7 @@ class EssentialCommandsCog(commands.Cog):
             await interaction.followup.send(embed=success_embed)
             
             try:
-                drop_result = economy_manager.create_drop(
+                drop_result = self.economy.create_drop(
                     interaction.channel_id,
                     interaction.guild.id, 
                     interaction.user.id
@@ -253,7 +231,7 @@ class EssentialCommandsCog(commands.Cog):
                 
                 if drop_result['success']:
                     drop_embed = discord.Embed(
-                        title="🎴 WELCOME DROP! 🎴",
+                        title="🎁 WELCOME DROP! 🎁",
                         description="First card drop created! React quickly to grab cards!",
                         color=discord.Color.gold()
                     )
@@ -271,11 +249,10 @@ class EssentialCommandsCog(commands.Cog):
                     
             except Exception as e:
                 print(f"Error creating welcome drop: {e}")
-        
         else:
             error_embed = discord.Embed(
                 title="❌ Game Start Failed",
-                description="Could not create artist cards. Please check YouTube API configuration in .env.txt",
+                description="Could not create any starter cards. Please try again or contact support.",
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
