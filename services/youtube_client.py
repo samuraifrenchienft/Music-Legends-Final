@@ -21,13 +21,24 @@ class YouTubeClient:
         self.api_key = YOUTUBE_KEY
         self.youtube = None
         
+        # Log API key status
+        if self.api_key:
+            print(f"✅ YouTube API key found (length: {len(self.api_key)})")
+        else:
+            print("❌ YouTube API key NOT found - will use mock data")
+        
         # Initialize YouTube client if API available and key configured
         if GOOGLE_API_AVAILABLE and self.api_key:
             try:
                 self.youtube = build("youtube", "v3", developerKey=self.api_key)
+                print("✅ YouTube API client initialized successfully - REAL DATA MODE")
             except Exception as e:
-                print(f"Failed to initialize YouTube client: {e}")
+                print(f"❌ Failed to initialize YouTube client: {e}")
                 self.youtube = None
+        elif not GOOGLE_API_AVAILABLE:
+            print("❌ google-api-python-client not installed")
+        else:
+            print("⚠️ YouTube API key missing - using MOCK DATA")
     
     def _check_api_key(self) -> bool:
         """Check if API key is configured"""
