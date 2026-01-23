@@ -276,6 +276,198 @@ class EssentialCommandsCog(commands.Cog):
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
+    
+    @app_commands.command(name="pack", description="Open a card pack")
+    @app_commands.describe(pack_type="Type of pack to open")
+    async def open_pack(self, interaction: Interaction, pack_type: str = "Daily"):
+        """Open a card pack"""
+        await interaction.response.defer()
+        
+        try:
+            # Check if user has pack or can afford it
+            user_data = self.db.get_user(interaction.user.id)
+            
+            embed = discord.Embed(
+                title="🎴 Opening Pack...",
+                description=f"Opening **{pack_type}** pack!",
+                color=discord.Color.blue()
+            )
+            
+            # Simulate pack opening (you'll integrate with actual pack system)
+            cards = []
+            for i in range(5):
+                cards.append({
+                    'name': f'Card {i+1}',
+                    'tier': 'community',
+                    'power': 50
+                })
+            
+            result_embed = discord.Embed(
+                title="✨ Pack Opened!",
+                description=f"You got {len(cards)} cards!",
+                color=discord.Color.gold()
+            )
+            
+            for i, card in enumerate(cards, 1):
+                result_embed.add_field(
+                    name=f"Card {i}",
+                    value=f"{card['name']}\nTier: {card['tier']}",
+                    inline=True
+                )
+            
+            await interaction.followup.send(embed=result_embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error opening pack: {e}", ephemeral=True)
+    
+    @app_commands.command(name="pack_create", description="Create a new creator pack")
+    @app_commands.describe(name="Pack name", description="Pack description", pack_size="Number of cards (5, 10, or 15)")
+    async def pack_create(self, interaction: Interaction, name: str, description: str = "", pack_size: int = 10):
+        """Create a new pack for sale"""
+        if pack_size not in [5, 10, 15]:
+            await interaction.response.send_message("❌ Pack size must be 5, 10, or 15 cards", ephemeral=True)
+            return
+        
+        try:
+            # Create draft pack
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO creator_packs 
+                    (pack_id, creator_user_id, pack_name, description, pack_size, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, 'draft', CURRENT_TIMESTAMP)
+                """, (f"pack_{interaction.user.id}_{name}", interaction.user.id, name, description, pack_size))
+                conn.commit()
+            
+            embed = discord.Embed(
+                title="✅ Pack Created!",
+                description=f"**{name}** draft pack created!",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Pack Size", value=f"{pack_size} cards")
+            embed.add_field(name="Status", value="Draft")
+            embed.add_field(name="Next Steps", value="Use `/pack_add_artist_smart` to add artists\nThen `/pack_publish` to publish for sale", inline=False)
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error creating pack: {e}", ephemeral=True)
+    
+    @app_commands.command(name="pack_preview", description="Preview your current draft pack")
+    async def pack_preview(self, interaction: Interaction):
+        """Preview draft pack"""
+        try:
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pack_name, description, pack_size, status 
+                    FROM creator_packs 
+                    WHERE creator_user_id = ? AND status = 'draft'
+                    LIMIT 1
+                """, (interaction.user.id,))
+                pack = cursor.fetchone()
+            
+            if not pack:
+                await interaction.response.send_message("❌ You don't have a draft pack. Use `/pack_create` to create one!", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title=f"📦 {pack[0]}",
+                description=pack[1] or "No description",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Pack Size", value=f"{pack[2]} cards")
+            embed.add_field(name="Status", value=pack[3].title())
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error previewing pack: {e}", ephemeral=True)
+    
+    @app_commands.command(name="pack_publish", description="Publish your pack for sale")
+    @app_commands.describe(price="Price in gold coins")
+    async def pack_publish(self, interaction: Interaction, price: int = 100):
+        """Publish pack for sale"""
+        if price < 10 or price > 10000:
+            await interaction.response.send_message("❌ Price must be between 10 and 10,000 gold", ephemeral=True)
+            return
+        
+        try:
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if draft pack exists
+                cursor.execute("""
+                    SELECT pack_id, pack_name, pack_size 
+                    FROM creator_packs 
+                    WHERE creator_user_id = ? AND status = 'draft'
+                    LIMIT 1
+                """, (interaction.user.id,))
+                pack = cursor.fetchone()
+                
+                if not pack:
+                    await interaction.response.send_message("❌ No draft pack found. Create one with `/pack_create`!", ephemeral=True)
+                    return
+                
+                # Publish pack
+                cursor.execute("""
+                    UPDATE creator_packs 
+                    SET status = 'live', price = ?, published_at = CURRENT_TIMESTAMP
+                    WHERE pack_id = ?
+                """, (price, pack[0]))
+                conn.commit()
+            
+            embed = discord.Embed(
+                title="🎉 Pack Published!",
+                description=f"**{pack[1]}** is now live in the store!",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="Price", value=f"{price} gold")
+            embed.add_field(name="Pack Size", value=f"{pack[2]} cards")
+            embed.add_field(name="Status", value="✅ Live")
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error publishing pack: {e}", ephemeral=True)
+    
+    @app_commands.command(name="packs", description="Browse available creator packs")
+    async def browse_packs(self, interaction: Interaction):
+        """Browse available packs for purchase"""
+        try:
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pack_name, description, price, pack_size, creator_user_id
+                    FROM creator_packs 
+                    WHERE status = 'live'
+                    ORDER BY published_at DESC
+                    LIMIT 10
+                """)
+                packs = cursor.fetchall()
+            
+            if not packs:
+                await interaction.response.send_message("📦 No packs available yet! Creators can make packs with `/pack_create`", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="🛍️ Available Card Packs",
+                description="Browse and purchase creator packs!",
+                color=discord.Color.purple()
+            )
+            
+            for pack in packs[:5]:
+                creator = await self.bot.fetch_user(pack[4])
+                embed.add_field(
+                    name=f"📦 {pack[0]}",
+                    value=f"{pack[1] or 'No description'}\n💰 Price: {pack[2]} gold | 🎴 {pack[3]} cards\n👤 By: {creator.name}",
+                    inline=False
+                )
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error browsing packs: {e}", ephemeral=True)
 
 async def setup(bot):
     test_server_id = os.getenv("TEST_SERVER_ID")
