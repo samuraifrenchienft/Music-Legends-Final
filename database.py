@@ -291,6 +291,42 @@ class DatabaseManager:
                 )
             """)
             
+            # Market listings for trading
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS market_listings (
+                    listing_id TEXT PRIMARY KEY,
+                    seller_user_id INTEGER,
+                    card_id TEXT,
+                    asking_gold INTEGER,
+                    asking_dust INTEGER,
+                    status TEXT DEFAULT 'active', -- active, sold, cancelled
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    buyer_user_id INTEGER,
+                    sold_at TIMESTAMP,
+                    FOREIGN KEY (seller_user_id) REFERENCES users(user_id),
+                    FOREIGN KEY (buyer_user_id) REFERENCES users(user_id),
+                    FOREIGN KEY (card_id) REFERENCES cards(card_id)
+                )
+            """)
+            
+            # Trade history
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trade_history (
+                    trade_id TEXT PRIMARY KEY,
+                    initiator_user_id INTEGER,
+                    receiver_user_id INTEGER,
+                    initiator_cards TEXT, -- JSON array
+                    receiver_cards TEXT, -- JSON array
+                    gold_from_initiator INTEGER DEFAULT 0,
+                    gold_from_receiver INTEGER DEFAULT 0,
+                    dust_from_initiator INTEGER DEFAULT 0,
+                    dust_from_receiver INTEGER DEFAULT 0,
+                    trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (initiator_user_id) REFERENCES users(user_id),
+                    FOREIGN KEY (receiver_user_id) REFERENCES users(user_id)
+                )
+            """)
+            
             conn.commit()
     
     def get_or_create_user(self, user_id: int, username: str, discord_tag: str) -> Dict:
