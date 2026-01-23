@@ -268,9 +268,9 @@ class EssentialCommandsCog(commands.Cog):
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT pack_id, pack_name, price, pack_size, creator_user_id
+                    SELECT pack_id, name, price_cents, pack_size, creator_id
                     FROM creator_packs 
-                    WHERE pack_name = ? AND status = 'live'
+                    WHERE name = ? AND status = 'LIVE'
                     LIMIT 1
                 """, (pack_name,))
                 pack = cursor.fetchone()
@@ -327,8 +327,8 @@ class EssentialCommandsCog(commands.Cog):
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO creator_packs 
-                    (pack_id, creator_user_id, pack_name, description, pack_size, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, 'draft', CURRENT_TIMESTAMP)
+                    (pack_id, creator_id, name, description, pack_size, status)
+                    VALUES (?, ?, ?, ?, ?, 'DRAFT')
                 """, (f"pack_{interaction.user.id}_{name}", interaction.user.id, name, description, pack_size))
                 conn.commit()
             
@@ -353,9 +353,9 @@ class EssentialCommandsCog(commands.Cog):
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT pack_name, description, pack_size, status 
+                    SELECT name, description, pack_size, status 
                     FROM creator_packs 
-                    WHERE creator_user_id = ? AND status = 'draft'
+                    WHERE creator_id = ? AND status = 'DRAFT'
                     LIMIT 1
                 """, (interaction.user.id,))
                 pack = cursor.fetchone()
@@ -393,9 +393,9 @@ class EssentialCommandsCog(commands.Cog):
                 
                 # Check if draft pack exists
                 cursor.execute("""
-                    SELECT pack_id, pack_name, pack_size 
+                    SELECT pack_id, name, pack_size 
                     FROM creator_packs 
-                    WHERE creator_user_id = ? AND status = 'draft'
+                    WHERE creator_id = ? AND status = 'DRAFT'
                     LIMIT 1
                 """, (interaction.user.id,))
                 pack = cursor.fetchone()
@@ -460,9 +460,9 @@ class EssentialCommandsCog(commands.Cog):
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT pack_name, description, price, pack_size, creator_user_id
+                    SELECT name, description, price_cents, pack_size, creator_id
                     FROM creator_packs 
-                    WHERE status = 'live'
+                    WHERE status = 'LIVE'
                     ORDER BY published_at DESC
                     LIMIT 10
                 """)
