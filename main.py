@@ -41,11 +41,10 @@ class Bot(commands.Bot):
         
         # Load cogs
         cogs = [
-            'cogs.essential_commands',  # Core gameplay: collection, drop, battle
+            'cogs.essential_commands',  # Core gameplay: collection, drop, battle, start_game, pack_add_artist_smart
             'cogs.trading',             # Trading system
-            'cogs.founder_shop',        # Founder shop features
-            'cogs.start_game'           # Game initialization with YouTube artist cards
-            # Note: card_game, gameplay, and packs removed - they have 20+ overlapping commands
+            'cogs.founder_shop'         # Founder shop features
+            # Note: card_game, gameplay, packs, and start_game removed - all essential commands now in essential_commands
         ]
         
         for cog in cogs:
