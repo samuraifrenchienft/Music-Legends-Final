@@ -68,10 +68,10 @@ class YouTubeClient:
         }
     
     async def search_channel(self, name: str) -> Optional[Dict[str, Any]]:
-        """Search for a YouTube channel by name using async executor"""
+        """Search for a YouTube channel by name using async executor - REAL DATA ONLY"""
         if not self.youtube:
-            print(f"YouTube API not available - using mock data for {name}")
-            return self._mock_channel_search(name)
+            print(f"❌ CRITICAL: YouTube API not initialized - check API key and google-api-python-client")
+            return None
         
         loop = asyncio.get_running_loop()
         
@@ -84,9 +84,11 @@ class YouTubeClient:
                     type="channel",
                     maxResults=1
                 )
-                return request.execute()
+                result = request.execute()
+                print(f"✅ YouTube API search successful for: {name}")
+                return result
             except Exception as e:
-                print(f"YouTube API error: {e}")
+                print(f"❌ YouTube API error: {e}")
                 return None
         
         try:
@@ -94,6 +96,7 @@ class YouTubeClient:
             result = await loop.run_in_executor(None, _search)
             
             if not result or not result.get("items"):
+                print(f"⚠️ No YouTube results found for: {name}")
                 return None
             
             ch = result["items"][0]
@@ -107,14 +110,14 @@ class YouTubeClient:
                 "published_at": snippet.get("publishedAt", "")
             }
         except Exception as e:
-            print(f"Error searching channel: {e}")
-            return self._mock_channel_search(name)
+            print(f"❌ Error searching channel: {e}")
+            return None
 
     async def channel_stats(self, channel_id: str) -> Optional[Dict[str, Any]]:
-        """Get channel statistics and details using async executor"""
+        """Get channel statistics and details using async executor - REAL DATA ONLY"""
         if not self.youtube:
-            print(f"YouTube API not available - using mock stats for {channel_id}")
-            return self._mock_channel_stats(channel_id)
+            print(f"❌ CRITICAL: YouTube API not initialized - cannot get stats")
+            return None
         
         loop = asyncio.get_running_loop()
         
@@ -125,9 +128,11 @@ class YouTubeClient:
                     part="statistics,topicDetails,snippet",
                     id=channel_id
                 )
-                return request.execute()
+                result = request.execute()
+                print(f"✅ YouTube API stats retrieved for channel: {channel_id}")
+                return result
             except Exception as e:
-                print(f"YouTube API error: {e}")
+                print(f"❌ YouTube API error getting stats: {e}")
                 return None
         
         try:
@@ -135,6 +140,7 @@ class YouTubeClient:
             result = await loop.run_in_executor(None, _get_stats)
             
             if not result or not result.get("items"):
+                print(f"⚠️ No stats found for channel: {channel_id}")
                 return None
             
             c = result["items"][0]
@@ -151,8 +157,8 @@ class YouTubeClient:
                 "custom_url": snippet.get("customUrl")
             }
         except Exception as e:
-            print(f"Error getting channel stats: {e}")
-            return self._mock_channel_stats(channel_id)
+            print(f"❌ Error getting channel stats: {e}")
+            return None
 
     async def search_videos(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         """Search for videos by query"""
