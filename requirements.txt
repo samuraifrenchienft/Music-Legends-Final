@@ -9,3 +9,5 @@ redis
 rq
 aioredis
 apscheduler
+Pillow
+aiohttp

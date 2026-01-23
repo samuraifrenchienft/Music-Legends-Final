@@ -43,7 +43,8 @@ class Bot(commands.Bot):
         cogs = [
             'cogs.card_game',      # Main gameplay: battle, pack, pack_create, pack_add_artist_smart
             'cogs.trading',        # Trading system
-            'cogs.founder_shop'    # Founder shop features
+            'cogs.founder_shop',   # Founder shop features
+            'cogs.start_game'      # Game initialization with YouTube artist cards
             # Note: cogs.gameplay and cogs.packs removed to prevent duplicate commands
         ]
         
