@@ -13,17 +13,23 @@ STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
 
 class StripePaymentManager:
     def __init__(self):
+        # Pack prices (Season 1)
+        self.pack_prices = {
+            'founder_silver': 499,   # $4.99 Silver Pack
+            'founder_black': 699     # $6.99 Black Pack
+        }
+        
+        # Creator pack publishing fees (if needed later)
         self.publish_prices = {
             5: 1000,   # $10.00 for Micro (5 cards)
             10: 2500,  # $25.00 for Mini (10 cards) 
             15: 5000   # $50.00 for Event (15 cards)
         }
         
-        # Revenue splits (in cents)
-        self.platform_split = 0.70  # 70% to platform
-        self.creator_split = 0.30   # 30% to creator
+        # Server-based revenue sharing (10-30% to server owner)
+        # Platform gets remainder after server owner share
         
-        # Stripe Connect (for creator payouts)
+        # Stripe Connect (for server owner payouts)
         self.connect_platform_fee = 0.029  # 2.9% Stripe Connect fee
         
     def create_pack_publish_checkout(self, pack_id: str, creator_id: int, pack_size: int, pack_name: str) -> Dict:
