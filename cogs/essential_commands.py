@@ -9,12 +9,14 @@ import os
 import sqlite3
 from database import DatabaseManager, db
 from card_economy import CardEconomyManager, economy_manager
+from stripe_payments import StripePaymentManager
 
 class EssentialCommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
         self.economy = CardEconomyManager(self.db)
+        self.stripe = StripePaymentManager()
     
     @app_commands.command(name="collection", description="View your card collection")
     async def collection(self, interaction: Interaction):
@@ -277,48 +279,61 @@ class EssentialCommandsCog(commands.Cog):
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
     
-    @app_commands.command(name="pack", description="Open a card pack")
-    @app_commands.describe(pack_type="Type of pack to open")
-    async def open_pack(self, interaction: Interaction, pack_type: str = "Daily"):
-        """Open a card pack"""
-        await interaction.response.defer()
+    @app_commands.command(name="pack", description="Buy and open a card pack with real money")
+    @app_commands.describe(pack_name="Name of the pack to purchase")
+    async def open_pack(self, interaction: Interaction, pack_name: str):
+        """Buy a card pack with Stripe payment"""
+        await interaction.response.defer(ephemeral=True)
         
         try:
-            # Check if user has pack or can afford it
-            user_data = self.db.get_user(interaction.user.id)
+            # Find pack in database
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pack_id, pack_name, price, pack_size, creator_user_id
+                    FROM creator_packs 
+                    WHERE pack_name = ? AND status = 'live'
+                    LIMIT 1
+                """, (pack_name,))
+                pack = cursor.fetchone()
+            
+            if not pack:
+                await interaction.followup.send(f"❌ Pack '{pack_name}' not found. Use `/packs` to browse available packs.", ephemeral=True)
+                return
+            
+            pack_id, name, price_gold, pack_size, creator_id = pack
+            
+            # Convert gold price to USD cents (100 gold = $1.00)
+            price_cents = price_gold
+            
+            # Create Stripe checkout
+            checkout = self.stripe.create_pack_purchase_checkout(
+                pack_id=pack_id,
+                buyer_id=interaction.user.id,
+                pack_name=name,
+                price_cents=price_cents
+            )
+            
+            if not checkout['success']:
+                await interaction.followup.send(f"❌ Payment error: {checkout['error']}", ephemeral=True)
+                return
             
             embed = discord.Embed(
-                title="🎴 Opening Pack...",
-                description=f"Opening **{pack_type}** pack!",
+                title="💳 Complete Your Purchase",
+                description=f"**{name}**\n\n🎴 {pack_size} cards\n💰 ${price_cents/100:.2f} USD",
                 color=discord.Color.blue()
             )
-            
-            # Simulate pack opening (you'll integrate with actual pack system)
-            cards = []
-            for i in range(5):
-                cards.append({
-                    'name': f'Card {i+1}',
-                    'tier': 'community',
-                    'power': 50
-                })
-            
-            result_embed = discord.Embed(
-                title="✨ Pack Opened!",
-                description=f"You got {len(cards)} cards!",
-                color=discord.Color.gold()
+            embed.add_field(
+                name="Next Steps",
+                value=f"[Click here to pay with Stripe]({checkout['checkout_url']})\n\nAfter payment, your pack will be opened automatically!",
+                inline=False
             )
+            embed.set_footer(text=f"Creator earns 30% | You support the community!")
             
-            for i, card in enumerate(cards, 1):
-                result_embed.add_field(
-                    name=f"Card {i}",
-                    value=f"{card['name']}\nTier: {card['tier']}",
-                    inline=True
-                )
-            
-            await interaction.followup.send(embed=result_embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
-            await interaction.followup.send(f"❌ Error opening pack: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
     @app_commands.command(name="pack_create", description="Create a new creator pack")
     @app_commands.describe(name="Pack name", description="Pack description", pack_size="Number of cards (5, 10, or 15)")
@@ -384,13 +399,15 @@ class EssentialCommandsCog(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ Error previewing pack: {e}", ephemeral=True)
     
-    @app_commands.command(name="pack_publish", description="Publish your pack for sale")
-    @app_commands.describe(price="Price in gold coins")
-    async def pack_publish(self, interaction: Interaction, price: int = 100):
-        """Publish pack for sale"""
-        if price < 10 or price > 10000:
-            await interaction.response.send_message("❌ Price must be between 10 and 10,000 gold", ephemeral=True)
+    @app_commands.command(name="pack_publish", description="Publish your pack for sale (requires Stripe payment)")
+    @app_commands.describe(price_usd="Price in USD (e.g., 5 = $5.00)")
+    async def pack_publish(self, interaction: Interaction, price_usd: int):
+        """Publish pack for sale - requires Stripe payment for publishing fee"""
+        if price_usd < 1 or price_usd > 100:
+            await interaction.response.send_message("❌ Price must be between $1 and $100 USD", ephemeral=True)
             return
+        
+        await interaction.response.defer(ephemeral=True)
         
         try:
             with sqlite3.connect(self.db.db_path) as conn:
@@ -406,30 +423,57 @@ class EssentialCommandsCog(commands.Cog):
                 pack = cursor.fetchone()
                 
                 if not pack:
-                    await interaction.response.send_message("❌ No draft pack found. Create one with `/pack_create`!", ephemeral=True)
+                    await interaction.followup.send("❌ No draft pack found. Create one with `/pack_create`!", ephemeral=True)
                     return
                 
-                # Publish pack
+                pack_id, pack_name, pack_size = pack
+                
+                # Create Stripe checkout for publishing fee
+                checkout = self.stripe.create_pack_publish_checkout(
+                    pack_id=pack_id,
+                    creator_id=interaction.user.id,
+                    pack_size=pack_size,
+                    pack_name=pack_name
+                )
+                
+                if not checkout['success']:
+                    await interaction.followup.send(f"❌ Payment error: {checkout['error']}", ephemeral=True)
+                    return
+                
+                # Store price in database (convert USD to cents)
+                price_cents = price_usd * 100
                 cursor.execute("""
                     UPDATE creator_packs 
-                    SET status = 'live', price = ?, published_at = CURRENT_TIMESTAMP
+                    SET price = ?, pending_payment_session = ?
                     WHERE pack_id = ?
-                """, (price, pack[0]))
+                """, (price_cents, checkout['session_id'], pack_id))
                 conn.commit()
             
-            embed = discord.Embed(
-                title="🎉 Pack Published!",
-                description=f"**{pack[1]}** is now live in the store!",
-                color=discord.Color.gold()
-            )
-            embed.add_field(name="Price", value=f"{price} gold")
-            embed.add_field(name="Pack Size", value=f"{pack[2]} cards")
-            embed.add_field(name="Status", value="✅ Live")
+            publish_fee = checkout['price_cents'] / 100
             
-            await interaction.response.send_message(embed=embed)
+            embed = discord.Embed(
+                title="💳 Complete Publishing Payment",
+                description=f"**{pack_name}**\n\nTo publish your pack, pay the one-time publishing fee.",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Publishing Fee", value=f"${publish_fee:.2f} USD", inline=True)
+            embed.add_field(name="Pack Size", value=f"{pack_size} cards", inline=True)
+            embed.add_field(name="Your Price", value=f"${price_usd:.2f} USD", inline=True)
+            embed.add_field(
+                name="💰 Your Earnings",
+                value=f"You earn 30% of each sale = ${price_usd * 0.30:.2f} per pack sold",
+                inline=False
+            )
+            embed.add_field(
+                name="Next Steps",
+                value=f"[Click here to pay publishing fee]({checkout['checkout_url']})\n\nAfter payment, your pack goes live immediately!",
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error publishing pack: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
     @app_commands.command(name="packs", description="Browse available creator packs")
     async def browse_packs(self, interaction: Interaction):
