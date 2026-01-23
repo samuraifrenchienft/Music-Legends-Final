@@ -24,14 +24,38 @@ class YouTubeClient:
         if self.session:
             await self.session.close()
     
-    def _check_api_key(self):
+    def _check_api_key(self) -> bool:
         """Check if API key is configured"""
-        if not self.api_key:
-            raise ValueError("YouTube API key not found. Set YOUTUBE_API_KEY in .env.txt")
+        return bool(self.api_key)
+    
+    def _mock_channel_search(self, name: str) -> Dict[str, Any]:
+        """Mock channel search when API key is not available"""
+        return {
+            "name": name,
+            "channel_id": f"mock_{name.lower().replace(' ', '_')}",
+            "image": "https://via.placeholder.com/800x800?text=Artist",
+            "description": f"Official {name} channel",
+            "published_at": "2020-01-01T00:00:00Z"
+        }
+    
+    def _mock_channel_stats(self, channel_id: str) -> Dict[str, Any]:
+        """Mock channel stats when API key is not available"""
+        import random
+        return {
+            "subs": random.randint(100000, 10000000),
+            "views": random.randint(1000000, 100000000),
+            "videos": random.randint(50, 500),
+            "topics": ["Music"],
+            "created_at": "2020-01-01T00:00:00Z",
+            "country": "US",
+            "custom_url": None
+        }
     
     async def search_channel(self, name: str) -> Optional[Dict[str, Any]]:
         """Search for a YouTube channel by name"""
-        self._check_api_key()
+        if not self._check_api_key():
+            print(f"YouTube API key not configured - using mock data for {name}")
+            return self._mock_channel_search(name)
         
         if not self.session:
             self.session = aiohttp.ClientSession()
@@ -70,7 +94,9 @@ class YouTubeClient:
 
     async def channel_stats(self, channel_id: str) -> Optional[Dict[str, Any]]:
         """Get channel statistics and details"""
-        self._check_api_key()
+        if not self._check_api_key():
+            print(f"YouTube API key not configured - using mock stats for {channel_id}")
+            return self._mock_channel_stats(channel_id)
         
         if not self.session:
             self.session = aiohttp.ClientSession()

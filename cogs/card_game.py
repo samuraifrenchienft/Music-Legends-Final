@@ -500,7 +500,7 @@ class CardGameCog(Cog):
         modal = ArtistSearchModal(self)
         await interaction.response.send_modal(modal)
 
-class ArtistSearchModal(ui.Modal, title="Search Spotify Artist"):
+class ArtistSearchModal(ui.Modal, title="Search YouTube Artist"):
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
@@ -516,8 +516,9 @@ class ArtistSearchModal(ui.Modal, title="Search Spotify Artist"):
         """Handle artist search submission"""
         await interaction.response.defer()
         
-        # Search for artists
-        artists = spotify_integration.search_artists(self.search_query.value, limit=10)
+        # Search for artists on YouTube
+        from services.youtube_pack_service import youtube_pack_service
+        artists = await youtube_pack_service.search_artist_channels(self.search_query.value, max_results=5)
         
         if not artists:
             await interaction.followup.send("No artists found. Try a different search term.", ephemeral=True)
@@ -527,17 +528,18 @@ class ArtistSearchModal(ui.Modal, title="Search Spotify Artist"):
         view = ArtistSelectionView(artists, self.cog)
         
         embed = discord.Embed(
-            title="🎵 Select Artist",
+            title="🎵 Select Artist from YouTube",
             description=f"Found {len(artists)} artists for **{self.search_query.value}**. Choose one to add to your pack:",
-            color=discord.Color.green()
+            color=discord.Color.red()
         )
         
         for i, artist in enumerate(artists[:5], 1):  # Show top 5
-            followers_text = f"{artist['followers']:,}" if artist['followers'] > 0 else "N/A"
+            subs_text = f"{artist['subscribers']:,}" if artist['subscribers'] > 0 else "N/A"
+            views_text = f"{artist['total_views']:,}" if artist['total_views'] > 0 else "N/A"
             embed.add_field(
                 name=f"{i}. {artist['name']}",
-                value=f"Popularity: {artist['popularity']}/100 | Followers: {followers_text}\n"
-                      f"Genres: {', '.join(artist['genres'][:3]) if artist['genres'] else 'N/A'}",
+                value=f"📺 Subscribers: {subs_text} | 👁️ Views: {views_text}\n"
+                      f"🎬 Videos: {artist['video_count']:,}",
                 inline=False
             )
         
@@ -561,27 +563,15 @@ class ArtistSelectionView(ui.View):
     
     def create_artist_callback(self, artist: Dict):
         async def callback(interaction: Interaction):
-            # Generate stats and rarity automatically
-            stats = spotify_integration.generate_card_stats(artist)
-            rarity = spotify_integration.determine_rarity(artist)
+            # Generate card from YouTube data
+            from services.youtube_pack_service import youtube_pack_service
+            card_data = await youtube_pack_service.create_artist_card(artist)
             
             # Get draft pack
             draft_pack = self.cog.db.get_creator_draft_pack(interaction.user.id)
             if not draft_pack:
                 await interaction.response.send_message("Draft pack not found!", ephemeral=True)
                 return
-            
-            # Create card data
-            card_data = {
-                "name": artist['name'],
-                "rarity": rarity,
-                "spotify_url": artist['spotify_url'],
-                "spotify_id": artist['id'],
-                "genres": artist['genres'],
-                "image_url": artist['image_url'],
-                **stats,
-                "card_type": "artist"
-            }
             
             # Add to pack
             success = self.cog.db.add_card_to_pack(draft_pack['pack_id'], card_data)
@@ -592,25 +582,25 @@ class ArtistSelectionView(ui.View):
             # Show confirmation
             embed = discord.Embed(
                 title="✅ Artist Added to Pack",
-                description=f"**{artist['name']}** ({rarity}) has been added to your pack.",
+                description=f"**{artist['name']}** ({card_data['rarity'].title()}) has been added to your pack from YouTube!",
                 color=discord.Color.green()
             )
             
             embed.add_field(
                 name="Generated Stats",
-                value=f"💪 Impact: {stats['impact']}\n"
-                      f"🎯 Skill: {stats['skill']}\n"
-                      f"⏰ Longevity: {stats['longevity']}\n"
-                      f"🌍 Culture: {stats['culture']}\n"
-                      f"🔥 Hype: {stats['hype']}",
+                value=f"💪 Impact: {card_data['impact']}\n"
+                      f"🎯 Skill: {card_data['skill']}\n"
+                      f"⏰ Longevity: {card_data['longevity']}\n"
+                      f"🌍 Culture: {card_data['culture']}\n"
+                      f"🔥 Hype: {card_data['hype']}",
                 inline=False
             )
             
             embed.add_field(
-                name="Spotify Data",
-                value=f"🎵 {artist['name']}\n"
-                      f"👥 {artist['followers']:,} followers\n"
-                      f"📈 {artist['popularity']}/100 popularity",
+                name="YouTube Data",
+                value=f"📺 {artist['name']}\n"
+                      f"👥 {artist['subscribers']:,} subscribers\n"
+                      f"👁️ {artist['total_views']:,} total views",
                 inline=False
             )
             
