@@ -16,12 +16,12 @@ class FounderShop(commands.Cog):
         self.bot = bot
         self.rate_limiter = RateLimitMiddleware(rate_limiter)
     
-    @app_commands.command(name="founder_shop", description="View Founder Packs shop")
-    async def founder_shop(self, interaction: Interaction):
-        """Display Founder Packs shop"""
+    @app_commands.command(name="pack_shop", description="View Music Legends Pack Shop")
+    async def pack_shop(self, interaction: Interaction):
+        """Display pack shop"""
         embed = discord.Embed(
-            title="🏛️ Founder Packs Shop",
-            description="Limited edition Founder Packs with exclusive odds!",
+            title="🛍️ Music Legends Pack Shop",
+            description="Premium card packs with exclusive artists!",
             color=discord.Color.gold()
         )
         
@@ -56,22 +56,22 @@ class FounderShop(commands.Cog):
         
         embed.add_field(
             name="🛒 How to Purchase",
-            value="Use `/buy_founder_pack` to purchase a pack!\n"
+            value="Use `/buy_pack` to purchase a pack!\n"
                   "All packs are processed through our secure queue system.",
             inline=False
         )
         
-        embed.set_footer(text="Founder Packs • Limited Time • Queue Processing")
+        embed.set_footer(text="Music Legends Packs • Season 1 • Queue Processing")
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="buy_founder_pack", description="Purchase a Founder Pack")
+    @app_commands.command(name="buy_pack", description="Purchase a Music Legends Pack")
     @app_commands.choices(pack_type=[
-        app_commands.Choice(name="Black Pack", value="founder_black"),
-        app_commands.Choice(name="Silver Pack", value="founder_silver")
+        app_commands.Choice(name="Black Pack - $6.99", value="founder_black"),
+        app_commands.Choice(name="Silver Pack - $4.99", value="founder_silver")
     ])
-    async def buy_founder_pack(self, interaction: Interaction, pack_type: str):
-        """Purchase a Founder Pack"""
+    async def buy_pack(self, interaction: Interaction, pack_type: str):
+        """Purchase a pack"""
         user_id = interaction.user.id
         
         # Check rate limit
@@ -121,13 +121,13 @@ class FounderShop(commands.Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="open_founder_pack", description="Open a Founder Pack (requires purchase)")
+    @app_commands.command(name="open_pack", description="Open a Music Legends Pack (requires purchase)")
     @app_commands.choices(pack_type=[
         app_commands.Choice(name="Black Pack", value="founder_black"),
         app_commands.Choice(name="Silver Pack", value="founder_silver")
     ])
-    async def open_founder_pack(self, interaction: Interaction, pack_type: str):
-        """Open a Founder Pack through queue system"""
+    async def open_pack_command(self, interaction: Interaction, pack_type: str):
+        """Open a purchased pack through queue system"""
         user_id = interaction.user.id
         
         # Check rate limit
@@ -143,7 +143,7 @@ class FounderShop(commands.Cog):
             embed = discord.Embed(
                 title="❌ No Pack Available",
                 description="You don't have this pack available to open.\n"
-                          f"Use `/buy_founder_pack` to purchase a {pack_type.replace('_', ' ').title()}!",
+                          f"Use `/buy_pack` to purchase a {pack_type.replace('_', ' ').title()}!",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -158,7 +158,7 @@ class FounderShop(commands.Cog):
             )
             
             embed = discord.Embed(
-                title="🎁 Opening Founder Pack",
+                title="🎁 Opening Pack",
                 description=f"Your {pack_type.replace('_', ' ').title()} is being opened...",
                 color=discord.Color.purple()
             )
@@ -179,7 +179,7 @@ class FounderShop(commands.Cog):
                 inline=False
             )
             
-            embed.set_footer(text="Founder Pack • Queue Processing • Validated")
+            embed.set_footer(text="Pack • Queue Processing • Validated")
             
             await interaction.response.send_message(embed=embed)
             
@@ -197,13 +197,13 @@ class FounderShop(commands.Cog):
         # For now, return False (no packs owned)
         return False
     
-    @app_commands.command(name="founder_pack_info", description="Get detailed information about Founder Packs")
+    @app_commands.command(name="pack_info", description="Get detailed information about Music Legends Packs")
     @app_commands.choices(pack_type=[
         app_commands.Choice(name="Black Pack", value="founder_black"),
         app_commands.Choice(name="Silver Pack", value="founder_silver")
     ])
-    async def founder_pack_info(self, interaction: Interaction, pack_type: str):
-        """Get detailed information about a specific Founder Pack"""
+    async def pack_info_command(self, interaction: Interaction, pack_type: str):
+        """Get detailed pack information about a specific pack"""
         pack_data = founder_packs.get_pack_display_data(pack_type)
         
         if not pack_data:

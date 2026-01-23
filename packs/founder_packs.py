@@ -27,7 +27,7 @@ class FounderPacks:
             self.PACK_BLACK: PackConfig(
                 name="Black Pack",
                 identifier=self.PACK_BLACK,
-                price_cents=999,  # $9.99
+                price_cents=699,  # $6.99
                 card_count=5,
                 primary_label="Gold Guaranteed",
                 subtitle="5 Cards • 1 Gold+ Minimum",
@@ -52,7 +52,7 @@ class FounderPacks:
             self.PACK_SILVER: PackConfig(
                 name="Silver Pack",
                 identifier=self.PACK_SILVER,
-                price_cents=699,  # $6.99
+                price_cents=499,  # $4.99
                 card_count=5,
                 primary_label="Gold Possible",
                 subtitle="5 Cards • Standard Odds",
