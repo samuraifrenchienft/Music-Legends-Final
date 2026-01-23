@@ -41,12 +41,12 @@ class Bot(commands.Bot):
         
         # Load cogs
         cogs = [
-            'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game, pack_add_artist_smart
+            'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
+            'cogs.card_game',                 # Complete pack creation system with Spotify integration
             'cogs.trading',                   # Trading system
             'cogs.founder_shop',              # Pack shop (Silver/Black packs)
             'cogs.server_revenue_commands',   # Server revenue tracking
             'cogs.wallet_connect_commands'    # Wallet connect with exact UX copy (NFT boosts disabled until ready)
-            # Note: card_game, gameplay, packs, and start_game removed - all essential commands now in essential_commands
         ]
         
         for cog in cogs:
