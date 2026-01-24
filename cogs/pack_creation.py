@@ -561,11 +561,139 @@ class PackCreation(commands.Cog):
             print(f"❌ Database error finalizing pack: {e}")
             raise e
 
-    @app_commands.command(name="test_pack", description="Test if pack creation cog is loaded")
-    async def test_pack(self, interaction: Interaction):
-        """Test command to verify cog is loaded"""
-        await interaction.response.send_message("✅ Pack creation cog is working!", ephemeral=True)
+class HeroConfirmView(discord.ui.View):
+    def __init__(self, cog, video_data, hero_card, youtube_url):
+        super().__init__(timeout=180)  # 3 minute timeout
+        self.cog = cog
+        self.video_data = video_data
+        self.hero_card = hero_card
+        self.youtube_url = youtube_url
     
+    @discord.ui.button(label="✅ Yes, create pack", style=discord.ButtonStyle.success)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle hero confirmation - generate additional cards and show pack preview"""
+        # 4. Generate Additional Cards
+        try:
+            additional_cards = await self.cog.generate_additional_cards(self.video_data)
+            
+            # 5.1 Present full pack for acceptance
+            pack_embed = discord.Embed(
+                title="📦 Gold Pack Preview",
+                description="Review your pack contents:",
+                color=discord.Color.gold()
+            )
+            pack_embed.set_thumbnail(url=self.video_data.get("thumbnail", ""))
+            
+            # Hero card
+            pack_embed.add_field(
+                name="🌟 HERO CARD",
+                value=f"**{self.hero_card['name']}**\n👁️ {self.video_data['views']:,} views\n⭐ Gold",
+                inline=False
+            )
+            
+            # Additional cards
+            for i, card in enumerate(additional_cards, 1):
+                rarity_emoji = {"Common": "⚪", "Rare": "🔵", "Epic": "🟣", "Legendary": "🔴"}.get(card.get('rarity', 'Common'), "⚪")
+                pack_embed.add_field(
+                    name=f"{i}. {rarity_emoji} {card['name']}",
+                    value=f"👁️ {card.get('views', 0):,} views\n⭐ {card.get('rarity', 'Common')}",
+                    inline=False
+                )
+            
+            # 5.2 Create pack review view with accept/regenerate buttons
+            pack_review_view = PackReviewView(self.cog, self.video_data, self.hero_card, additional_cards, self.youtube_url)
+            
+            await interaction.response.edit_message(embed=pack_embed, view=pack_review_view)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error generating additional cards: {e}", ephemeral=True)
+    
+    @discord.ui.button(label="❌ No, cancel", style=discord.ButtonStyle.danger)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle cancellation"""
+        await interaction.response.edit_message(content="❌ Pack creation cancelled.", embed=None, view=None)
+
+class PackReviewView(discord.ui.View):
+    def __init__(self, cog, video_data, hero_card, additional_cards, youtube_url):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.video_data = video_data
+        self.hero_card = hero_card
+        self.additional_cards = additional_cards
+        self.youtube_url = youtube_url
+        self.regenerate_count = 0
+    
+    @discord.ui.button(label="✅ Accept Pack", style=discord.ButtonStyle.success)
+    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle pack acceptance - finalize and store pack"""
+        # 6.1 Finalize Pack & Store
+        try:
+            pack_id = await self.cog.finalize_gold_pack(
+                interaction.user.id,
+                self.hero_card,
+                self.additional_cards,
+                self.youtube_url
+            )
+            
+            # 6.3 Notify success
+            success_embed = discord.Embed(
+                title="✅ Gold Pack Created!",
+                description=f"Pack ID: `{pack_id}` is now LIVE in Marketplace.",
+                color=discord.Color.green()
+            )
+            success_embed.set_footer(text=f"Created by {interaction.user.display_name}")
+            
+            await interaction.response.edit_message(embed=success_embed, view=None)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error finalizing pack: {e}", ephemeral=True)
+    
+    @discord.ui.button(label="🔄 Regenerate", style=discord.ButtonStyle.secondary)
+    async def regenerate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle pack regeneration - generate new additional cards"""
+        if self.regenerate_count >= 3:
+            await interaction.response.send_message("❌ Maximum regenerations reached (3). Please accept the current pack.", ephemeral=True)
+            return
+        
+        self.regenerate_count += 1
+        
+        # Generate new cards
+        try:
+            new_additional_cards = await self.cog.generate_additional_cards(self.video_data)
+            
+            # Update embed with new cards
+            updated_embed = discord.Embed(
+                title="📦 Gold Pack Preview (Regenerated)",
+                description="Review your new pack contents:",
+                color=discord.Color.gold()
+            )
+            updated_embed.set_thumbnail(url=self.video_data.get("thumbnail", ""))
+            
+            # Hero card (unchanged)
+            updated_embed.add_field(
+                name="🌟 HERO CARD",
+                value=f"**{self.hero_card['name']}**\n👁️ {self.video_data['views']:,} views\n⭐ Gold",
+                inline=False
+            )
+            
+            # New additional cards
+            for i, card in enumerate(new_additional_cards, 1):
+                rarity_emoji = {"Common": "⚪", "Rare": "🔵", "Epic": "🟣", "Legendary": "🔴"}.get(card.get('rarity', 'Common'), "⚪")
+                updated_embed.add_field(
+                    name=f"{i}. {rarity_emoji} {card['name']}",
+                    value=f"👁️ {card.get('views', 0):,} views\n⭐ {card.get('rarity', 'Common')}",
+                    inline=False
+                )
+            
+            # Update view with new cards
+            new_view = PackReviewView(self.cog, self.video_data, self.hero_card, new_additional_cards, self.youtube_url)
+            new_view.regenerate_count = self.regenerate_count
+            
+            await interaction.response.edit_message(embed=updated_embed, view=new_view)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error regenerating cards: {e}", ephemeral=True)
+
     @app_commands.command(name="debug_commands", description="Debug - show all commands in this cog")
     async def debug_commands(self, interaction: Interaction):
         """Debug command to show all commands"""
