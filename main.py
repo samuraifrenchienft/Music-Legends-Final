@@ -1,22 +1,8 @@
 import json
 import os
 import discord
-import asyncio
 from dotenv import load_dotenv
 from discord.ext import commands
-
-print("🔥 Starting bot imports...")
-try:
-    from infrastructure import infrastructure
-    print("✅ Infrastructure imported")
-except Exception as e:
-    print(f"❌ Infrastructure import failed: {e}")
-
-try:
-    from scheduler.jobs import init_cron
-    print("✅ Scheduler imported")
-except Exception as e:
-    print(f"❌ Scheduler import failed: {e}")
 
 # Load environment variables
 if os.getenv("REDIS_URL") is None or os.getenv("BOT_TOKEN") is None:
@@ -41,16 +27,7 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
-        print("🚀 setup_hook starting...")
-        
-        # Skip infrastructure to prevent hanging
-        print("⚠️ Skipping infrastructure initialization to prevent container freeze")
-        
-        # Skip cron service completely - causes Redis blocking
-        print("⚠️ Skipping cron service to prevent Redis blocking")
-        
-        # Skip queue processors to prevent hanging
-        print("⚠️ Skipping queue processors to prevent container freeze")
+        print("🚀 Bot starting - loading cogs...")
         
         # Load cogs
         cogs = [
@@ -86,31 +63,15 @@ class Bot(commands.Bot):
             print(f"❌ Command sync failed (HTTPException): {e}")
 
     async def on_ready(self):
-        print(f'Bot is ready!')
+        print(f'✅ Bot is ready!')
         print(f'Logged in as: {self.user.name}')
         print(f'Bot ID: {self.user.id}')
         print(f'Connected to {len(self.guilds)} servers')
-        print("Bot is ready!")
         
-        # Show infrastructure status
-        status = infrastructure.get_status()
-        print(f'Infrastructure status: {status}')
-        
-        # Show cron job status
-        from scheduler.cron import cron_service
-        cron_status = cron_service.get_job_status()
-        print(f'Cron jobs status: {cron_status}')
-        
-        await self.change_presence(activity=discord.Activity(name="with slash commands."))
+        await self.change_presence(activity=discord.Activity(name="Music Legends"))
 
     async def close(self):
         """Cleanup when bot shuts down"""
-        await infrastructure.shutdown()
-        
-        # Stop cron service
-        from scheduler.cron import cron_service
-        cron_service.stop()
-        
         print("Bot shutdown complete")
 
 if __name__ == "__main__":
