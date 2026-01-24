@@ -98,6 +98,35 @@ class DatabaseManager:
                 )
             """)
             
+            # Card generation log (duplicate prevention)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_generation_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    hero_artist TEXT NOT NULL,
+                    hero_song TEXT NOT NULL,
+                    generated_youtube_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create index for fast duplicate lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_card_generation_lookup 
+                ON card_generation_log(hero_artist, hero_song)
+            """)
+            
+            # Marketplace table (pack listings)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pack_id TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    stock TEXT DEFAULT 'unlimited',
+                    FOREIGN KEY (pack_id) REFERENCES creator_packs(pack_id)
+                )
+            """)
+            
             # Match history
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS matches (

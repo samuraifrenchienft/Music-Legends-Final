@@ -86,8 +86,8 @@ class AdminPackCreation(commands.Cog):
             "description": snippet.get("description", "")[:200]
         }
     
-    async def get_related_videos(self, video_id: str, exclude_ids: List[str], max_results: int = 4) -> List[Dict[str, Any]]:
-        """Get related videos - async safe"""
+    async def get_related_videos(self, video_id: str, exclude_ids: List[str], max_results: int = 50) -> List[Dict[str, Any]]:
+        """Get related videos pool - async safe"""
         if not self.youtube:
             return []
         
@@ -100,7 +100,8 @@ class AdminPackCreation(commands.Cog):
                     relatedToVideoId=video_id,
                     part="snippet",
                     type="video",
-                    maxResults=max_results + len(exclude_ids)
+                    videoCategoryId="10",
+                    maxResults=max_results
                 )
                 return request.execute()
             except Exception as e:
@@ -115,7 +116,7 @@ class AdminPackCreation(commands.Cog):
         related = []
         for item in result["items"]:
             vid_id = item["id"]["videoId"]
-            if vid_id not in exclude_ids and len(related) < max_results:
+            if vid_id not in exclude_ids:
                 snippet = item["snippet"]
                 related.append({
                     "video_id": vid_id,
@@ -126,6 +127,53 @@ class AdminPackCreation(commands.Cog):
                 })
         
         return related
+    
+    def get_previously_generated_ids(self, hero_artist: str, hero_song: str) -> List[str]:
+        """Get list of previously generated YouTube IDs for this hero to prevent duplicates"""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT generated_youtube_id FROM card_generation_log
+                WHERE hero_artist = ? AND hero_song = ?
+            """, (hero_artist, hero_song))
+            return [row[0] for row in cursor.fetchall()]
+    
+    def log_generated_cards(self, hero_artist: str, hero_song: str, youtube_ids: List[str]):
+        """Log generated cards to prevent future duplicates"""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            for youtube_id in youtube_ids:
+                cursor.execute("""
+                    INSERT INTO card_generation_log (hero_artist, hero_song, generated_youtube_id)
+                    VALUES (?, ?, ?)
+                """, (hero_artist, hero_song, youtube_id))
+            conn.commit()
+    
+    def select_random_unique_cards(self, available_pool: List[Dict], count: int = 4) -> List[Dict]:
+        """Select random unique cards from available pool"""
+        import random
+        
+        if len(available_pool) < count:
+            print(f"⚠️ Only {len(available_pool)} cards available, need {count}")
+            return available_pool
+        
+        # Shuffle pool
+        shuffled = available_pool.copy()
+        random.shuffle(shuffled)
+        
+        # Select first 4 unique cards
+        selected = []
+        seen_ids = set()
+        
+        for card in shuffled:
+            if card["video_id"] not in seen_ids:
+                selected.append(card)
+                seen_ids.add(card["video_id"])
+                
+                if len(selected) == count:
+                    break
+        
+        return selected
     
     async def get_video_stats(self, video_id: str) -> Optional[Dict[str, Any]]:
         """Get video statistics - async safe"""
@@ -237,90 +285,159 @@ class AdminPackCreation(commands.Cog):
     async def _create_pack_for_user(self, interaction: Interaction, song_query: str):
         """Internal method to create pack after payment or dev bypass"""
         
-        # Search for specific song
-        hero_song = await self.search_specific_song(song_query)
-        
-        if not hero_song:
-            await interaction.followup.send(f"❌ Could not find song: {song_query}")
-            return
-        
-        # Get hero song stats
-        hero_stats = await self.get_video_stats(hero_song["video_id"])
-        if not hero_stats:
-            hero_stats = {"views": 0, "likes": 0, "comments": 0}
-        
-        # Create hero card
-        hero_card = await self.create_song_card(hero_song, hero_stats)
-        hero_card["is_hero"] = True
-        
-        # Get 4 related videos
-        related_songs = await self.get_related_videos(
-            hero_song["video_id"],
-            exclude_ids=[hero_song["video_id"]],
-            max_results=4
-        )
-        
-        # Create cards for related songs
-        cards = [hero_card]
-        for song in related_songs:
-            stats = await self.get_video_stats(song["video_id"])
-            if not stats:
-                stats = {"views": 0, "likes": 0, "comments": 0}
+        try:
+            # Parse artist and song from query
+            parts = song_query.split("-", 1)
+            if len(parts) == 2:
+                hero_artist = parts[0].strip()
+                hero_song_name = parts[1].strip()
+            else:
+                hero_artist = "Unknown"
+                hero_song_name = song_query.strip()
             
-            card = await self.create_song_card(song, stats)
-            cards.append(card)
-        
-        # Create pack in database
-        pack_id = f"pack_{uuid.uuid4().hex[:8]}"
-        cards_json = json.dumps(cards)
-        
-        with self.db.get_connection() as conn:
-            cursor = conn.cursor()
+            # STEP 2: Search for specific song
+            hero_song = await self.search_specific_song(song_query)
             
-            # Insert pack
-            cursor.execute("""
-                INSERT INTO creator_packs (pack_id, creator_id, name, description, pack_size, status, cards_data, price)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                pack_id,
-                interaction.user.id,
-                f"{hero_song['title']} Pack",
-                f"Featured: {hero_song['title']} + 4 related songs",
-                5,
-                "live",
-                cards_json,
-                6.99
-            ))
+            if not hero_song:
+                await interaction.followup.send(f"❌ Could not find song: {song_query}")
+                return
             
-            # Add pack to creator's inventory
-            cursor.execute("""
-                INSERT INTO user_packs (user_id, pack_id, acquired_at)
-                VALUES (?, ?, datetime('now'))
-            """, (interaction.user.id, pack_id))
+            # Get hero song stats
+            hero_stats = await self.get_video_stats(hero_song["video_id"])
+            if not hero_stats:
+                hero_stats = {"views": 0, "likes": 0, "comments": 0}
             
-            conn.commit()
-        
-        # Return pack preview
-        embed = discord.Embed(
-            title="✅ Pack Created Successfully",
-            description=f"**{hero_song['title']} Pack**\n\nPack added to your inventory and listed in marketplace for $6.99",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="Pack ID", value=pack_id, inline=False)
-        embed.add_field(
-            name="🌟 Featured Song",
-            value=f"{hero_card['name']}\n👁️ {hero_card['views']:,} views | {hero_card['rarity'].title()}",
-            inline=False
-        )
-        
-        for i, card in enumerate(cards[1:], 1):
+            # Create hero card
+            hero_card = await self.create_song_card(hero_song, hero_stats)
+            hero_card["is_hero"] = True
+            
+            # STEP 3: Get related videos pool (50 videos)
+            related_pool = await self.get_related_videos(
+                hero_song["video_id"],
+                exclude_ids=[hero_song["video_id"]],
+                max_results=50
+            )
+            
+            if len(related_pool) < 4:
+                await interaction.followup.send(
+                    f"❌ Could not find enough related videos (found {len(related_pool)}, need 4)"
+                )
+                return
+            
+            # STEP 4: Check previously generated cards
+            previously_generated = self.get_previously_generated_ids(hero_artist, hero_song_name)
+            
+            # Filter out previously generated
+            available_pool = [
+                card for card in related_pool 
+                if card["video_id"] not in previously_generated
+            ]
+            
+            # If not enough unique cards, allow duplicates with warning
+            if len(available_pool) < 4:
+                print(f"⚠️ Only {len(available_pool)} unique cards, allowing duplicates")
+                available_pool = related_pool
+            
+            # STEP 5: Select 4 random unique cards
+            selected_cards = self.select_random_unique_cards(available_pool, count=4)
+            
+            if len(selected_cards) < 4:
+                await interaction.followup.send(
+                    f"❌ Could not select 4 unique cards (only found {len(selected_cards)})"
+                )
+                return
+            
+            # Get stats for selected cards
+            cards = [hero_card]
+            for song in selected_cards:
+                stats = await self.get_video_stats(song["video_id"])
+                if not stats:
+                    stats = {"views": 0, "likes": 0, "comments": 0}
+                
+                card = await self.create_song_card(song, stats)
+                cards.append(card)
+            
+            # STEP 6: Create pack in database with transaction
+            pack_id = f"pack_{uuid.uuid4().hex[:8]}"
+            cards_json = json.dumps(cards)
+            
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                try:
+                    # Insert pack
+                    cursor.execute("""
+                        INSERT INTO creator_packs (pack_id, creator_id, name, description, pack_size, status, cards_data, price)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        pack_id,
+                        interaction.user.id,
+                        f"{hero_song['title']} Pack",
+                        f"Featured: {hero_song['title']} + 4 related songs",
+                        5,
+                        "live",
+                        cards_json,
+                        6.99
+                    ))
+                    
+                    # STEP 7: Add pack to creator's inventory
+                    cursor.execute("""
+                        INSERT INTO user_packs (user_id, pack_id, acquired_at)
+                        VALUES (?, ?, datetime('now'))
+                    """, (interaction.user.id, pack_id))
+                    
+                    # STEP 8: List in marketplace
+                    cursor.execute("""
+                        INSERT INTO marketplace (pack_id, price, stock)
+                        VALUES (?, ?, ?)
+                    """, (pack_id, 6.99, "unlimited"))
+                    
+                    # Log generated cards to prevent duplicates
+                    generated_ids = [card["youtube_video_id"] for card in cards[1:] if "youtube_video_id" in card]
+                    self.log_generated_cards(hero_artist, hero_song_name, generated_ids)
+                    
+                    conn.commit()
+                    print(f"✅ Pack {pack_id} created successfully")
+                    
+                except Exception as e:
+                    conn.rollback()
+                    print(f"❌ Database error: {e}")
+                    await interaction.followup.send(f"❌ Failed to create pack: {e}")
+                    return
+            
+            # STEP 9: Send confirmation
+            is_dev = self.is_dev(interaction.user.id)
+            
+            embed = discord.Embed(
+                title="🎵 Gold Pack Created!",
+                description=f"**{hero_song['title']} Pack**\n\nPack added to your inventory and listed in marketplace for $6.99",
+                color=discord.Color.gold()
+            )
+            
+            if is_dev:
+                embed.set_footer(text="✨ Dev: Payment bypassed")
+            
+            embed.add_field(name="Pack ID", value=pack_id, inline=False)
+            embed.set_thumbnail(url=hero_card.get("image_url", ""))
+            
             embed.add_field(
-                name=f"{i}. {card['name']}",
-                value=f"👁️ {card['views']:,} views | {card['rarity'].title()}",
+                name="🌟 Hero Card",
+                value=f"{hero_card['name']}\n👁️ {hero_card['views']:,} views | {hero_card['rarity'].title()}",
                 inline=False
             )
-        
-        await interaction.followup.send(embed=embed)
+            
+            for i, card in enumerate(cards[1:], 1):
+                embed.add_field(
+                    name=f"{i}. {card['name']}",
+                    value=f"👁️ {card['views']:,} views | {card['rarity'].title()}",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            print(f"❌ Error creating pack: {e}")
+            await interaction.followup.send(f"❌ Error creating pack: {e}")
 
 
 class SongSelectionView(ui.View):
