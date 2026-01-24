@@ -209,6 +209,109 @@ class DatabaseManager:
                 )
             """)
             
+            # ===== NEW RELATIONAL SCHEMA =====
+            
+            # 1. YouTubeVideos - Stores raw metadata from YouTube
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS youtube_videos (
+                    video_id VARCHAR PRIMARY KEY,
+                    title VARCHAR,
+                    thumbnail_url VARCHAR,
+                    view_count INTEGER DEFAULT 0,
+                    like_count INTEGER DEFAULT 0,
+                    channel_title VARCHAR,
+                    channel_id VARCHAR,
+                    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # 2. CardDefinitions - Template for cards derived from YouTube
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_definitions (
+                    card_def_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_video_id VARCHAR,
+                    card_name VARCHAR NOT NULL,
+                    rarity VARCHAR DEFAULT 'Common',
+                    power INTEGER DEFAULT 50,
+                    attributes TEXT, -- JSON for flexible stats
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (source_video_id) REFERENCES youtube_videos(video_id)
+                )
+            """)
+            
+            # 3. CardInstances - Specific owned cards in user collections
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_instances (
+                    instance_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_def_id INTEGER,
+                    owner_user_id VARCHAR,
+                    serial_number VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (card_def_id) REFERENCES card_definitions(card_def_id),
+                    FOREIGN KEY (owner_user_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # 4. Packs - Represents created packs
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS packs (
+                    pack_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    creator_id VARCHAR,
+                    main_hero_instance_id INTEGER,
+                    pack_type VARCHAR DEFAULT 'gold',
+                    status VARCHAR DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (creator_id) REFERENCES users(user_id),
+                    FOREIGN KEY (main_hero_instance_id) REFERENCES card_instances(instance_id)
+                )
+            """)
+            
+            # 5. PackContents - Associates cards with packs
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pack_contents (
+                    pack_id INTEGER,
+                    instance_id INTEGER,
+                    position INTEGER, -- 1 for hero, 2-5 for additional cards
+                    PRIMARY KEY (pack_id, instance_id),
+                    FOREIGN KEY (pack_id) REFERENCES packs(pack_id),
+                    FOREIGN KEY (instance_id) REFERENCES card_instances(instance_id)
+                )
+            """)
+            
+            # 6. MarketplaceItems - Published packs in marketplace
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_items (
+                    item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pack_id INTEGER,
+                    price DECIMAL(10,2) DEFAULT 9.99,
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1,
+                    stock VARCHAR DEFAULT 'unlimited',
+                    FOREIGN KEY (pack_id) REFERENCES packs(pack_id)
+                )
+            """)
+            
+            # 7. Transactions - Track marketplace transactions
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS transactions (
+                    tx_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id INTEGER,
+                    buyer_id VARCHAR,
+                    seller_id VARCHAR,
+                    tx_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    price DECIMAL(10,2),
+                    FOREIGN KEY (item_id) REFERENCES marketplace_items(item_id),
+                    FOREIGN KEY (buyer_id) REFERENCES users(user_id),
+                    FOREIGN KEY (seller_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Add indexes for performance
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_card_instances_owner ON card_instances(owner_user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_pack_contents_pack ON pack_contents(pack_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_marketplace_active ON marketplace_items(is_active)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_buyer ON transactions(buyer_id)")
+            
             # Pack purchases table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS pack_purchases (

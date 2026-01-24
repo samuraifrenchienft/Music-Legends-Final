@@ -448,78 +448,118 @@ class PackCreation(commands.Cog):
         return additional_cards
     
     async def finalize_gold_pack(self, user_id: int, hero_card: Dict, additional_cards: List[Dict], youtube_url: str) -> str:
-        """6.1 Finalize Pack & Store"""
-        
-        # Combine all cards
-        all_cards = [hero_card] + additional_cards
-        
-        # Database transaction
-        pack_id = f"gold_pack_{uuid.uuid4().hex[:8]}"
-        cards_json = json.dumps(all_cards)
+        """6.1 Finalize Pack & Store using new relational schema"""
         
         try:
             import sqlite3
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # 6.1 Save the pack contents in the database
-                cursor.execute("""
-                    INSERT INTO creator_packs (
-                        pack_id, creator_id, name, description, pack_size, 
-                        status, cards_data, price, pack_type
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    pack_id,
-                    user_id,
-                    f"{hero_card['name']} Gold Pack",
-                    f"Featured: {hero_card['name']} + 4 additional cards",
-                    5,
-                    "live",  # 6.1 status: live
-                    cards_json,
-                    9.99,   # Gold pack price
-                    "gold"
-                ))
+                # 1. Store YouTube video data
+                self.db.store_youtube_video({
+                    "video_id": hero_card["youtube_video_id"],
+                    "title": hero_card["name"],
+                    "thumbnail": hero_card.get("image_url", ""),
+                    "views": hero_card.get("views", 0),
+                    "likes": hero_card.get("likes", 0),
+                    "artist": hero_card["artist"],
+                    "channel_id": hero_card.get("channel_id", "")
+                })
                 
-                # 6.2 Publish the pack entry into marketplace subsystem
-                cursor.execute("""
-                    INSERT INTO marketplace (pack_id, price, stock, visibility, filters)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    pack_id,
-                    9.99,
-                    "unlimited",
-                    "public",  # 6.2 Visibility flags
-                    json.dumps({
-                        "rarity": "gold",
-                        "video_attributes": {
-                            "hero_title": hero_card["name"],
-                            "hero_artist": hero_card["artist"]
+                # 2. Create card definitions and instances
+                all_instances = []
+                
+                # Hero card
+                hero_card_def_id = self.db.create_card_definition(
+                    hero_card["youtube_video_id"],
+                    hero_card["name"],
+                    "Gold",  # Hero is always gold rarity
+                    hero_card.get("impact", 80),
+                    {
+                        "skill": hero_card.get("skill", 80),
+                        "longevity": hero_card.get("longevity", 80),
+                        "culture": hero_card.get("culture", 80),
+                        "hype": hero_card.get("hype", 80),
+                        "views": hero_card.get("views", 0),
+                        "likes": hero_card.get("likes", 0)
+                    }
+                )
+                
+                hero_instance_id = self.db.create_card_instance(
+                    hero_card_def_id,
+                    str(user_id),
+                    f"HERO_{hero_card['youtube_video_id'][:8]}"
+                )
+                all_instances.append(hero_instance_id)
+                
+                # Additional cards with specified rarity distribution
+                rarity_distribution = ["Legendary", "Epic", "Epic", "Rare"]
+                
+                for i, (card, rarity) in enumerate(zip(additional_cards, rarity_distribution)):
+                    # Store YouTube video if not fallback
+                    if not card["youtube_video_id"].startswith("fallback"):
+                        self.db.store_youtube_video({
+                            "video_id": card["youtube_video_id"],
+                            "title": card["name"],
+                            "thumbnail": card.get("image_url", ""),
+                            "views": card.get("views", 0),
+                            "likes": card.get("likes", 0),
+                            "artist": card["artist"],
+                            "channel_id": card.get("channel_id", "")
+                        })
+                    
+                    # Create card definition
+                    card_def_id = self.db.create_card_definition(
+                        card["youtube_video_id"],
+                        card["name"],
+                        rarity,  # Use specified rarity
+                        card.get("impact", 70 if rarity == "Legendary" else 60),
+                        {
+                            "skill": card.get("skill", 70 if rarity == "Legendary" else 60),
+                            "longevity": card.get("longevity", 70 if rarity == "Legendary" else 60),
+                            "culture": card.get("culture", 70 if rarity == "Legendary" else 60),
+                            "hype": card.get("hype", 70 if rarity == "Legendary" else 60),
+                            "views": card.get("views", 0),
+                            "likes": card.get("likes", 0)
                         }
-                    })  # 6.2 Filters
-                ))
+                    )
+                    
+                    # Create card instance
+                    instance_id = self.db.create_card_instance(
+                        card_def_id,
+                        str(user_id),
+                        f"{rarity.upper()}_{card['youtube_video_id'][:8]}"
+                    )
+                    all_instances.append(instance_id)
                 
-                # Add to creator's inventory
-                cursor.execute("""
-                    INSERT INTO user_packs (user_id, pack_id, acquired_at)
-                    VALUES (?, ?, datetime('now'))
-                """, (user_id, pack_id))
+                # 3. Create pack
+                pack_id = self.db.create_pack(str(user_id), hero_instance_id, "gold")
                 
-                # Log generation for duplicate prevention
+                # 4. Add cards to pack (hero at position 1, others at positions 2-5)
+                self.db.add_card_to_pack(pack_id, hero_instance_id, 1)  # Hero position
+                
+                for i, instance_id in enumerate(all_instances[1:], 2):  # Additional cards start at position 2
+                    self.db.add_card_to_pack(pack_id, instance_id, i)
+                
+                # 5. Publish to marketplace
+                marketplace_item_id = self.db.publish_pack_to_marketplace(pack_id, 9.99)
+                
+                # 6. Log generation for duplicate prevention (legacy compatibility)
                 for card in additional_cards:
                     if card.get("youtube_video_id") and not card["youtube_video_id"].startswith("fallback"):
                         cursor.execute("""
-                            INSERT INTO card_generation_log (hero_artist, hero_song, generated_youtube_id)
+                            INSERT OR IGNORE INTO card_generation_log (hero_artist, hero_song, generated_youtube_id)
                             VALUES (?, ?, ?)
                         """, (hero_card["artist"], hero_card["name"], card["youtube_video_id"]))
                 
                 conn.commit()
-                print(f"✅ Gold pack {pack_id} finalized and stored")
+                print(f"✅ Gold pack {pack_id} finalized with relational schema")
+                
+                return str(pack_id)
                 
         except Exception as e:
             print(f"❌ Database error finalizing pack: {e}")
             raise e
-        
-        return pack_id
 
     @app_commands.command(name="test_pack", description="Test if pack creation cog is loaded")
     async def test_pack(self, interaction: Interaction):
