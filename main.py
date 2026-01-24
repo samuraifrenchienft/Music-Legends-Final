@@ -44,9 +44,11 @@ class Bot(commands.Bot):
         for cog in cogs:
             try:
                 await self.load_extension(cog)
-                print(f'Loaded extension: {cog}')
+                print(f'✅ Loaded extension: {cog}')
             except Exception as e:
-                print(f'Failed to load extension {cog}: {e}')
+                print(f'❌ Failed to load extension {cog}: {e}')
+                print(f'⚠️ Continuing without {cog} - bot will still run')
+                # Continue loading other cogs - don't break the whole bot
 
         test_server_id = os.getenv("TEST_SERVER_ID")
         print(f"TEST_SERVER_ID: {test_server_id}")
@@ -68,8 +70,13 @@ class Bot(commands.Bot):
                 print(f"✅ Synced {len(synced)} commands to test server")
         except discord.Forbidden as e:
             print(f"❌ Command sync failed (Forbidden): {e}")
+            print("⚠️ Bot will still run with basic commands")
         except discord.HTTPException as e:
             print(f"❌ Command sync failed (HTTPException): {e}")
+            print("⚠️ Bot will still run with basic commands")
+        except Exception as e:
+            print(f"❌ Unexpected error during sync: {e}")
+            print("⚠️ Bot will still run with basic commands")
 
     async def on_ready(self):
         print(f'✅ Bot is ready!')
@@ -89,5 +96,23 @@ class Bot(commands.Bot):
         print("Bot shutdown complete")
 
 if __name__ == "__main__":
-    bot = Bot()
-    bot.run(os.getenv("BOT_TOKEN").strip())
+    try:
+        token = os.getenv("BOT_TOKEN")
+        if not token:
+            print("❌ No BOT_TOKEN found in environment variables")
+            print("⚠️ Please set BOT_TOKEN and restart")
+            exit(1)
+        
+        token = token.strip()
+        if not token:
+            print("❌ BOT_TOKEN is empty")
+            print("⚠️ Please set valid BOT_TOKEN and restart")
+            exit(1)
+        
+        print(f"🚀 Starting bot with token: {token[:10]}...")
+        bot = Bot()
+        bot.run(token)
+    except Exception as e:
+        print(f"❌ Bot startup failed: {e}")
+        print("⚠️ Bot will attempt to restart...")
+        # The container/service manager will restart the bot

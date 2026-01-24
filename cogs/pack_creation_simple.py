@@ -24,6 +24,7 @@ class PackCreationSimple(commands.Cog):
             print("✅ Database initialized for simple pack creation")
         except Exception as e:
             print(f"❌ Failed to initialize database: {e}")
+            print("⚠️ Pack creation will be disabled but bot will continue running")
             self.db = None
     
     @app_commands.command(name="create_simple_pack", description="Create a simple test pack")
@@ -34,7 +35,7 @@ class PackCreationSimple(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         if not self.db:
-            await interaction.followup.send("❌ Database not available", ephemeral=True)
+            await interaction.followup.send("❌ Database not available - pack creation temporarily disabled", ephemeral=True)
             return
         
         # Create simple test cards
