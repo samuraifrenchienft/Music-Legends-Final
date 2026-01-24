@@ -553,4 +553,5 @@ class CardEconomyManager:
         return {'success': False, 'error': 'Failed to create upgraded card'}
 
 # Global economy manager instance
-economy_manager = None
+from database import db
+economy_manager = CardEconomyManager(db)
