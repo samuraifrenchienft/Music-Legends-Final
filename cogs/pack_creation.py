@@ -15,10 +15,16 @@ import re
 from typing import Optional, Dict, List, Any
 from googleapiclient.discovery import build
 from database import DatabaseManager
-from stripe_payments import stripe_manager
 import uuid
 import json
 import random
+
+# Try to import stripe_manager, but don't fail if it doesn't work
+try:
+    from stripe_payments import stripe_manager
+except ImportError as e:
+    print(f"⚠️ Could not import stripe_manager: {e}")
+    stripe_manager = None
 
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
 DEV_USER_IDS = [int(uid.strip()) for uid in os.getenv("DEV_USER_IDS", "").split(",") if uid.strip()]
@@ -397,6 +403,10 @@ class PackCreation(commands.Cog):
         if not is_dev:
             # Charge $9.99
             await interaction.response.defer(ephemeral=True)
+            
+            if not stripe_manager:
+                await interaction.followup.send("❌ Payment system not available")
+                return
             
             checkout = stripe_manager.create_pack_creation_checkout(
                 creator_id=interaction.user.id,
