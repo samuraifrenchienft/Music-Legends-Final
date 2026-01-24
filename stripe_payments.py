@@ -26,11 +26,61 @@ class StripePaymentManager:
             15: 5000   # $50.00 for Event (15 cards)
         }
         
+        # Pack creation fee
+        self.pack_creation_fee = 999  # $9.99 to create a pack
+        
         # Server-based revenue sharing (10-30% to server owner)
         # Platform gets remainder after server owner share
         
         # Stripe Connect (for server owner payouts)
         self.connect_platform_fee = 0.029  # 2.9% Stripe Connect fee
+    
+    def create_pack_creation_checkout(self, creator_id: int, song_query: str) -> Dict:
+        """Create Stripe Checkout session for pack creation ($9.99)"""
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_intent_data={
+                    'metadata': {
+                        'creator_id': str(creator_id),
+                        'song_query': song_query,
+                        'type': 'pack_creation'
+                    }
+                },
+                customer_email=None,
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': 'Pack Creation',
+                            'description': f'Create pack with featured song: {song_query}',
+                            'images': [],
+                        },
+                        'unit_amount': self.pack_creation_fee,
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url=f'https://discord.com/channels/@me',
+                cancel_url=f'https://discord.com/channels/@me',
+                metadata={
+                    'creator_id': str(creator_id),
+                    'song_query': song_query,
+                    'type': 'pack_creation'
+                }
+            )
+            
+            return {
+                'success': True,
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id,
+                'price_cents': self.pack_creation_fee
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
         
     def create_pack_publish_checkout(self, pack_id: str, creator_id: int, pack_size: int, pack_name: str) -> Dict:
         """Create Stripe Checkout session for pack publishing"""
