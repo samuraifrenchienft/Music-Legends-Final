@@ -7,18 +7,24 @@ from discord import app_commands, Interaction
 from discord.ext import commands
 import os
 import sqlite3
-from database import DatabaseManager
-from card_economy import CardEconomyManager
-from stripe_payments import StripePaymentManager
 
 class EssentialCommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        from database import DatabaseManager
         from card_economy import get_economy_manager
+        from stripe_payments import StripePaymentManager
+        
+        self.db = DatabaseManager()
         self.economy = get_economy_manager()
-        self.economy.initialize_economy_tables()  # Initialize drop tables
         self.stripe = StripePaymentManager()
+        
+        # Initialize economy tables if possible
+        try:
+            self.economy.initialize_economy_tables()
+            print("✅ Economy tables initialized")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize economy tables: {e}")
     
     @app_commands.command(name="collection", description="View your card collection")
     async def collection(self, interaction: Interaction):
