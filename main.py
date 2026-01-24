@@ -3,8 +3,19 @@ import os
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
-from infrastructure import infrastructure
-from scheduler.jobs import init_cron
+
+print("🔥 Starting bot imports...")
+try:
+    from infrastructure import infrastructure
+    print("✅ Infrastructure imported")
+except Exception as e:
+    print(f"❌ Infrastructure import failed: {e}")
+
+try:
+    from scheduler.jobs import init_cron
+    print("✅ Scheduler imported")
+except Exception as e:
+    print(f"❌ Scheduler import failed: {e}")
 
 # Load environment variables
 if os.getenv("REDIS_URL") is None or os.getenv("BOT_TOKEN") is None:
