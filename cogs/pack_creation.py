@@ -34,7 +34,10 @@ class PackCreation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
-        
+        self.youtube = None
+    
+    async def cog_load(self):
+        """Initialize YouTube API when cog loads"""
         try:
             self.youtube = build("youtube", "v3", developerKey=YOUTUBE_KEY)
             print("✅ YouTube API initialized for pack creation")
