@@ -504,7 +504,14 @@ class PackCreation(commands.Cog):
                 await interaction.followup.send(f"❌ Error fetching details: {e}", ephemeral=True)
         else:
             await interaction.followup.send("❌ YouTube API not initialized", ephemeral=True)
+    
+    @app_commands.command(name="ping_pack", description="Test if pack creation cog is loaded")
+    async def ping_pack(self, interaction: Interaction):
+        """Simple test command"""
+        await interaction.response.send_message("✅ Pack creation cog is working!", ephemeral=True)
 
 
 async def setup(bot):
-    await bot.add_cog(PackCreation(bot))
+    cog = PackCreation(bot)
+    await bot.add_cog(cog)
+    print(f"🔥 PackCreation cog added with {len([cmd for cmd in cog.walk_commands()])} commands")
