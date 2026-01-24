@@ -29,6 +29,8 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
+        print(f"🔧 DEBUG: Current commit = 79cf8ff")
+        print(f"🔧 DEBUG: Railway should deploy latest changes")
         
         # Temporarily disable async database to get basic bot working
         print("⚠️ Async database temporarily disabled - using existing database")
