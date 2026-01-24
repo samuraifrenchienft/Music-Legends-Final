@@ -11,9 +11,9 @@ class StartGameCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         from database import db
-        from card_economy import economy_manager
+        from card_economy import get_economy_manager
         self.db = db
-        self.economy = economy_manager
+        self.economy = get_economy_manager()
     
     @app_commands.command(name="start_game", description="🎮 Start Music Legends in this server!")
     async def start_game(self, interaction: Interaction):
