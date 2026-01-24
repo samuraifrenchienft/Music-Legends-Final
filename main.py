@@ -46,14 +46,8 @@ class Bot(commands.Bot):
         # Skip infrastructure to prevent hanging
         print("⚠️ Skipping infrastructure initialization to prevent container freeze")
         
-        try:
-            # Initialize and start cron service with timeout
-            job_status = await asyncio.wait_for(init_cron(), timeout=10)
-            print(f"Cron jobs initialized: {list(job_status.keys())}")
-        except asyncio.TimeoutError:
-            print("❌ Cron service timed out - skipping")
-        except Exception as e:
-            print(f"❌ Cron service failed: {e}")
+        # Skip cron service completely - causes Redis blocking
+        print("⚠️ Skipping cron service to prevent Redis blocking")
         
         # Skip queue processors to prevent hanging
         print("⚠️ Skipping queue processors to prevent container freeze")
