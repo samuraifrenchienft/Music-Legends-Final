@@ -362,107 +362,164 @@ class PackCreation(commands.Cog):
             "added_to_inventory": True  # Both pack types now add to inventory
         }
     
-    @app_commands.command(name="create_community_pack", description="[DEV ONLY] Create a community pack from YouTube URL")
-    @app_commands.describe(youtube_url="YouTube video URL (e.g., https://youtube.com/watch?v=...)")
-    async def create_community_pack(self, interaction: Interaction, youtube_url: str):
-        """Create community pack - dev only"""
+    async def generate_additional_cards(self, video_data: Dict) -> List[Dict]:
+        """Generate 4 additional cards with specified rarity distribution"""
+        # 4.1 Generate additional cards with rarity distribution:
+        # 1 Legendary, 2 Epic, 1 Rare
         
-        # Permission check
-        if not self.is_dev(interaction.user.id):
-            await interaction.response.send_message("❌ This command is dev-only", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        # Create pack
-        result = await self.create_pack(youtube_url, "community", interaction.user.id, bypass_payment=True)
-        
-        if not result["success"]:
-            await interaction.followup.send(f"❌ {result['error']}")
-            return
-        
-        # Send confirmation
-        embed = discord.Embed(
-            title="✅ Community Pack Created!",
-            description=f"**Added to your inventory**\nNow available in marketplace for $4.99",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="Pack ID", value=result["pack_id"], inline=False)
-        embed.add_field(name="🌟 Hero Song", value=f"{result['hero_card']['name']}\n👁️ {result['hero_card']['views']:,} views", inline=False)
-        
-        for i, card in enumerate(result["cards"][1:], 1):
-            embed.add_field(name=f"{i}. {card['name']}", value=f"👁️ {card['views']:,} views", inline=False)
-        
-        embed.add_field(
-            name="💡 Use Cases",
-            value="• Open it to seed your server's card economy\n• Gift cards to users with `/give_card`\n• Run contests/giveaways\n• Test features with real cards",
-            inline=False
+        # Get related videos from same channel
+        related_videos = await self.get_channel_videos(
+            video_data["channel_id"],
+            exclude_ids=[video_data["video_id"]],
+            max_results=50
         )
         
-        await interaction.followup.send(embed=embed)
+        if len(related_videos) < 4:
+            # Fallback to random generation if not enough related videos
+            return self._generate_fallback_cards(video_data)
+        
+        # Get previously generated IDs to avoid duplicates
+        import sqlite3
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT generated_youtube_id FROM card_generation_log
+                WHERE hero_artist = ? AND hero_song = ?
+            """, (video_data["artist"], video_data["title"]))
+            previously_generated = [row[0] for row in cursor.fetchall()]
+        
+        # Filter out duplicates
+        available_videos = [v for v in related_videos if v["video_id"] not in previously_generated]
+        
+        if len(available_videos) < 4:
+            available_videos = related_videos  # Allow duplicates if needed
+        
+        # Random select 4 videos
+        random.shuffle(available_videos)
+        selected_videos = available_videos[:4]
+        
+        # Get stats for selected videos
+        video_ids = [v["video_id"] for v in selected_videos]
+        stats_map = await self.get_video_stats_batch(video_ids)
+        
+        # Create cards with specified rarities
+        additional_cards = []
+        rarity_distribution = ["Legendary", "Epic", "Epic", "Rare"]
+        
+        for i, (video, target_rarity) in enumerate(zip(selected_videos, rarity_distribution)):
+            stats = stats_map.get(video["video_id"], {"views": 0, "likes": 0})
+            card = self.create_card(video, stats)
+            
+            # Override rarity to match distribution
+            card["rarity"] = target_rarity
+            additional_cards.append(card)
+        
+        return additional_cards
     
-    @app_commands.command(name="create_gold_pack", description="Create a gold pack from YouTube URL ($9.99 or dev bypass)")
-    @app_commands.describe(youtube_url="YouTube video URL (e.g., https://youtube.com/watch?v=...)")
-    async def create_gold_pack(self, interaction: Interaction, youtube_url: str):
-        """Create gold pack - anyone with payment"""
+    def _generate_fallback_cards(self, video_data: Dict) -> List[Dict]:
+        """Generate fallback cards when YouTube API fails"""
+        # Create deterministic cards based on hero video
+        base_name = video_data["title"]
+        additional_cards = []
         
-        is_dev = self.is_dev(interaction.user.id)
+        rarity_distribution = ["Legendary", "Epic", "Epic", "Rare"]
+        suffixes = ["Remix", "Live", "Acoustic", "Instrumental"]
         
-        if not is_dev:
-            # Charge $9.99
-            await interaction.response.defer(ephemeral=True)
-            
-            if not stripe_manager:
-                await interaction.followup.send("❌ Payment system not available")
-                return
-            
-            checkout = stripe_manager.create_pack_creation_checkout(
-                creator_id=interaction.user.id,
-                song_query=youtube_url
-            )
-            
-            if not checkout['success']:
-                await interaction.followup.send(f"❌ Payment error: {checkout['error']}")
-                return
-            
-            embed = discord.Embed(
-                title="💳 Pack Creation Payment",
-                description=f"**Price:** $9.99\n\nClick below to complete payment.",
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="What you get:", value="• 1 hero song card\n• 4 related song cards\n• Pack in your inventory\n• Listed in marketplace for $6.99", inline=False)
-            
-            await interaction.followup.send(
-                embed=embed,
-                view=discord.ui.View().add_item(
-                    discord.ui.Button(label="Pay $9.99", url=checkout['checkout_url'], style=discord.ButtonStyle.link)
-                )
-            )
-            return
+        for rarity, suffix in zip(rarity_distribution, suffixes):
+            card = {
+                "name": f"{base_name} ({suffix})",
+                "artist": video_data["artist"],
+                "rarity": rarity,
+                "youtube_video_id": f"fallback_{video_data['video_id']}_{suffix.lower()}",
+                "youtube_url": video_data.get("youtube_url", ""),
+                "image_url": video_data.get("thumbnail", ""),
+                "card_type": "song",
+                "era": "Modern",
+                "impact": 80 if rarity == "Legendary" else 70 if rarity == "Epic" else 60,
+                "skill": 80 if rarity == "Legendary" else 70 if rarity == "Epic" else 60,
+                "longevity": 80 if rarity == "Legendary" else 70 if rarity == "Epic" else 60,
+                "culture": 80 if rarity == "Legendary" else 70 if rarity == "Epic" else 60,
+                "hype": 80 if rarity == "Legendary" else 70 if rarity == "Epic" else 60,
+                "views": video_data.get("views", 1000000) // (2 if rarity == "Legendary" else 3 if rarity == "Epic" else 4),
+                "likes": video_data.get("likes", 50000) // (2 if rarity == "Legendary" else 3 if rarity == "Epic" else 4)
+            }
+            additional_cards.append(card)
         
-        # Dev bypass
-        await interaction.response.defer(ephemeral=True)
+        return additional_cards
+    
+    async def finalize_gold_pack(self, user_id: int, hero_card: Dict, additional_cards: List[Dict], youtube_url: str) -> str:
+        """6.1 Finalize Pack & Store"""
         
-        result = await self.create_pack(youtube_url, "gold", interaction.user.id, bypass_payment=True)
+        # Combine all cards
+        all_cards = [hero_card] + additional_cards
         
-        if not result["success"]:
-            await interaction.followup.send(f"❌ {result['error']}")
-            return
+        # Database transaction
+        pack_id = f"gold_pack_{uuid.uuid4().hex[:8]}"
+        cards_json = json.dumps(all_cards)
         
-        # Send confirmation
-        embed = discord.Embed(
-            title="🎵 Gold Pack Created!",
-            description=f"Added to your inventory and listed in marketplace for $6.99",
-            color=discord.Color.gold()
-        )
-        embed.set_footer(text="✨ Dev: Payment bypassed")
-        embed.add_field(name="Pack ID", value=result["pack_id"], inline=False)
-        embed.add_field(name="🌟 Hero Song", value=f"{result['hero_card']['name']}\n👁️ {result['hero_card']['views']:,} views", inline=False)
+        try:
+            import sqlite3
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 6.1 Save the pack contents in the database
+                cursor.execute("""
+                    INSERT INTO creator_packs (
+                        pack_id, creator_id, name, description, pack_size, 
+                        status, cards_data, price, pack_type
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    pack_id,
+                    user_id,
+                    f"{hero_card['name']} Gold Pack",
+                    f"Featured: {hero_card['name']} + 4 additional cards",
+                    5,
+                    "live",  # 6.1 status: live
+                    cards_json,
+                    9.99,   # Gold pack price
+                    "gold"
+                ))
+                
+                # 6.2 Publish the pack entry into marketplace subsystem
+                cursor.execute("""
+                    INSERT INTO marketplace (pack_id, price, stock, visibility, filters)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    pack_id,
+                    9.99,
+                    "unlimited",
+                    "public",  # 6.2 Visibility flags
+                    json.dumps({
+                        "rarity": "gold",
+                        "video_attributes": {
+                            "hero_title": hero_card["name"],
+                            "hero_artist": hero_card["artist"]
+                        }
+                    })  # 6.2 Filters
+                ))
+                
+                # Add to creator's inventory
+                cursor.execute("""
+                    INSERT INTO user_packs (user_id, pack_id, acquired_at)
+                    VALUES (?, ?, datetime('now'))
+                """, (user_id, pack_id))
+                
+                # Log generation for duplicate prevention
+                for card in additional_cards:
+                    if card.get("youtube_video_id") and not card["youtube_video_id"].startswith("fallback"):
+                        cursor.execute("""
+                            INSERT INTO card_generation_log (hero_artist, hero_song, generated_youtube_id)
+                            VALUES (?, ?, ?)
+                        """, (hero_card["artist"], hero_card["name"], card["youtube_video_id"]))
+                
+                conn.commit()
+                print(f"✅ Gold pack {pack_id} finalized and stored")
+                
+        except Exception as e:
+            print(f"❌ Database error finalizing pack: {e}")
+            raise e
         
-        for i, card in enumerate(result["cards"][1:], 1):
-            embed.add_field(name=f"{i}. {card['name']}", value=f"👁️ {card['views']:,} views", inline=False)
-        
-        await interaction.followup.send(embed=embed)
+        return pack_id
 
     @app_commands.command(name="test_pack", description="Test if pack creation cog is loaded")
     async def test_pack(self, interaction: Interaction):
