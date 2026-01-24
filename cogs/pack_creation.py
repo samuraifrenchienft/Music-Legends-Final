@@ -29,6 +29,11 @@ except ImportError as e:
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
 DEV_USER_IDS = [int(uid.strip()) for uid in os.getenv("DEV_USER_IDS", "").split(",") if uid.strip()]
 
+if YOUTUBE_KEY:
+    print(f"✅ YouTube API key loaded: {YOUTUBE_KEY[:10]}...")
+else:
+    print("❌ No YouTube API key found - pack creation will fail")
+
 if DEV_USER_IDS:
     print(f"✅ DEV_USER_IDS loaded: {DEV_USER_IDS}")
 else:
@@ -470,6 +475,35 @@ class PackCreation(commands.Cog):
                 commands.append(cmd.name)
         
         await interaction.response.send_message(f"PackCreation commands: {commands}", ephemeral=True)
+    
+    @app_commands.command(name="test_url", description="Test YouTube URL parsing")
+    @app_commands.describe(url="YouTube URL to test")
+    async def test_url(self, interaction: Interaction, url: str):
+        """Test URL parsing"""
+        video_id = self.parse_youtube_url(url)
+        
+        if not video_id:
+            await interaction.response.send_message(f"❌ Invalid YouTube URL: {url}", ephemeral=True)
+            return
+        
+        await interaction.response.send_message(f"✅ Extracted video ID: {video_id}", ephemeral=True)
+        
+        # Try to get video details
+        if self.youtube:
+            try:
+                details = await self.get_video_details(video_id)
+                if details:
+                    await interaction.followup.send(
+                        f"🎵 Found: {details['title']} by {details['artist']}\n"
+                        f"👁️ {details['views']:,} views",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send("❌ Could not fetch video details", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Error fetching details: {e}", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ YouTube API not initialized", ephemeral=True)
 
 
 async def setup(bot):
