@@ -5,20 +5,32 @@ import json
 from discord.ext import commands
 from discord.ext.commands import Cog
 from discord import Interaction, app_commands, ui
-from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
-from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
 from database import DatabaseManager
 from card_data import CardDataManager
-# from spotify_integration import spotify_integration  # Disabled - using YouTube only
 from stripe_payments import stripe_manager
 import random
 import uuid
 from typing import List, Dict
 
+# Try to import optional modules
+try:
+    from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
+except ImportError:
+    print("⚠️ discord_cards module not available - some features disabled")
+    ArtistCard = None
+
+try:
+    from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
+except ImportError:
+    print("⚠️ battle_engine module not available - battle features disabled")
+    BattleCard = None
+
 class CardGameCog(Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
+        from card_economy import get_economy_manager
+        self.economy = get_economy_manager()
         self.card_manager = CardDataManager(self.db)
         self.active_matches = {}  # match_id: MatchState
         
@@ -481,136 +493,6 @@ class CardGameCog(Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    # Seamless Artist Selection
-    @app_commands.command(name="pack_add_artist_smart", description="Add artist card with smart Spotify selection")
-    async def pack_add_artist_smart(self, interaction: Interaction):
-        """Start the smart artist selection process"""
-        draft_pack = self.db.get_creator_draft_pack(interaction.user.id)
-        if not draft_pack:
-            await interaction.response.send_message("You don't have a draft pack. Use `/pack_create` first!", ephemeral=True)
-            return
-        
-        # Check if pack is full
-        cards = json.loads(draft_pack['cards_data'])
-        if len(cards) >= draft_pack['pack_size']:
-            await interaction.response.send_message("Your pack is full!", ephemeral=True)
-            return
-        
-        # Show search modal
-        modal = ArtistSearchModal(self)
-        await interaction.response.send_modal(modal)
-
-class ArtistSearchModal(ui.Modal, title="Search YouTube Artist"):
-    def __init__(self, cog):
-        super().__init__()
-        self.cog = cog
-        
-    search_query = ui.TextInput(
-        label="Artist Name",
-        placeholder="Enter artist name to search...",
-        required=True,
-        max_length=100
-    )
-    
-    async def on_submit(self, interaction: Interaction):
-        """Handle artist search submission"""
-        await interaction.response.defer()
-        
-        # Search for artists on YouTube
-        from services.youtube_pack_service import youtube_pack_service
-        artists = await youtube_pack_service.search_artist_channels(self.search_query.value, max_results=5)
-        
-        if not artists:
-            await interaction.followup.send("No artists found. Try a different search term.", ephemeral=True)
-            return
-        
-        # Create selection view
-        view = ArtistSelectionView(artists, self.cog)
-        
-        embed = discord.Embed(
-            title="🎵 Select Artist from YouTube",
-            description=f"Found {len(artists)} artists for **{self.search_query.value}**. Choose one to add to your pack:",
-            color=discord.Color.red()
-        )
-        
-        for i, artist in enumerate(artists[:5], 1):  # Show top 5
-            subs_text = f"{artist['subscribers']:,}" if artist['subscribers'] > 0 else "N/A"
-            views_text = f"{artist['total_views']:,}" if artist['total_views'] > 0 else "N/A"
-            embed.add_field(
-                name=f"{i}. {artist['name']}",
-                value=f"📺 Subscribers: {subs_text} | 👁️ Views: {views_text}\n"
-                      f"🎬 Videos: {artist['video_count']:,}",
-                inline=False
-            )
-        
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
-class ArtistSelectionView(ui.View):
-    def __init__(self, artists: List[Dict], cog):
-        super().__init__(timeout=180)  # 3 minutes timeout
-        self.artists = artists
-        self.cog = cog
-        
-        # Add selection buttons for top 5 artists
-        for i, artist in enumerate(artists[:5]):
-            button = ui.Button(
-                label=f"{i+1}. {artist['name']}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"select_artist_{i}"
-            )
-            button.callback = self.create_artist_callback(artist)
-            self.add_item(button)
-    
-    def create_artist_callback(self, artist: Dict):
-        async def callback(interaction: Interaction):
-            # Generate card from YouTube data
-            from services.youtube_pack_service import youtube_pack_service
-            card_data = await youtube_pack_service.create_artist_card(artist)
-            
-            # Get draft pack
-            draft_pack = self.cog.db.get_creator_draft_pack(interaction.user.id)
-            if not draft_pack:
-                await interaction.response.send_message("Draft pack not found!", ephemeral=True)
-                return
-            
-            # Add to pack
-            success = self.cog.db.add_card_to_pack(draft_pack['pack_id'], card_data)
-            if not success:
-                await interaction.response.send_message("Failed to add card to pack!", ephemeral=True)
-                return
-            
-            # Show confirmation
-            embed = discord.Embed(
-                title="✅ Artist Added to Pack",
-                description=f"**{artist['name']}** ({card_data['rarity'].title()}) has been added to your pack from YouTube!",
-                color=discord.Color.green()
-            )
-            
-            embed.add_field(
-                name="Generated Stats",
-                value=f"💪 Impact: {card_data['impact']}\n"
-                      f"🎯 Skill: {card_data['skill']}\n"
-                      f"⏰ Longevity: {card_data['longevity']}\n"
-                      f"🌍 Culture: {card_data['culture']}\n"
-                      f"🔥 Hype: {card_data['hype']}",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="YouTube Data",
-                value=f"📺 {artist['name']}\n"
-                      f"👥 {artist['subscribers']:,} subscribers\n"
-                      f"👁️ {artist['total_views']:,} total views",
-                inline=False
-            )
-            
-            # Get updated pack info
-            updated_pack = self.cog.db.get_creator_draft_pack(interaction.user.id)
-            cards = json.loads(updated_pack['cards_data'])
-            
-            embed.add_field(
-                name="Pack Progress",
-                value=f"Cards: {len(cards)}/{updated_pack['pack_size']}\n"
                       f"Status: DRAFT",
                 inline=False
             )
@@ -626,7 +508,6 @@ class ArtistSelectionView(ui.View):
     @app_commands.describe(
         artist_name="Artist name", 
         rarity="Card rarity", 
-        spotify_url="Spotify URL (required)",
         impact="Impact stat (0-92)",
         skill="Skill stat (0-92)", 
         longevity="Longevity stat (0-92)",
@@ -634,17 +515,14 @@ class ArtistSelectionView(ui.View):
         hype="Hype stat (0-92)"
     )
     async def pack_add_artist(self, interaction: Interaction, artist_name: str, rarity: str, 
-                             spotify_url: str, impact: int = 50, skill: int = 50, 
+                             impact: int = 50, skill: int = 50, 
                              longevity: int = 50, culture: int = 50, hype: int = 50):
         valid_rarities = ["Common", "Rare", "Epic", "Legendary"]
         if rarity not in valid_rarities:
             await interaction.response.send_message(f"Rarity must be one of: {', '.join(valid_rarities)}", ephemeral=True)
             return
         
-        # Validate Spotify URL
-        if not spotify_integration.validate_spotify_url(spotify_url):
-            await interaction.response.send_message("Invalid Spotify URL! Must be a valid Spotify artist link.", ephemeral=True)
-            return
+        # Note: Spotify validation removed - using manual stats only
         
         # Validate stats
         for stat_name, stat_value in [("Impact", impact), ("Skill", skill), ("Longevity", longevity), 
@@ -659,14 +537,10 @@ class ArtistSelectionView(ui.View):
             await interaction.response.send_message("You don't have a draft pack. Use `/pack_create` first!", ephemeral=True)
             return
         
-        # Get Spotify info (optional - for validation/enrichment)
-        spotify_info = spotify_integration.get_artist_info_from_url(spotify_url)
-        
         # Create card data
         card_data = {
             "name": artist_name,
             "rarity": rarity,
-            "spotify_url": spotify_url,
             "impact": impact,
             "skill": skill,
             "longevity": longevity,
@@ -674,11 +548,6 @@ class ArtistSelectionView(ui.View):
             "hype": hype,
             "card_type": "artist"
         }
-        
-        # Add Spotify enrichment if available
-        if spotify_info:
-            card_data["spotify_id"] = spotify_info.get('id')
-            card_data["genres"] = spotify_info.get('genres', [])
         
         # Add to pack
         success = self.db.add_card_to_pack(draft_pack['pack_id'], card_data)
@@ -706,11 +575,7 @@ class ArtistSelectionView(ui.View):
             inline=False
         )
         
-        embed.add_field(
-            name="Spotify",
-            value=f"✅ Valid URL\n🎵 {artist_name}",
-            inline=False
-        )
+        # Note: Spotify field removed - using manual stats only
         
         embed.add_field(
             name="Pack Progress",

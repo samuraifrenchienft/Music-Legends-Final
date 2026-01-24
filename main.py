@@ -32,6 +32,7 @@ class Bot(commands.Bot):
         # Load cogs
         cogs = [
             'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
+            'cogs.card_game',                 # Complete pack creation system with YouTube integration
             'cogs.pack_creation',             # URL-based pack creation: /create_community_pack, /create_gold_pack
             'cogs.trading',                   # Trading system
             'cogs.founder_shop',              # Pack shop (Silver/Black packs)
