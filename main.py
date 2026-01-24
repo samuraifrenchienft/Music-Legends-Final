@@ -53,11 +53,22 @@ class Bot(commands.Bot):
         test_server_id = os.getenv("TEST_SERVER_ID")
         print(f"TEST_SERVER_ID: {test_server_id}")
         
+        # Add basic test command before sync
+        @self.tree.command()
+        async def basic_test(interaction: Interaction):
+            await interaction.response.send_message("✅ Basic bot is working!")
+        
         # Clear old commands first
         print("🧹 Clearing old commands...")
         self.tree.clear_commands(guild=None)
         if test_server_id and test_server_id != "":
             self.tree.clear_commands(guild=discord.Object(id=int(test_server_id)))
+        
+        # Debug: Show all commands before sync
+        all_commands = list(self.tree.walk_commands())
+        print(f"📋 Total commands to sync: {len(all_commands)}")
+        for cmd in all_commands:
+            print(f"  - {cmd.name} (from {cmd.cog.__class__.__name__ if cmd.cog else 'None'})")
         
         try:
             if test_server_id == "" or test_server_id is None:
@@ -83,11 +94,6 @@ class Bot(commands.Bot):
         print(f'Logged in as: {self.user.name}')
         print(f'Bot ID: {self.user.id}')
         print(f'Connected to {len(self.guilds)} servers')
-        
-        # Add basic test command
-        @self.tree.command()
-        async def basic_test(interaction: Interaction):
-            await interaction.response.send_message("✅ Basic bot is working!")
         
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
 
