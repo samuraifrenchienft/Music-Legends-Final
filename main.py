@@ -30,16 +30,27 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
         print("🚀 setup_hook starting...")
-        # Initialize infrastructure
-        await infrastructure.initialize()
-        print("✅ Infrastructure initialized")
         
-        # Initialize and start cron service
-        job_status = await init_cron()
-        print(f"Cron jobs initialized: {list(job_status.keys())}")
+        try:
+            # Initialize infrastructure
+            await infrastructure.initialize()
+            print("✅ Infrastructure initialized")
+        except Exception as e:
+            print(f"❌ Infrastructure failed: {e}")
+            print("⚠️ Continuing with cog loading anyway...")
         
-        # Start queue processors
-        await infrastructure.start_queue_processors()
+        try:
+            # Initialize and start cron service
+            job_status = await init_cron()
+            print(f"Cron jobs initialized: {list(job_status.keys())}")
+        except Exception as e:
+            print(f"❌ Cron service failed: {e}")
+        
+        try:
+            # Start queue processors
+            await infrastructure.start_queue_processors()
+        except Exception as e:
+            print(f"❌ Queue processors failed: {e}")
         
         # Load cogs
         cogs = [
