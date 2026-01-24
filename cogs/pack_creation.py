@@ -33,12 +33,20 @@ class PackCreation(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = None  # Initialize later to prevent hanging
         self.youtube = None
     
     async def cog_load(self):
-        """Initialize YouTube API when cog loads"""
+        """Initialize YouTube API and database when cog loads"""
         print("🔥 PackCreation cog is loading!")
+        
+        try:
+            self.db = DatabaseManager()
+            print("✅ Database initialized for pack creation")
+        except Exception as e:
+            print(f"❌ Failed to initialize database: {e}")
+            self.db = None
+        
         try:
             self.youtube = build("youtube", "v3", developerKey=YOUTUBE_KEY)
             print("✅ YouTube API initialized for pack creation")
