@@ -244,6 +244,10 @@ class CardGameCog(Cog):
     @app_commands.command(name="battle", description="Challenge someone to a card battle")
     @app_commands.describe(opponent="User to challenge")
     async def battle_challenge(self, interaction: Interaction, opponent: discord.User):
+        if not BattleCard:
+            await interaction.response.send_message("Battle system is currently disabled.", ephemeral=True)
+            return
+            
         if opponent.id == interaction.user.id:
             await interaction.response.send_message("You can't challenge yourself!", ephemeral=True)
             return
@@ -291,6 +295,10 @@ class CardGameCog(Cog):
     @app_commands.command(name="battle_accept", description="Accept a battle challenge")
     @app_commands.describe(match_id="Match ID to accept")
     async def battle_accept(self, interaction: Interaction, match_id: str):
+        if not BattleCard:
+            await interaction.response.send_message("Battle system is currently disabled.", ephemeral=True)
+            return
+            
         match = self.active_matches.get(match_id)
         if not match:
             await interaction.response.send_message("Match not found!", ephemeral=True)
@@ -408,6 +416,10 @@ class CardGameCog(Cog):
     @app_commands.command(name="pack", description="Open a card pack")
     @app_commands.describe(pack_type="Type of pack to open")
     async def open_pack(self, interaction: Interaction, pack_type: str = "Daily"):
+        if not ArtistCard:
+            await interaction.response.send_message("Pack opening system is currently disabled.", ephemeral=True)
+            return
+            
         # Get user
         user = self._get_user(
             interaction.user.id, 
