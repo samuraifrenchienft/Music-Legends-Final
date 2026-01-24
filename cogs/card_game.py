@@ -9,7 +9,7 @@ from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_o
 from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
 from database import DatabaseManager
 from card_data import CardDataManager
-from spotify_integration import spotify_integration
+# from spotify_integration import spotify_integration  # Disabled - using YouTube only
 from stripe_payments import stripe_manager
 import random
 import uuid
