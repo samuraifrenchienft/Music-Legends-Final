@@ -48,6 +48,13 @@ class Bot(commands.Bot):
 
         test_server_id = os.getenv("TEST_SERVER_ID")
         print(f"TEST_SERVER_ID: {test_server_id}")
+        
+        # Clear old commands first
+        print("🧹 Clearing old commands...")
+        self.tree.clear_commands(guild=None)
+        if test_server_id and test_server_id != "":
+            self.tree.clear_commands(guild=discord.Object(id=int(test_server_id)))
+        
         try:
             if test_server_id == "" or test_server_id is None:
                 print("🔄 Syncing commands globally...")
