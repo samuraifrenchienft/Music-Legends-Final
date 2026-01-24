@@ -42,26 +42,20 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 setup_hook starting...")
         
-        try:
-            # Initialize infrastructure
-            await infrastructure.initialize()
-            print("✅ Infrastructure initialized")
-        except Exception as e:
-            print(f"❌ Infrastructure failed: {e}")
-            print("⚠️ Continuing with cog loading anyway...")
+        # Skip infrastructure to prevent hanging
+        print("⚠️ Skipping infrastructure initialization to prevent container freeze")
         
         try:
-            # Initialize and start cron service
-            job_status = await init_cron()
+            # Initialize and start cron service with timeout
+            job_status = await asyncio.wait_for(init_cron(), timeout=10)
             print(f"Cron jobs initialized: {list(job_status.keys())}")
+        except asyncio.TimeoutError:
+            print("❌ Cron service timed out - skipping")
         except Exception as e:
             print(f"❌ Cron service failed: {e}")
         
-        try:
-            # Start queue processors
-            await infrastructure.start_queue_processors()
-        except Exception as e:
-            print(f"❌ Queue processors failed: {e}")
+        # Skip queue processors to prevent hanging
+        print("⚠️ Skipping queue processors to prevent container freeze")
         
         # Load cogs
         cogs = [
