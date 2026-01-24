@@ -81,15 +81,20 @@ class Bot(commands.Bot):
                 print(f'Failed to load extension {cog}: {e}')
 
         test_server_id = os.getenv("TEST_SERVER_ID")
+        print(f"TEST_SERVER_ID: {test_server_id}")
         try:
             if test_server_id == "" or test_server_id is None:
-                await self.tree.sync()
+                print("🔄 Syncing commands globally...")
+                synced = await self.tree.sync()
+                print(f"✅ Synced {len(synced)} commands globally")
             else:
-                await self.tree.sync(guild=discord.Object(id=int(test_server_id)))
+                print(f"🔄 Syncing commands to test server {test_server_id}...")
+                synced = await self.tree.sync(guild=discord.Object(id=int(test_server_id)))
+                print(f"✅ Synced {len(synced)} commands to test server")
         except discord.Forbidden as e:
-            print(f"Command sync failed (Forbidden): {e}")
+            print(f"❌ Command sync failed (Forbidden): {e}")
         except discord.HTTPException as e:
-            print(f"Command sync failed (HTTPException): {e}")
+            print(f"❌ Command sync failed (HTTPException): {e}")
 
     async def on_ready(self):
         print(f'Bot is ready!')
