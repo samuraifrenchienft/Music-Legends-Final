@@ -12,18 +12,9 @@ import random
 import uuid
 from typing import List, Dict
 
-# Try to import optional modules
-try:
-    from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
-except ImportError:
-    print("⚠️ discord_cards module not available - some features disabled")
-    ArtistCard = None
-
-try:
-    from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
-except ImportError:
-    print("⚠️ battle_engine module not available - battle features disabled")
-    BattleCard = None
+# Import required modules
+from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
+from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
 
 class CardGameCog(Cog):
     def __init__(self, bot):
@@ -244,10 +235,6 @@ class CardGameCog(Cog):
     @app_commands.command(name="battle", description="Challenge someone to a card battle")
     @app_commands.describe(opponent="User to challenge")
     async def battle_challenge(self, interaction: Interaction, opponent: discord.User):
-        if not BattleCard:
-            await interaction.response.send_message("Battle system is currently disabled.", ephemeral=True)
-            return
-            
         if opponent.id == interaction.user.id:
             await interaction.response.send_message("You can't challenge yourself!", ephemeral=True)
             return
@@ -295,10 +282,6 @@ class CardGameCog(Cog):
     @app_commands.command(name="battle_accept", description="Accept a battle challenge")
     @app_commands.describe(match_id="Match ID to accept")
     async def battle_accept(self, interaction: Interaction, match_id: str):
-        if not BattleCard:
-            await interaction.response.send_message("Battle system is currently disabled.", ephemeral=True)
-            return
-            
         match = self.active_matches.get(match_id)
         if not match:
             await interaction.response.send_message("Match not found!", ephemeral=True)
@@ -416,10 +399,6 @@ class CardGameCog(Cog):
     @app_commands.command(name="pack", description="Open a card pack")
     @app_commands.describe(pack_type="Type of pack to open")
     async def open_pack(self, interaction: Interaction, pack_type: str = "Daily"):
-        if not ArtistCard:
-            await interaction.response.send_message("Pack opening system is currently disabled.", ephemeral=True)
-            return
-            
         # Get user
         user = self._get_user(
             interaction.user.id, 
