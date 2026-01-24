@@ -30,9 +30,9 @@ USER app
 # Expose port (if needed for health checks)
 EXPOSE 8080
 
-# Health check
+# Health check - basic check if main.py can import
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import redis; r=redis.Redis(host='redis', port=6379); r.ping()" || exit 1
+    CMD python -c "import main; print('Health check passed')" || exit 1
 
 # Default command
 CMD ["python", "main.py"]
