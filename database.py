@@ -1124,3 +1124,6 @@ class DatabaseManager:
     def close(self):
         """Close database connection"""
         pass  # SQLite connections are closed automatically
+
+# Global database instance for imports
+db = DatabaseManager()
