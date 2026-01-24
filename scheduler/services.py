@@ -8,7 +8,8 @@ from card_economy import CardEconomyManager
 class RewardsService:
     def __init__(self):
         self.db = DatabaseManager()
-        self.economy = CardEconomyManager(self.db)
+        from card_economy import get_economy_manager
+        self.economy = get_economy_manager()
     
     async def reset_all(self):
         """Reset all daily rewards"""
@@ -118,7 +119,8 @@ from card_economy import CardEconomyManager
 class DropsService:
     def __init__(self):
         self.db = DatabaseManager()
-        self.economy = CardEconomyManager(self.db)
+        from card_economy import get_economy_manager
+        self.economy = get_economy_manager()
     
     async def activity_spawn(self):
         """Spawn drops based on server activity"""
@@ -241,7 +243,8 @@ from card_economy import CardEconomyManager
 class SeasonsService:
     def __init__(self):
         self.db = DatabaseManager()
-        self.economy = CardEconomyManager(self.db)
+        from card_economy import get_economy_manager
+        self.economy = get_economy_manager()
     
     async def enforce_caps(self):
         """Enforce card printing caps"""
