@@ -242,65 +242,59 @@ class AdminPackCreation(commands.Cog):
             "likes": stats["likes"]
         }
     
-    @app_commands.command(name="createpack", description="Create a pack with a featured song + 4 related songs")
-    @app_commands.describe(song_query="Song to search (e.g., 'Drake - Hotline Bling')")
-    async def createpack(self, interaction: Interaction, song_query: str):
-        """Create a pack - charges $9.99 (or free for devs)"""
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        # Check if dev (bypass payment)
-        is_dev = self.is_dev(interaction.user.id)
-        
-        if not is_dev:
-            # Create Stripe checkout for $9.99
-            checkout = stripe_manager.create_pack_creation_checkout(
-                creator_id=interaction.user.id,
-                song_query=song_query
-            )
-            
-            if not checkout['success']:
-                await interaction.followup.send(f"❌ Payment error: {checkout['error']}")
-                return
-            
-            # Send payment link
-            embed = discord.Embed(
-                title="💳 Pack Creation Payment",
-                description=f"**Song:** {song_query}\n**Price:** $9.99\n\nClick the link below to complete payment.",
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="What you get:", value="• 1 featured song card\n• 4 related song cards\n• Pack added to your inventory\n• Pack listed in marketplace for $6.99", inline=False)
-            
-            await interaction.followup.send(
-                embed=embed,
-                view=discord.ui.View().add_item(
-                    discord.ui.Button(label="Pay $9.99", url=checkout['checkout_url'], style=discord.ButtonStyle.link)
-                )
-            )
-            return
-        
-        # Dev bypass - create pack immediately
-        await self._create_pack_for_user(interaction, song_query)
+    @app_commands.command(name="pack_create", description="Create a new pack with YouTube songs")
+    async def pack_create(self, interaction: Interaction):
+        """Open modal to start pack creation"""
+        modal = ArtistSearchModal(self)
+        await interaction.response.send_modal(modal)
     
-    async def _create_pack_for_user(self, interaction: Interaction, song_query: str):
-        """Internal method to create pack after payment or dev bypass"""
+    async def search_youtube_songs(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+        """Search for songs on YouTube - async safe"""
+        if not self.youtube:
+            print("❌ YouTube API not available")
+            return []
+        
+        loop = asyncio.get_running_loop()
+        
+        def _search():
+            """Blocking YouTube API call"""
+            try:
+                request = self.youtube.search().list(
+                    q=query,
+                    part="snippet",
+                    type="video",
+                    videoCategoryId="10",
+                    maxResults=max_results
+                )
+                return request.execute()
+            except Exception as e:
+                print(f"❌ YouTube API error: {e}")
+                return None
+        
+        result = await loop.run_in_executor(None, _search)
+        
+        if not result or not result.get("items"):
+            return []
+        
+        songs = []
+        for item in result["items"]:
+            snippet = item["snippet"]
+            songs.append({
+                "video_id": item["id"]["videoId"],
+                "title": snippet["title"],
+                "artist": snippet["channelTitle"],
+                "thumbnail": snippet["thumbnails"]["high"]["url"],
+                "description": snippet.get("description", "")[:200]
+            })
+        
+        return songs
+    
+    async def _create_pack_from_hero(self, interaction: Interaction, hero_song: Dict, artist: str):
+        """Create pack from selected hero song"""
         
         try:
-            # Parse artist and song from query
-            parts = song_query.split("-", 1)
-            if len(parts) == 2:
-                hero_artist = parts[0].strip()
-                hero_song_name = parts[1].strip()
-            else:
-                hero_artist = "Unknown"
-                hero_song_name = song_query.strip()
-            
-            # STEP 2: Search for specific song
-            hero_song = await self.search_specific_song(song_query)
-            
-            if not hero_song:
-                await interaction.followup.send(f"❌ Could not find song: {song_query}")
-                return
+            hero_artist = artist
+            hero_song_name = hero_song["title"]
             
             # Get hero song stats
             hero_stats = await self.get_video_stats(hero_song["video_id"])
@@ -440,19 +434,65 @@ class AdminPackCreation(commands.Cog):
             await interaction.followup.send(f"❌ Error creating pack: {e}")
 
 
+class ArtistSearchModal(ui.Modal, title="Create Pack - Search Artist"):
+    """Modal to collect artist name for pack creation"""
+    
+    artist_name = ui.TextInput(
+        label="Artist Name",
+        placeholder="e.g., Drake, Taylor Swift, Bad Bunny",
+        required=True,
+        max_length=100
+    )
+    
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    
+    async def on_submit(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        artist = self.artist_name.value.strip()
+        
+        # Search YouTube for artist's songs
+        songs = await self.cog.search_youtube_songs(f"{artist} official music video", max_results=10)
+        
+        if not songs:
+            await interaction.followup.send(f"❌ No songs found for {artist}")
+            return
+        
+        # Show song selection UI
+        view = SongSelectionView(songs, artist, self.cog, interaction.user.id)
+        
+        embed = discord.Embed(
+            title=f"🎵 Select Song for {artist} Pack",
+            description="Choose ONE song to be the featured hero card.\nBot will auto-generate 4 related song cards.",
+            color=discord.Color.blue()
+        )
+        
+        for i, song in enumerate(songs[:5], 1):
+            embed.add_field(
+                name=f"{i}. {song['title']}",
+                value=f"By: {song['artist']}",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
 class SongSelectionView(ui.View):
     """UI for selecting hero song"""
     
-    def __init__(self, songs: List[Dict], artist: str, cog):
+    def __init__(self, songs: List[Dict], artist: str, cog, user_id: int):
         super().__init__(timeout=180)
         self.songs = songs
         self.artist = artist
         self.cog = cog
+        self.user_id = user_id
         
         # Add buttons for top 5 songs
         for i, song in enumerate(songs[:5]):
             button = ui.Button(
-                label=f"{i+1}. {song['title'][:40]}",
+                label=f"{i+1}",
                 style=discord.ButtonStyle.primary,
                 custom_id=f"select_song_{i}"
             )
@@ -463,73 +503,38 @@ class SongSelectionView(ui.View):
         async def callback(interaction: Interaction):
             await interaction.response.defer()
             
-            # Get hero song stats
-            hero_stats = await self.cog.get_video_stats(hero_song["video_id"])
-            if not hero_stats:
-                hero_stats = {"views": 0, "likes": 0, "comments": 0}
+            # Check if dev (bypass payment)
+            is_dev = self.cog.is_dev(self.user_id)
             
-            # Create hero card
-            hero_card = await self.cog.create_song_card(hero_song, hero_stats)
-            hero_card["is_hero"] = True
-            
-            # Search for featuring songs
-            featuring_songs = await self.cog.search_youtube_songs(
-                f"{self.artist} ft featuring", 
-                max_results=4
-            )
-            
-            # Create cards for featuring songs
-            cards = [hero_card]
-            for song in featuring_songs[:4]:
-                stats = await self.cog.get_video_stats(song["video_id"])
-                if not stats:
-                    stats = {"views": 0, "likes": 0, "comments": 0}
-                
-                card = await self.cog.create_song_card(song, stats)
-                cards.append(card)
-            
-            # Create pack in database
-            pack_id = f"gold_{uuid.uuid4().hex[:8]}"
-            cards_json = json.dumps(cards)
-            
-            with self.cog.db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO creator_packs (pack_id, creator_id, name, description, pack_size, status, cards_data, price)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    pack_id,
-                    0,
-                    f"{self.artist} Gold Pack",
-                    f"Hero: {hero_song['title']} + 4 featuring songs",
-                    5,
-                    "live",
-                    cards_json,
-                    5.0
-                ))
-                conn.commit()
-            
-            # Confirmation embed
-            embed = discord.Embed(
-                title="✅ Gold Pack Created",
-                description=f"**{self.artist} Gold Pack**",
-                color=discord.Color.gold()
-            )
-            embed.add_field(name="Pack ID", value=pack_id, inline=False)
-            embed.add_field(
-                name="🌟 Hero Song",
-                value=f"{hero_card['name']}\n👁️ {hero_card['views']:,} views",
-                inline=False
-            )
-            
-            for i, card in enumerate(cards[1:], 1):
-                embed.add_field(
-                    name=f"{i}. {card['name']}",
-                    value=f"👁️ {card['views']:,} views",
-                    inline=False
+            if not is_dev:
+                # Create Stripe checkout for $9.99
+                checkout = stripe_manager.create_pack_creation_checkout(
+                    creator_id=self.user_id,
+                    song_query=f"{self.artist} - {hero_song['title']}"
                 )
+                
+                if not checkout['success']:
+                    await interaction.followup.send(f"❌ Payment error: {checkout['error']}")
+                    return
+                
+                # Send payment link
+                embed = discord.Embed(
+                    title="💳 Pack Creation Payment",
+                    description=f"**Hero Song:** {hero_song['title']}\n**Price:** $9.99\n\nClick the link below to complete payment.",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(name="What you get:", value="• 1 hero song card\n• 4 related song cards\n• Pack in your inventory\n• Listed in marketplace for $6.99", inline=False)
+                
+                await interaction.followup.send(
+                    embed=embed,
+                    view=discord.ui.View().add_item(
+                        discord.ui.Button(label="Pay $9.99", url=checkout['checkout_url'], style=discord.ButtonStyle.link)
+                    )
+                )
+                return
             
-            await interaction.followup.send(embed=embed)
+            # Dev bypass - create pack immediately
+            await self.cog._create_pack_from_hero(interaction, hero_song, self.artist)
         
         return callback
 
