@@ -255,7 +255,8 @@ class PackCreation(commands.Cog):
         print(f"✅ Found {len(related_videos)} related videos")
         
         # Get previously generated IDs
-        with self.db.get_connection() as conn:
+        import sqlite3
+        with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT generated_youtube_id FROM card_generation_log
@@ -292,7 +293,8 @@ class PackCreation(commands.Cog):
         marketplace_price = 4.99 if pack_type == "community" else 6.99
         
         try:
-            with self.db.get_connection() as conn:
+            import sqlite3
+            with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 
                 # Insert pack
