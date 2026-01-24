@@ -224,7 +224,9 @@ class AdminPackCreation(commands.Cog):
         # Generate stats from song metrics
         base_stat = min(92, max(20, int(20 + (stats["views"] / 10_000_000))))
         
-        return {
+        print(f"🎵 Creating card for: {song_data.get('title', 'Unknown')} by {song_data.get('artist', 'Unknown')}")
+        
+        card = {
             "name": song_data["title"],
             "artist": song_data["artist"],
             "rarity": tier,
@@ -239,8 +241,12 @@ class AdminPackCreation(commands.Cog):
             "culture": base_stat,
             "hype": base_stat,
             "views": stats["views"],
-            "likes": stats["likes"]
+            "likes": stats["likes"],
+            "video_id": song_data["video_id"]  # Add both field names for compatibility
         }
+        
+        print(f"✅ Card created: {card['name']} ({card['rarity']}) - {card['views']:,} views")
+        return card
     
     @app_commands.command(name="pack_create", description="Create a new pack with YouTube songs")
     async def pack_create(self, interaction: Interaction):
@@ -387,7 +393,14 @@ class AdminPackCreation(commands.Cog):
                     """, (pack_id, 6.99, "unlimited"))
                     
                     # Log generated cards to prevent duplicates
-                    generated_ids = [card["youtube_video_id"] for card in cards[1:] if "youtube_video_id" in card]
+                    generated_ids = []
+                    for card in cards[1:]:  # Skip hero card
+                        if "youtube_video_id" in card:
+                            generated_ids.append(card["youtube_video_id"])
+                        elif "video_id" in card:  # Try alternative field name
+                            generated_ids.append(card["video_id"])
+                    
+                    print(f"📝 Logging {len(generated_ids)} generated cards")
                     self.log_generated_cards(hero_artist, hero_song_name, generated_ids)
                     
                     conn.commit()
@@ -449,34 +462,42 @@ class ArtistSearchModal(ui.Modal, title="Create Pack - Search Artist"):
         self.cog = cog
     
     async def on_submit(self, interaction: Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        artist = self.artist_name.value.strip()
-        
-        # Search YouTube for artist's songs
-        songs = await self.cog.search_youtube_songs(f"{artist} official music video", max_results=10)
-        
-        if not songs:
-            await interaction.followup.send(f"❌ No songs found for {artist}")
-            return
-        
-        # Show song selection UI
-        view = SongSelectionView(songs, artist, self.cog, interaction.user.id)
-        
-        embed = discord.Embed(
-            title=f"🎵 Select Song for {artist} Pack",
-            description="Choose ONE song to be the featured hero card.\nBot will auto-generate 4 related song cards.",
-            color=discord.Color.blue()
-        )
-        
-        for i, song in enumerate(songs[:5], 1):
-            embed.add_field(
-                name=f"{i}. {song['title']}",
-                value=f"By: {song['artist']}",
-                inline=False
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            artist = self.artist_name.value.strip()
+            print(f"🔍 Searching for songs by: {artist}")
+            
+            # Search YouTube for artist's songs
+            songs = await self.cog.search_youtube_songs(f"{artist} official music video", max_results=10)
+            
+            if not songs:
+                await interaction.followup.send(f"❌ No songs found for {artist}")
+                return
+            
+            print(f"🎵 Found {len(songs)} songs for {artist}")
+            
+            # Show song selection UI
+            view = SongSelectionView(songs, artist, self.cog, interaction.user.id)
+            
+            embed = discord.Embed(
+                title=f"🎵 Select Song for {artist} Pack",
+                description="Choose ONE song to be the featured hero card.\nBot will auto-generate 4 related song cards.",
+                color=discord.Color.blue()
             )
-        
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+            for i, song in enumerate(songs[:5], 1):
+                embed.add_field(
+                    name=f"{i}. {song['title']}",
+                    value=f"By: {song['artist']}",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ Error in modal submission: {e}")
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
 
 class SongSelectionView(ui.View):
