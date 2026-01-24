@@ -29,8 +29,10 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
+        print("🚀 setup_hook starting...")
         # Initialize infrastructure
         await infrastructure.initialize()
+        print("✅ Infrastructure initialized")
         
         # Initialize and start cron service
         job_status = await init_cron()
