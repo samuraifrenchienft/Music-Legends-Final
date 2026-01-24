@@ -38,6 +38,7 @@ class PackCreation(commands.Cog):
     
     async def cog_load(self):
         """Initialize YouTube API when cog loads"""
+        print("🔥 PackCreation cog is loading!")
         try:
             self.youtube = build("youtube", "v3", developerKey=YOUTUBE_KEY)
             print("✅ YouTube API initialized for pack creation")
@@ -434,6 +435,11 @@ class PackCreation(commands.Cog):
             embed.add_field(name=f"{i}. {card['name']}", value=f"👁️ {card['views']:,} views", inline=False)
         
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="test_pack", description="Test if pack creation cog is loaded")
+    async def test_pack(self, interaction: Interaction):
+        """Test command to verify cog is loaded"""
+        await interaction.response.send_message("✅ Pack creation cog is working!", ephemeral=True)
 
 
 async def setup(bot):
