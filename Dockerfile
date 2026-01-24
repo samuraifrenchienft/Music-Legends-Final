@@ -33,9 +33,9 @@ USER app
 # Expose port (if needed for health checks)
 EXPOSE 8080
 
-# Health check - basic check if main.py can import
+# Health check - comprehensive check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import main; print('Health check passed')" || exit 1
+    CMD python health_check.py || exit 1
 
 # Default command
 CMD ["python", "main.py"]
