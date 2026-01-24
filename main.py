@@ -30,23 +30,9 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
         
-        # Initialize async database (non-blocking)
-        try:
-            from db_manager import db_manager
-            from db_init import init_database
-            
-            print("🗄️ Initializing async database...")
-            # Initialize database in background to not block cog loading
-            asyncio.create_task(init_database())
-            print("✅ Async database initialization started")
-            
-        except ImportError as e:
-            print(f"⚠️ Database components not available: {e}")
-            print("🔄 Falling back to synchronous database")
-        except Exception as e:
-            print(f"❌ Failed to start database initialization: {e}")
-            print("⚠️ Bot will continue but database features may be limited")
-            # Continue loading cogs even if database fails
+        # Temporarily disable async database to get basic bot working
+        print("⚠️ Async database temporarily disabled - using existing database")
+        # TODO: Re-enable async database after Railway dependencies are installed
         
         # Load cogs
         cogs = [
