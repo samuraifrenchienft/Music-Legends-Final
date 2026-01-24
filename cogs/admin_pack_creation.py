@@ -20,6 +20,12 @@ import json
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
 DEV_USER_IDS = [int(uid.strip()) for uid in os.getenv("DEV_USER_IDS", "").split(",") if uid.strip()]
 
+# Log dev IDs on startup
+if DEV_USER_IDS:
+    print(f"✅ DEV_USER_IDS loaded: {DEV_USER_IDS}")
+else:
+    print("⚠️ No DEV_USER_IDS configured - all users will be charged")
+
 class AdminPackCreation(commands.Cog):
     """Pack creation system for users"""
     
@@ -37,7 +43,10 @@ class AdminPackCreation(commands.Cog):
     
     def is_dev(self, user_id: int) -> bool:
         """Check if user is a dev (bypasses payment)"""
-        return user_id in DEV_USER_IDS
+        is_dev_user = user_id in DEV_USER_IDS
+        if is_dev_user:
+            print(f"✅ Dev bypass activated for user {user_id}")
+        return is_dev_user
     
     async def search_specific_song(self, query: str) -> Optional[Dict[str, Any]]:
         """Search for a specific song on YouTube - async safe"""
