@@ -77,6 +77,11 @@ class Bot(commands.Bot):
         print(f'Bot ID: {self.user.id}')
         print(f'Connected to {len(self.guilds)} servers')
         
+        # Add basic test command
+        @self.tree.command()
+        async def basic_test(interaction: Interaction):
+            await interaction.response.send_message("✅ Basic bot is working!")
+        
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
 
     async def close(self):
