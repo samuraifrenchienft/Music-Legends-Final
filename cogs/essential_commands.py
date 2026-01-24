@@ -15,7 +15,8 @@ class EssentialCommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
-        self.economy = CardEconomyManager(self.db)
+        from card_economy import get_economy_manager
+        self.economy = get_economy_manager()
         self.economy.initialize_economy_tables()  # Initialize drop tables
         self.stripe = StripePaymentManager()
     

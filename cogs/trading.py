@@ -14,7 +14,8 @@ class TradingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
-        self.economy = CardEconomyManager(self.db)
+        from card_economy import get_economy_manager
+        self.economy = get_economy_manager()
         self.active_trades = {}  # trade_id -> trade_data
 
     @app_commands.command(name="trade", description="Initiate a trade with another user")
