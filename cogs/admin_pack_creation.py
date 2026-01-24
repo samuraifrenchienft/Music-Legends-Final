@@ -1,21 +1,24 @@
 # cogs/admin_pack_creation.py
 """
-Pack creation system - Users create packs with song-based cards
-Creator pays $9.99, gets pack, pack listed for $6.99 in marketplace
+URL-Based Pack Creation System
+- /create_community_pack [youtube_url] - Dev only, free, $4.99 marketplace
+- /create_gold_pack [youtube_url] - Anyone, $9.99 or dev bypass, $6.99 marketplace
 """
 
 import os
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord import Interaction, ui
+from discord import Interaction
 import asyncio
+import re
 from typing import Optional, Dict, List, Any
 from googleapiclient.discovery import build
 from database import DatabaseManager
 from stripe_payments import stripe_manager
 import uuid
 import json
+import random
 
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
 DEV_USER_IDS = [int(uid.strip()) for uid in os.getenv("DEV_USER_IDS", "").split(",") if uid.strip()]
@@ -48,59 +51,78 @@ class AdminPackCreation(commands.Cog):
             print(f"✅ Dev bypass activated for user {user_id}")
         return is_dev_user
     
-    async def search_specific_song(self, query: str) -> Optional[Dict[str, Any]]:
-        """Search for a specific song on YouTube - async safe"""
+    def parse_youtube_url(self, url: str) -> Optional[str]:
+        """Extract video ID from YouTube URL"""
+        patterns = [
+            r'(?:youtube\.com/watch\?v=)([^&]+)',
+            r'(?:youtu\.be/)([^?]+)',
+            r'(?:youtube\.com/embed/)([^?]+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    async def get_video_details(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Get video details from YouTube video ID - async safe"""
         if not self.youtube:
             print("❌ YouTube API not available")
             return None
         
         loop = asyncio.get_running_loop()
         
-        def _search():
+        def _get_details():
             """Blocking YouTube API call"""
             try:
-                request = self.youtube.search().list(
-                    q=query,
-                    part="snippet",
-                    type="video",
-                    videoCategoryId="10",
-                    maxResults=1
+                request = self.youtube.videos().list(
+                    part="snippet,statistics",
+                    id=video_id
                 )
                 return request.execute()
             except Exception as e:
                 print(f"❌ YouTube API error: {e}")
                 return None
         
-        result = await loop.run_in_executor(None, _search)
+        result = await loop.run_in_executor(None, _get_details)
         
         if not result or not result.get("items"):
             return None
         
         item = result["items"][0]
         snippet = item["snippet"]
+        stats = item.get("statistics", {})
+        
         return {
-            "video_id": item["id"]["videoId"],
+            "video_id": video_id,
             "title": snippet["title"],
             "artist": snippet["channelTitle"],
+            "channel_id": snippet["channelId"],
             "thumbnail": snippet["thumbnails"]["high"]["url"],
-            "description": snippet.get("description", "")[:200]
+            "description": snippet.get("description", "")[:200],
+            "views": int(stats.get("viewCount", 0)),
+            "likes": int(stats.get("likeCount", 0)),
+            "comments": int(stats.get("commentCount", 0))
         }
     
-    async def get_related_videos(self, video_id: str, exclude_ids: List[str], max_results: int = 50) -> List[Dict[str, Any]]:
-        """Get related videos pool - async safe"""
+    async def get_related_videos(self, channel_id: str, artist_name: str, exclude_ids: List[str], max_results: int = 50) -> List[Dict[str, Any]]:
+        """Get related videos from same channel - async safe"""
         if not self.youtube:
             return []
         
         loop = asyncio.get_running_loop()
         
-        def _get_related():
-            """Blocking YouTube API call"""
+        def _get_channel_videos():
+            """Blocking YouTube API call - search channel's videos"""
             try:
+                # Search for videos from the same channel
                 request = self.youtube.search().list(
-                    relatedToVideoId=video_id,
+                    channelId=channel_id,
                     part="snippet",
                     type="video",
-                    videoCategoryId="10",
+                    order="viewCount",
                     maxResults=max_results
                 )
                 return request.execute()
@@ -108,9 +130,10 @@ class AdminPackCreation(commands.Cog):
                 print(f"❌ YouTube API error: {e}")
                 return None
         
-        result = await loop.run_in_executor(None, _get_related)
+        result = await loop.run_in_executor(None, _get_channel_videos)
         
         if not result or not result.get("items"):
+            print(f"⚠️ No videos found for channel {channel_id}")
             return []
         
         related = []
@@ -126,6 +149,7 @@ class AdminPackCreation(commands.Cog):
                     "description": snippet.get("description", "")[:200]
                 })
         
+        print(f"✅ Found {len(related)} related videos from {artist_name}'s channel")
         return related
     
     def get_previously_generated_ids(self, hero_artist: str, hero_song: str) -> List[str]:
@@ -175,10 +199,10 @@ class AdminPackCreation(commands.Cog):
         
         return selected
     
-    async def get_video_stats(self, video_id: str) -> Optional[Dict[str, Any]]:
-        """Get video statistics - async safe"""
-        if not self.youtube:
-            return None
+    async def get_video_stats_batch(self, video_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Get statistics for multiple videos - async safe"""
+        if not self.youtube or not video_ids:
+            return {}
         
         loop = asyncio.get_running_loop()
         
@@ -187,7 +211,7 @@ class AdminPackCreation(commands.Cog):
             try:
                 request = self.youtube.videos().list(
                     part="statistics",
-                    id=video_id
+                    id=",".join(video_ids[:50])  # API limit
                 )
                 return request.execute()
             except Exception as e:
@@ -197,14 +221,19 @@ class AdminPackCreation(commands.Cog):
         result = await loop.run_in_executor(None, _get_stats)
         
         if not result or not result.get("items"):
-            return None
+            return {}
         
-        stats = result["items"][0].get("statistics", {})
-        return {
-            "views": int(stats.get("viewCount", 0)),
-            "likes": int(stats.get("likeCount", 0)),
-            "comments": int(stats.get("commentCount", 0))
-        }
+        stats_map = {}
+        for item in result["items"]:
+            vid_id = item["id"]
+            stats = item.get("statistics", {})
+            stats_map[vid_id] = {
+                "views": int(stats.get("viewCount", 0)),
+                "likes": int(stats.get("likeCount", 0)),
+                "comments": int(stats.get("commentCount", 0))
+            }
+        
+        return stats_map
     
     def calculate_song_tier(self, views: int, likes: int) -> str:
         """Calculate card tier based on song metrics"""
