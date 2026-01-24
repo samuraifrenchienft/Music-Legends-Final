@@ -11,20 +11,39 @@ import sqlite3
 class EssentialCommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        from database import DatabaseManager
-        from card_economy import get_economy_manager
-        from stripe_payments import StripePaymentManager
+        self.db = None
+        self.economy = None
+        self.stripe = None
         
-        self.db = DatabaseManager()
-        self.economy = get_economy_manager()
-        self.stripe = StripePaymentManager()
+        # Initialize database and economy lazily
+        self._init_database()
         
-        # Initialize economy tables if possible
+    def _init_database(self):
+        """Initialize database and economy managers"""
         try:
+            from database import DatabaseManager
+            self.db = DatabaseManager()
+            print("✅ Database initialized")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize database: {e}")
+            self.db = None
+            
+        try:
+            from card_economy import get_economy_manager
+            self.economy = get_economy_manager()
             self.economy.initialize_economy_tables()
             print("✅ Economy tables initialized")
         except Exception as e:
-            print(f"⚠️ Failed to initialize economy tables: {e}")
+            print(f"⚠️ Failed to initialize economy: {e}")
+            self.economy = None
+            
+        try:
+            from stripe_payments import StripePaymentManager
+            self.stripe = StripePaymentManager()
+            print("✅ Stripe initialized")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize Stripe: {e}")
+            self.stripe = None
     
     @app_commands.command(name="collection", description="View your card collection")
     async def collection(self, interaction: Interaction):
@@ -34,6 +53,10 @@ class EssentialCommandsCog(commands.Cog):
     @app_commands.command(name="drop", description="Create a card drop in this channel")
     async def drop(self, interaction: Interaction):
         """Create a card drop"""
+        if not self.economy:
+            await interaction.response.send_message("❌ Economy system not available. Please try again later.", ephemeral=True)
+            return
+            
         try:
             drop_result = self.economy.create_drop(
                 interaction.channel_id,
@@ -72,6 +95,10 @@ class EssentialCommandsCog(commands.Cog):
             await interaction.response.send_message("❌ You can't battle yourself!", ephemeral=True)
             return
         
+        if not self.db:
+            await interaction.response.send_message("❌ Database not available. Please try again later.", ephemeral=True)
+            return
+        
         embed = discord.Embed(
             title="⚔️ Battle Challenge!",
             description=f"{interaction.user.mention} has challenged {opponent.mention} to a card battle!",
@@ -88,6 +115,10 @@ class EssentialCommandsCog(commands.Cog):
         
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("🔒 Only server administrators can start the game!", ephemeral=True)
+            return
+        
+        if not self.db:
+            await interaction.response.send_message("❌ Database not available. Please try again later.", ephemeral=True)
             return
         
         await interaction.response.defer()
