@@ -30,6 +30,19 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
         
+        # Initialize async database
+        try:
+            from db_manager import db_manager
+            from db_init import init_database
+            
+            print("🗄️ Initializing async database...")
+            await init_database()
+            print("✅ Async database initialized")
+            
+        except Exception as e:
+            print(f"❌ Failed to initialize database: {e}")
+            print("⚠️ Bot will continue but database features may be limited")
+        
         # Load cogs
         cogs = [
             'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
