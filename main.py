@@ -30,18 +30,23 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
         
-        # Initialize async database
+        # Initialize async database (non-blocking)
         try:
             from db_manager import db_manager
             from db_init import init_database
             
             print("🗄️ Initializing async database...")
-            await init_database()
-            print("✅ Async database initialized")
+            # Initialize database in background to not block cog loading
+            asyncio.create_task(init_database())
+            print("✅ Async database initialization started")
             
+        except ImportError as e:
+            print(f"⚠️ Database components not available: {e}")
+            print("🔄 Falling back to synchronous database")
         except Exception as e:
-            print(f"❌ Failed to initialize database: {e}")
+            print(f"❌ Failed to start database initialization: {e}")
             print("⚠️ Bot will continue but database features may be limited")
+            # Continue loading cogs even if database fails
         
         # Load cogs
         cogs = [
@@ -118,6 +123,17 @@ class Bot(commands.Bot):
 
     async def close(self):
         """Cleanup when bot shuts down"""
+        print("🔄 Cleaning up...")
+        
+        try:
+            from db_manager import db_manager
+            await db_manager.close()
+            print("✅ Database closed")
+        except ImportError:
+            print("⚠️ Database manager not available")
+        except Exception as e:
+            print(f"⚠️ Error closing database: {e}")
+        
         print("Bot shutdown complete")
 
 if __name__ == "__main__":
