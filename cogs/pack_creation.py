@@ -450,6 +450,16 @@ class PackCreation(commands.Cog):
     async def test_pack(self, interaction: Interaction):
         """Test command to verify cog is loaded"""
         await interaction.response.send_message("✅ Pack creation cog is working!", ephemeral=True)
+    
+    @app_commands.command(name="debug_commands", description="Debug - show all commands in this cog")
+    async def debug_commands(self, interaction: Interaction):
+        """Debug command to show all commands"""
+        commands = []
+        for cmd in self.bot.tree.walk_commands():
+            if cmd.cog and cmd.cog.__class__.__name__ == "PackCreation":
+                commands.append(cmd.name)
+        
+        await interaction.response.send_message(f"PackCreation commands: {commands}", ephemeral=True)
 
 
 async def setup(bot):
