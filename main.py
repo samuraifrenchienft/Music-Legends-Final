@@ -43,7 +43,6 @@ class Bot(commands.Bot):
         cogs = [
             'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
             'cogs.pack_creation',             # URL-based pack creation: /create_community_pack, /create_gold_pack
-            'cogs.card_game',                 # Complete pack creation system with Spotify integration
             'cogs.trading',                   # Trading system
             'cogs.founder_shop',              # Pack shop (Silver/Black packs)
             'cogs.server_revenue_commands',   # Server revenue tracking
