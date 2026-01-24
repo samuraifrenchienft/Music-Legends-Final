@@ -26,13 +26,7 @@ except ImportError as e:
     print(f"⚠️ Could not import stripe_manager: {e}")
     stripe_manager = None
 
-YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
 DEV_USER_IDS = [int(uid.strip()) for uid in os.getenv("DEV_USER_IDS", "").split(",") if uid.strip()]
-
-if YOUTUBE_KEY:
-    print(f"✅ YouTube API key loaded: {YOUTUBE_KEY[:10]}...")
-else:
-    print("❌ No YouTube API key found - pack creation will fail")
 
 if DEV_USER_IDS:
     print(f"✅ DEV_USER_IDS loaded: {DEV_USER_IDS}")
@@ -59,8 +53,13 @@ class PackCreation(commands.Cog):
             self.db = None
         
         try:
-            self.youtube = build("youtube", "v3", developerKey=YOUTUBE_KEY)
-            print("✅ YouTube API initialized for pack creation")
+            youtube_key = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
+            if youtube_key:
+                self.youtube = build("youtube", "v3", developerKey=youtube_key)
+                print(f"✅ YouTube API initialized for pack creation: {youtube_key[:10]}...")
+            else:
+                print("❌ No YouTube API key found in environment")
+                self.youtube = None
         except Exception as e:
             print(f"❌ Failed to initialize YouTube API: {e}")
             self.youtube = None
@@ -96,13 +95,17 @@ class PackCreation(commands.Cog):
         
         def _get_details():
             try:
+                print(f"🔍 Fetching YouTube video details for ID: {video_id}")
                 request = self.youtube.videos().list(
                     part="snippet,statistics",
                     id=video_id
                 )
-                return request.execute()
+                result = request.execute()
+                print(f"✅ YouTube API response received: {len(result.get('items', []))} items")
+                return result
             except Exception as e:
                 print(f"❌ YouTube API error: {e}")
+                print(f"❌ Error type: {type(e).__name__}")
                 return None
         
         result = await loop.run_in_executor(None, _get_details)
