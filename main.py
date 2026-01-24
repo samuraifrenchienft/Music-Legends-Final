@@ -42,6 +42,7 @@ class Bot(commands.Bot):
         # Load cogs
         cogs = [
             'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
+            'cogs.admin_pack_creation',       # Admin commands for community/gold packs with song-based cards
             'cogs.simple_pack_creation',      # Simple /createpack command with YouTube API
             'cogs.card_game',                 # Complete pack creation system with Spotify integration
             'cogs.trading',                   # Trading system
