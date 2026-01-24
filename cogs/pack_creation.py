@@ -289,7 +289,7 @@ class PackCreation(commands.Cog):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     pack_id,
-                    user_id if pack_type == "gold" else 0,
+                    user_id,  # Always use actual user_id (dev or regular user)
                     f"{hero_video['title']} Pack",
                     f"Featured: {hero_video['title']} + 4 related songs",
                     5,
@@ -298,12 +298,11 @@ class PackCreation(commands.Cog):
                     marketplace_price
                 ))
                 
-                # Add to inventory (gold packs only)
-                if pack_type == "gold":
-                    cursor.execute("""
-                        INSERT INTO user_packs (user_id, pack_id, acquired_at)
-                        VALUES (?, ?, datetime('now'))
-                    """, (user_id, pack_id))
+                # Add to inventory (both pack types now)
+                cursor.execute("""
+                    INSERT INTO user_packs (user_id, pack_id, acquired_at)
+                    VALUES (?, ?, datetime('now'))
+                """, (user_id, pack_id))
                 
                 # List in marketplace
                 cursor.execute("""
@@ -332,7 +331,7 @@ class PackCreation(commands.Cog):
             "hero_card": hero_card,
             "cards": cards,
             "marketplace_price": marketplace_price,
-            "added_to_inventory": pack_type == "gold"
+            "added_to_inventory": True  # Both pack types now add to inventory
         }
     
     @app_commands.command(name="create_community_pack", description="[DEV ONLY] Create a community pack from YouTube URL")
@@ -357,14 +356,20 @@ class PackCreation(commands.Cog):
         # Send confirmation
         embed = discord.Embed(
             title="✅ Community Pack Created!",
-            description=f"Now available in marketplace for $4.99",
+            description=f"**Added to your inventory**\nNow available in marketplace for $4.99",
             color=discord.Color.blue()
         )
         embed.add_field(name="Pack ID", value=result["pack_id"], inline=False)
-        embed.add_field(name="Hero Song", value=f"{result['hero_card']['name']}\n👁️ {result['hero_card']['views']:,} views", inline=False)
+        embed.add_field(name="🌟 Hero Song", value=f"{result['hero_card']['name']}\n👁️ {result['hero_card']['views']:,} views", inline=False)
         
         for i, card in enumerate(result["cards"][1:], 1):
             embed.add_field(name=f"{i}. {card['name']}", value=f"👁️ {card['views']:,} views", inline=False)
+        
+        embed.add_field(
+            name="💡 Use Cases",
+            value="• Open it to seed your server's card economy\n• Gift cards to users with `/give_card`\n• Run contests/giveaways\n• Test features with real cards",
+            inline=False
+        )
         
         await interaction.followup.send(embed=embed)
     
