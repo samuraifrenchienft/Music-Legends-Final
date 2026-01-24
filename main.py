@@ -2,6 +2,7 @@ import json
 import os
 import discord
 from dotenv import load_dotenv
+from discord import Interaction
 from discord.ext import commands
 
 # Load environment variables
@@ -54,6 +55,11 @@ class Bot(commands.Bot):
         print(f"TEST_SERVER_ID: {test_server_id}")
         
         # Add basic test command before sync
+        try:
+            from discord import Interaction
+        except ImportError:
+            Interaction = object  # Fallback for Railway environment issues
+        
         @self.tree.command()
         async def basic_test(interaction: Interaction):
             await interaction.response.send_message("✅ Basic bot is working!")
