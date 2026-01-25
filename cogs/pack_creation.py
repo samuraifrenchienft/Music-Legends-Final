@@ -19,15 +19,16 @@ import uuid
 import json
 import random
 
-# Import simple card stats system
+# Import hybrid weighted pool system
 try:
-    from card_stats import create_card_from_video, generate_pack_cards, validate_pack_balance
-    print("✅ Card stats system loaded")
+    from card_stats import create_card_from_video, generate_hybrid_pack, validate_pack_theme, get_pack_theme_description
+    print("✅ Hybrid weighted pool system loaded")
 except ImportError as e:
-    print(f"⚠️ Card stats system not available: {e}")
+    print(f"⚠️ Hybrid pool system not available: {e}")
     create_card_from_video = None
-    generate_pack_cards = None
-    validate_pack_balance = None
+    generate_hybrid_pack = None
+    validate_pack_theme = None
+    get_pack_theme_description = None
 
 # Try to import stripe_manager, but don't fail if it doesn't work
 try:
@@ -837,10 +838,10 @@ class PackReviewView(discord.ui.View):
         
         await interaction.response.defer()
         
-        # Use simple card stats system
-        if create_card_from_video and generate_pack_cards:
+        # Use hybrid weighted pool system
+        if create_card_from_video and generate_hybrid_pack:
             try:
-                print(f"🎬 Starting gold pack generation for: {youtube_url}")
+                print(f"🎬 Starting hybrid gold pack generation for: {youtube_url}")
                 
                 # 2. Extract YouTube video ID
                 video_id = self.parse_youtube_url(youtube_url)
@@ -854,31 +855,38 @@ class PackReviewView(discord.ui.View):
                     await interaction.followup.send("❌ Could not fetch video details. Please try a different video.", ephemeral=True)
                     return
                 
-                # 4. Get related videos for pack generation
+                # 4. Get videos for weighted pools
                 try:
                     channel_id = video_data.get("channel_id", "")
+                    same_artist_videos = []
                     related_videos = []
+                    
                     if channel_id:
-                        related_videos = await self.get_channel_videos(channel_id, [video_id], max_results=20)
+                        # Pool 1: Same artist top tracks
+                        same_artist_videos = await self.get_channel_videos(channel_id, [video_id], max_results=20)
+                        
+                        # Pool 2 & 3: Related videos (broader search)
+                        related_videos = await self.get_channel_videos("", [video_id], max_results=50)
+                        
                 except Exception as e:
-                    print(f"⚠️ Could not get related videos: {e}")
+                    print(f"⚠️ Could not get pool videos: {e}")
+                    same_artist_videos = []
                     related_videos = []
                 
-                # 5. Generate pack using exact normalization system
-                cards = generate_pack_cards(video_data, related_videos)
+                # 5. Generate pack using hybrid weighted pool system
+                cards = generate_hybrid_pack(video_data, same_artist_videos, related_videos)
                 
-                # 6. Validate pack
-                is_balanced = validate_pack_balance(cards)
-                if not is_balanced:
-                    print("⚠️ Pack not balanced, but continuing anyway")
+                # 6. Validate pack theme
+                theme_validation = validate_pack_theme(cards)
+                theme_description = get_pack_theme_description(cards)
                 
                 # 7. Create preview embed
                 hero_card = cards[0]
-                total_power = sum(card["power"] for card in cards)
+                total_power = theme_validation["total_power"]
                 
                 embed = discord.Embed(
-                    title="🌟 Gold Pack - Normalized Stats",
-                    description=f"Using exact YouTube normalization formulas",
+                    title="🌟 Gold Pack - Hybrid Weighted System",
+                    description=f"Industry-standard TCG pack generation\n{theme_description}",
                     color=discord.Color.gold()
                 )
                 
@@ -889,22 +897,30 @@ class PackReviewView(discord.ui.View):
                           f"🎵 {hero_card['artist']}\n"
                           f"⚡ Power: {hero_card['power']} | 💰 Cost: {hero_card['cost']}\n"
                           f"🏆 Rarity: {hero_card['rarity']}\n"
+                          f"👁️ Views: {hero_card['views']:,}\n"
                           f"🔥 Abilities: {len(hero_card['abilities'])}",
                     inline=False
                 )
                 
                 # Pack statistics
-                rarity_dist = {}
-                for card in cards:
-                    rarity = card["rarity"]
-                    rarity_dist[rarity] = rarity_dist.get(rarity, 0) + 1
-                
                 embed.add_field(
                     name="📊 Pack Statistics",
                     value=f"🃏 Total Cards: {len(cards)}\n"
                           f"⚡ Total Power: {total_power}\n"
-                          f"🏆 Rarity Distribution: {rarity_dist}\n"
-                          f"✅ Balanced: {is_balanced}",
+                          f"🎨 Theme Coherence: {theme_validation['coherence']:.1%}\n"
+                          f"👥 Same Artist Cards: {theme_validation['same_artist_count']}/5",
+                    inline=False
+                )
+                
+                # Weighted pool distribution
+                pool_info = "🎯 **Pool Distribution:**\n"
+                pool_info += f"• Same Artist: 60% weight\n"
+                pool_info += f"• Related Genre: 30% weight\n"
+                pool_info += f"• Wildcard: 10% weight"
+                
+                embed.add_field(
+                    name="🎲 Weighted Pools",
+                    value=pool_info,
                     inline=False
                 )
                 
@@ -912,12 +928,12 @@ class PackReviewView(discord.ui.View):
                 card_list = ""
                 for i, card in enumerate(cards, 1):
                     rarity_emoji = {
-                        "Common": "⚪", "Uncommon": "🟢", "Rare": "🔵", 
-                        "Epic": "🟣", "Legendary": "🟡"
+                        "Common": "⚪", "Rare": "🔵", "Epic": "🟣", "Legendary": "🟡"
                     }.get(card["rarity"], "⚪")
                     
-                    abilities_str = f" | 🔥 {len(card['abilities'])} abilities" if card["abilities"] else ""
-                    card_list += f"{i}. {rarity_emoji} **{card['name']}** (Power: {card['power']}, Cost: {card['cost']}){abilities_str}\n"
+                    abilities_str = f" | 🔥 {', '.join(card['abilities'])}" if card["abilities"] else ""
+                    views_str = f" | 👁️ {card['views']:,}" if card["views"] > 0 else ""
+                    card_list += f"{i}. {rarity_emoji} **{card['name']}** (Power: {card['power']}, Cost: {card['cost']}){views_str}{abilities_str}\n"
                 
                 embed.add_field(
                     name="🎴 Complete Pack",
@@ -954,7 +970,7 @@ class PackReviewView(discord.ui.View):
                                     pack_id,
                                     user_id,
                                     f"{hero_card['name']} Pack",
-                                    f"Featured: {hero_card['name']} + 4 normalized cards",
+                                    f"Hybrid pack: {theme_description}",
                                     len(cards),
                                     "live",
                                     json.dumps(cards),
@@ -979,9 +995,10 @@ class PackReviewView(discord.ui.View):
                             success_embed = discord.Embed(
                                 title="✅ Gold Pack Created!",
                                 description=f"Pack ID: `{pack_id}` is now LIVE in Marketplace.\n"
+                                          f"Theme: {theme_description}\n"
                                           f"Total Power: {total_power}\n"
                                           f"Price: $9.99\n"
-                                          f"Using normalized YouTube stats",
+                                          f"Using hybrid weighted pools",
                                 color=discord.Color.gold()
                             )
                             success_embed.set_footer(text=f"Created by {interaction.user.display_name}")
