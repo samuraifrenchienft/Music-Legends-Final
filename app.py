@@ -475,6 +475,29 @@ if __name__ == '__main__':
     logger.info(f"Starting webhook server on {app.config['HOST']}:{app.config['PORT']}")
     logger.info(f"Debug mode: {app.config['DEBUG']}")
     
+    # Start Discord bot in background thread
+    import threading
+    import time
+    
+    def start_discord_bot():
+        """Start Discord bot in background"""
+        try:
+            import main
+            token = os.getenv("BOT_TOKEN")
+            if token:
+                logger.info("Starting Discord bot in background...")
+                bot = main.Bot()
+                bot.run(token)
+            else:
+                logger.error("No BOT_TOKEN found - Discord bot not started")
+        except Exception as e:
+            logger.error(f"Discord bot failed to start: {e}")
+    
+    # Start Discord bot after Flask app starts
+    discord_thread = threading.Thread(target=start_discord_bot, daemon=True)
+    discord_thread.start()
+    
+    # Start Flask app
     app.run(
         host=app.config['HOST'],
         port=app.config['PORT'],
