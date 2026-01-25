@@ -19,16 +19,20 @@ import uuid
 import json
 import random
 
-# Import hybrid weighted pool system
+# Import complete weighted pool system
 try:
-    from card_stats import create_card_from_video, generate_hybrid_pack, validate_pack_theme, get_pack_theme_description
-    print("✅ Hybrid weighted pool system loaded")
+    from card_stats import (
+        create_hero_card, create_secondary_card, generate_complete_pack, 
+        get_pack_summary_message, WEIGHTS
+    )
+    print("✅ Complete weighted pool system loaded")
 except ImportError as e:
-    print(f"⚠️ Hybrid pool system not available: {e}")
-    create_card_from_video = None
-    generate_hybrid_pack = None
-    validate_pack_theme = None
-    get_pack_theme_description = None
+    print(f"⚠️ Weighted pool system not available: {e}")
+    create_hero_card = None
+    create_secondary_card = None
+    generate_complete_pack = None
+    get_pack_summary_message = None
+    WEIGHTS = {"same_artist": 60, "related_genre": 30, "wildcard": 10}
 
 # Try to import stripe_manager, but don't fail if it doesn't work
 try:
@@ -838,177 +842,235 @@ class PackReviewView(discord.ui.View):
         
         await interaction.response.defer()
         
-        # Use hybrid weighted pool system
-        if create_card_from_video and generate_hybrid_pack:
+        # Use complete weighted pool system
+        if create_hero_card and generate_complete_pack:
             try:
-                print(f"🎬 Starting hybrid gold pack generation for: {youtube_url}")
+                print(f"🎬 Starting complete weighted pool generation for: {youtube_url}")
                 
-                # 2. Extract YouTube video ID
+                # Step 1-2: Permission check already done above
+                
+                # Step 3: Fetch Hero Card Data
+                # 3.1 Parse YouTube URL → extract video_id
                 video_id = self.parse_youtube_url(youtube_url)
                 if not video_id:
                     await interaction.followup.send("❌ Invalid YouTube URL. Please provide a valid YouTube video link.", ephemeral=True)
                     return
                 
-                # 3. Fetch YouTube metadata
+                # 3.2 Query YouTube API: videos.list
                 video_data = await self.get_video_details(video_id)
                 if not video_data:
                     await interaction.followup.send("❌ Could not fetch video details. Please try a different video.", ephemeral=True)
                     return
                 
-                # 4. Get videos for weighted pools
+                # 3.3 Extract metadata (already done in get_video_details)
+                # 3.4 Parse artist + song from title (handled in create_hero_card)
+                
+                # Step 4: Build Weighted Pools
                 try:
                     channel_id = video_data.get("channel_id", "")
-                    same_artist_videos = []
-                    related_videos = []
                     
+                    # 4.1 POOL 1: Same Artist Top Tracks (60% weight)
+                    pool_1_videos = []
                     if channel_id:
-                        # Pool 1: Same artist top tracks
-                        same_artist_videos = await self.get_channel_videos(channel_id, [video_id], max_results=20)
-                        
-                        # Pool 2 & 3: Related videos (broader search)
-                        related_videos = await self.get_channel_videos("", [video_id], max_results=50)
+                        pool_1_videos = await self.get_channel_videos(channel_id, [video_id], max_results=50)
+                        # Convert to card format
+                        pool_1_cards = [create_secondary_card(video, "pool_1") for video in pool_1_videos]
+                    
+                    # 4.2 POOL 2: Related Genre Artists (30% weight)
+                    pool_2_videos = []
+                    try:
+                        # Use relatedToVideoId search
+                        pool_2_videos = await self.get_channel_videos("", [video_id], max_results=50)
+                        # Filter out same artist
+                        pool_2_videos = [v for v in pool_2_videos if v.get("channel_id") != channel_id]
+                        pool_2_cards = [create_secondary_card(video, "pool_2") for video in pool_2_videos]
+                    except Exception as e:
+                        print(f"⚠️ Could not build pool 2: {e}")
+                        pool_2_cards = []
+                    
+                    # 4.3 POOL 3: Wildcard Variety (10% weight)
+                    pool_3_videos = []
+                    try:
+                        # Broader search for wildcards
+                        pool_3_videos = await self.get_channel_videos("", [video_id], max_results=100)
+                        # Filter out cards already in other pools
+                        existing_ids = {v.get("video_id") for v in pool_1_videos + pool_2_videos}
+                        pool_3_videos = [v for v in pool_3_videos if v.get("video_id") not in existing_ids]
+                        pool_3_cards = [create_secondary_card(video, "pool_3") for video in pool_3_videos]
+                    except Exception as e:
+                        print(f"⚠️ Could not build pool 3: {e}")
+                        pool_3_cards = []
                         
                 except Exception as e:
-                    print(f"⚠️ Could not get pool videos: {e}")
-                    same_artist_videos = []
-                    related_videos = []
+                    print(f"⚠️ Could not build pools: {e}")
+                    pool_1_cards = []
+                    pool_2_cards = []
+                    pool_3_cards = []
                 
-                # 5. Generate pack using hybrid weighted pool system
-                cards = generate_hybrid_pack(video_data, same_artist_videos, related_videos)
+                # Step 5: Check Previously Generated Cards (Duplicate Prevention)
+                try:
+                    import sqlite3
+                    previously_generated_ids = []
+                    
+                    with sqlite3.connect("music_legends.db") as conn:
+                        cursor = conn.cursor()
+                        
+                        # Query card_generation_log
+                        hero_card_temp = create_hero_card(video_data)
+                        cursor.execute("""
+                            SELECT generated_youtube_id FROM card_generation_log
+                            WHERE hero_artist = ? AND hero_song = ?
+                        """, (hero_card_temp["artist"], hero_card_temp["song"]))
+                        
+                        previously_generated_ids = [row[0] for row in cursor.fetchall()]
+                        
+                except Exception as e:
+                    print(f"⚠️ Could not check previous generations: {e}")
+                    previously_generated_ids = []
                 
-                # 6. Validate pack theme
-                theme_validation = validate_pack_theme(cards)
-                theme_description = get_pack_theme_description(cards)
+                # Filter pools for duplicates
+                def filter_pool(pool_cards):
+                    return [card for card in pool_cards if card["youtube_id"] not in previously_generated_ids]
                 
-                # 7. Create preview embed
-                hero_card = cards[0]
-                total_power = theme_validation["total_power"]
+                pool_1_filtered = filter_pool(pool_1_cards)
+                pool_2_filtered = filter_pool(pool_2_cards)
+                pool_3_filtered = filter_pool(pool_3_cards)
                 
+                # Step 6: Generate 4 Cards Using Weighted Random
+                pack_result = generate_complete_pack(video_data, pool_1_filtered, pool_2_filtered, pool_3_filtered, previously_generated_ids)
+                
+                # Step 7: Create Pack & Cards in Database
+                pack_id = f"pack_{uuid.uuid4().hex[:8]}"
+                hero_card = pack_result["hero_card"]
+                generated_cards = pack_result["generated_cards"]
+                all_cards = pack_result["all_cards"]
+                
+                try:
+                    import sqlite3
+                    with sqlite3.connect("music_legends.db") as conn:
+                        cursor = conn.cursor()
+                        
+                        # 7.2 Insert into packs table
+                        cursor.execute("""
+                            INSERT INTO creator_packs (
+                                pack_id, creator_id, name, description, pack_size, 
+                                status, cards_data, price
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            pack_id,
+                            interaction.user.id,
+                            f"{hero_card['artist']} - {hero_card['song']} Pack",
+                            f"Weighted pool pack: {pack_result['pack_theme']}",
+                            len(all_cards),
+                            "live",
+                            json.dumps(all_cards),
+                            9.99  # Gold pack price
+                        ))
+                        
+                        # 7.4 & 7.5: Insert all cards into cards table
+                        for card in all_cards:
+                            cursor.execute("""
+                                INSERT INTO cards (
+                                    card_id, pack_id, artist, song, youtube_url, youtube_id,
+                                    view_count, thumbnail, rarity, base_power, is_hero, pool_source
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                f"card_{uuid.uuid4().hex[:8]}",
+                                pack_id,
+                                card["artist"],
+                                card["song"],
+                                card["youtube_url"],
+                                card["youtube_id"],
+                                card["view_count"],
+                                card.get("thumbnail", ""),
+                                card["rarity"],
+                                card["base_power"],
+                                card["is_hero"],
+                                card["pool_source"]
+                            ))
+                        
+                        # 7.6 Log generated cards to prevent future duplicates
+                        for card in generated_cards:
+                            cursor.execute("""
+                                INSERT INTO card_generation_log (
+                                    hero_artist, hero_song, generated_youtube_id, pool_source, created_at
+                                ) VALUES (?, ?, ?, ?, datetime('now'))
+                            """, (
+                                hero_card["artist"],
+                                hero_card["song"],
+                                card["youtube_id"],
+                                card["pool_source"]
+                            ))
+                        
+                        conn.commit()
+                        
+                except Exception as e:
+                    print(f"⚠️ Database error: {e}")
+                
+                # Step 8: Add Pack to Creator's Inventory
+                try:
+                    import sqlite3
+                    with sqlite3.connect("music_legends.db") as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT INTO user_packs (user_id, pack_id, acquired_at, acquisition_type)
+                            VALUES (?, ?, datetime('now'), 'created')
+                        """, (interaction.user.id, pack_id))
+                        conn.commit()
+                except Exception as e:
+                    print(f"⚠️ Inventory error: {e}")
+                
+                # Step 9: List Pack in Marketplace
+                try:
+                    import sqlite3
+                    with sqlite3.connect("music_legends.db") as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT INTO marketplace (pack_id, price, listed_at, stock)
+                            VALUES (?, ?, datetime('now'), 'unlimited')
+                        """, (pack_id, 9.99))
+                        conn.commit()
+                except Exception as e:
+                    print(f"⚠️ Marketplace error: {e}")
+                
+                # Step 10: Send Confirmation to User
                 embed = discord.Embed(
-                    title="🌟 Gold Pack - Hybrid Weighted System",
-                    description=f"Industry-standard TCG pack generation\n{theme_description}",
+                    title="🎵 Gold Pack Created!",
+                    description=f"Featuring {hero_card['artist']} - {hero_card['song']}",
                     color=discord.Color.gold()
                 )
                 
-                # Hero card preview
+                # Hero Card field
                 embed.add_field(
-                    name="⭐ Hero Card",
-                    value=f"**{hero_card['name']}**\n"
-                          f"🎵 {hero_card['artist']}\n"
-                          f"⚡ Power: {hero_card['power']} | 💰 Cost: {hero_card['cost']}\n"
-                          f"🏆 Rarity: {hero_card['rarity']}\n"
-                          f"👁️ Views: {hero_card['views']:,}\n"
-                          f"🔥 Abilities: {len(hero_card['abilities'])}",
+                    name="🌟 Hero Card",
+                    value=f"• {hero_card['artist']} - {hero_card['song']}\n"
+                          f"• {hero_card['rarity'].title()} | {hero_card['view_count']:,} views\n"
+                          f"• Power: {hero_card['base_power']}\n"
+                          f"[Listen on YouTube]({hero_card['youtube_url']})",
                     inline=False
                 )
                 
-                # Pack statistics
+                # Generated Cards field
                 embed.add_field(
-                    name="📊 Pack Statistics",
-                    value=f"🃏 Total Cards: {len(cards)}\n"
-                          f"⚡ Total Power: {total_power}\n"
-                          f"🎨 Theme Coherence: {theme_validation['coherence']:.1%}\n"
-                          f"👥 Same Artist Cards: {theme_validation['same_artist_count']}/5",
+                    name="🎲 Generated Cards",
+                    value=get_pack_summary_message(pack_result),
                     inline=False
                 )
                 
-                # Weighted pool distribution
-                pool_info = "🎯 **Pool Distribution:**\n"
-                pool_info += f"• Same Artist: 60% weight\n"
-                pool_info += f"• Related Genre: 30% weight\n"
-                pool_info += f"• Wildcard: 10% weight"
-                
+                # Status fields
                 embed.add_field(
-                    name="🎲 Weighted Pools",
-                    value=pool_info,
+                    name="✅ Status",
+                    value=f"• Pack added to your inventory\n"
+                          f"• Listed in marketplace for $9.99\n"
+                          f"• Pack Theme: {pack_result['pack_theme']}\n"
+                          f"• Total Power: {pack_result['total_power']}",
                     inline=False
                 )
                 
-                # Show all cards
-                card_list = ""
-                for i, card in enumerate(cards, 1):
-                    rarity_emoji = {
-                        "Common": "⚪", "Rare": "🔵", "Epic": "🟣", "Legendary": "🟡"
-                    }.get(card["rarity"], "⚪")
-                    
-                    abilities_str = f" | 🔥 {', '.join(card['abilities'])}" if card["abilities"] else ""
-                    views_str = f" | 👁️ {card['views']:,}" if card["views"] > 0 else ""
-                    card_list += f"{i}. {rarity_emoji} **{card['name']}** (Power: {card['power']}, Cost: {card['cost']}){views_str}{abilities_str}\n"
+                embed.set_thumbnail(url=hero_card.get("thumbnail", ""))
+                embed.set_footer(text=f"Pack ID: {pack_id} | Created with weighted pools (60/30/10)")
                 
-                embed.add_field(
-                    name="🎴 Complete Pack",
-                    value=card_list,
-                    inline=False
-                )
-                
-                # Add accept button
-                class GoldPackView(discord.ui.View):
-                    def __init__(self, cards, user_id):
-                        super().__init__(timeout=300)
-                        self.cards = cards
-                        self.user_id = user_id
-                    
-                    @discord.ui.button(label="✅ Accept Gold Pack", style=discord.ButtonStyle.green)
-                    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-                        await interaction.response.defer()
-                        
-                        try:
-                            # Save pack to database
-                            import sqlite3
-                            pack_id = f"pack_{uuid.uuid4().hex[:8]}"
-                            
-                            with sqlite3.connect("music_legends.db") as conn:
-                                cursor = conn.cursor()
-                                
-                                # Insert pack
-                                cursor.execute("""
-                                    INSERT INTO creator_packs (
-                                        pack_id, creator_id, name, description, pack_size, 
-                                        status, cards_data, price
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (
-                                    pack_id,
-                                    user_id,
-                                    f"{hero_card['name']} Pack",
-                                    f"Hybrid pack: {theme_description}",
-                                    len(cards),
-                                    "live",
-                                    json.dumps(cards),
-                                    9.99  # Gold pack price
-                                ))
-                                
-                                # Add to user inventory
-                                cursor.execute("""
-                                    INSERT INTO user_packs (user_id, pack_id, acquired_at)
-                                    VALUES (?, ?, datetime('now'))
-                                """, (user_id, pack_id))
-                                
-                                # List in marketplace
-                                cursor.execute("""
-                                    INSERT INTO marketplace (pack_id, price, stock)
-                                    VALUES (?, ?, 1)
-                                """, (pack_id, 9.99))
-                                
-                                conn.commit()
-                            
-                            # Success message
-                            success_embed = discord.Embed(
-                                title="✅ Gold Pack Created!",
-                                description=f"Pack ID: `{pack_id}` is now LIVE in Marketplace.\n"
-                                          f"Theme: {theme_description}\n"
-                                          f"Total Power: {total_power}\n"
-                                          f"Price: $9.99\n"
-                                          f"Using hybrid weighted pools",
-                                color=discord.Color.gold()
-                            )
-                            success_embed.set_footer(text=f"Created by {interaction.user.display_name}")
-                            
-                            await interaction.followup.send(embed=success_embed)
-                            
-                        except Exception as e:
-                            await interaction.followup.send(f"❌ Error saving pack: {e}", ephemeral=True)
-                
-                await interaction.followup.send(embed=embed, view=GoldPackView(cards, interaction.user.id))
+                await interaction.followup.send(embed=embed)
                 
             except Exception as e:
                 await interaction.followup.send(f"❌ Error creating gold pack: {e}", ephemeral=True)
