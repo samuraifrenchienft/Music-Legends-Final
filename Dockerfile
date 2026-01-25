@@ -33,5 +33,9 @@ USER app
 # Expose port (if needed for health checks)
 EXPOSE 8080
 
+# Health check - test Flask app health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)" || exit 1
+
 # Default command - run Flask app with health endpoint
 CMD ["python", "app.py"]
