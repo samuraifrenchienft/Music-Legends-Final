@@ -15,7 +15,7 @@ cmds = [
 ]
 
 [start]
-cmd = ". /opt/venv/bin/activate && python main.py"
+cmd = ". /opt/venv/bin/activate && python app.py"
 
 [variables]
 PHOENIX_APP_PORT = "8080"
