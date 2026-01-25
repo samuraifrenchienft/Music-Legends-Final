@@ -29,16 +29,15 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
-        print(f"🔧 DEBUG: Deploying latest code with all fixes")
         
-        # Temporarily disable async database to get basic bot working
-        print("⚠️ Async database temporarily disabled - using existing database")
-        # TODO: Re-enable async database after Railway dependencies are installed
-        
-        # Load cogs - only essential ones that we know work
+        # Load all essential cogs
         cogs = [
             'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
             'cogs.pack_creation',             # URL-based pack creation: /create_community_pack, /create_gold_pack
+            'cogs.wallet_connect_commands',   # Wallet and NFT functionality
+            'cogs.founder_shop',              # Founder shop
+            'cogs.trading',                   # Trading system
+            'cogs.server_revenue_commands',   # Server revenue
         ]
         
         for cog in cogs:
@@ -53,27 +52,11 @@ class Bot(commands.Bot):
         test_server_id = os.getenv("TEST_SERVER_ID")
         print(f"TEST_SERVER_ID: {test_server_id}")
         
-        # Add basic test command before sync
-        try:
-            from discord import Interaction
-        except ImportError:
-            Interaction = object  # Fallback for Railway environment issues
-        
-        @self.tree.command()
-        async def basic_test(interaction: Interaction):
-            await interaction.response.send_message("✅ Basic bot is working!")
-        
         # Clear old commands first
         print("🧹 Clearing old commands...")
         self.tree.clear_commands(guild=None)
         if test_server_id and test_server_id != "":
             self.tree.clear_commands(guild=discord.Object(id=int(test_server_id)))
-        
-        # Debug: Show all commands before sync
-        all_commands = list(self.tree.walk_commands())
-        print(f"📋 Total commands to sync: {len(all_commands)}")
-        for cmd in all_commands:
-            print(f"  - {cmd.name} (from {cmd.cog.__class__.__name__ if cmd.cog else 'None'})")
         
         try:
             if test_server_id == "" or test_server_id is None:
