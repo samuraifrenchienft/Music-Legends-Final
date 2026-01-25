@@ -33,5 +33,5 @@ USER app
 # Expose port (if needed for health checks)
 EXPOSE 8080
 
-# Default command
-CMD ["python", "main.py"]
+# Default command - run Flask app with health endpoint
+CMD ["python", "app.py"]
