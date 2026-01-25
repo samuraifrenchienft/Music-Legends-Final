@@ -35,16 +35,10 @@ class Bot(commands.Bot):
         print("⚠️ Async database temporarily disabled - using existing database")
         # TODO: Re-enable async database after Railway dependencies are installed
         
-        # Load cogs
+        # Load cogs - only essential ones that we know work
         cogs = [
             'cogs.essential_commands',        # Core gameplay: collection, drop, battle, start_game
-            'cogs.card_game',                 # Complete pack creation system with YouTube integration
-            'cogs.pack_creation_simple',      # Simple pack creation without YouTube dependency
             'cogs.pack_creation',             # URL-based pack creation: /create_community_pack, /create_gold_pack
-            'cogs.trading',                   # Trading system
-            'cogs.founder_shop',              # Pack shop (Silver/Black packs)
-            'cogs.server_revenue_commands',   # Server revenue tracking
-            'cogs.wallet_connect_commands'    # Wallet connect with exact UX copy (NFT boosts disabled until ready)
         ]
         
         for cog in cogs:

@@ -1,4 +1,4 @@
-git+https://github.com/Rapptz/discord.py@master
+discord.py>=2.3.0
 python-dotenv
 pathlib
 uuid
