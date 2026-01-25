@@ -16,4 +16,5 @@ web3
 google-api-python-client
 sqlalchemy
 aiosqlite
+dataclasses
 # Force rebuild

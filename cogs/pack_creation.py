@@ -19,6 +19,15 @@ import uuid
 import json
 import random
 
+# Import hybrid pack generation system
+try:
+    from hybrid_pack_generator import HybridPackGenerator, PackQualityController
+    print("✅ Hybrid pack generator loaded")
+except ImportError as e:
+    print(f"⚠️ Hybrid pack generator not available: {e}")
+    HybridPackGenerator = None
+    PackQualityController = None
+
 # Try to import stripe_manager, but don't fail if it doesn't work
 try:
     from stripe_payments import stripe_manager
@@ -66,6 +75,17 @@ class PackCreation(commands.Cog):
         except Exception as e:
             print(f"❌ Failed to initialize YouTube API: {e}")
             self.youtube = None
+        
+        # Initialize hybrid pack generator
+        if HybridPackGenerator and self.youtube:
+            try:
+                self.hybrid_generator = HybridPackGenerator(self)
+                print("✅ Hybrid pack generator initialized")
+            except Exception as e:
+                print(f"❌ Failed to initialize hybrid generator: {e}")
+                self.hybrid_generator = None
+        else:
+            self.hybrid_generator = None
     
     def is_dev(self, user_id: int) -> bool:
         """Check if user is a dev"""
@@ -775,6 +795,162 @@ class PackReviewView(discord.ui.View):
     async def ping_pack(self, interaction: Interaction):
         """Simple test command"""
         await interaction.response.send_message("✅ Pack creation cog is working!", ephemeral=True)
+    
+    @app_commands.command(name="create_hybrid_pack", description="Create a balanced hybrid pack with professional TCG design")
+    @app_commands.describe(youtube_url="YouTube video URL for the hero card")
+    async def create_hybrid_pack(self, interaction: Interaction, youtube_url: str):
+        """Create a balanced hybrid pack using professional TCG design principles"""
+        
+        if not self.hybrid_generator:
+            await interaction.response.send_message("❌ Hybrid pack generator not available. Please check configuration.", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        try:
+            print(f"🎬 Starting hybrid pack generation for: {youtube_url}")
+            
+            # Generate pack using hybrid system
+            result = await self.hybrid_generator.generate_pack(youtube_url, interaction.user.id)
+            
+            if not result["success"]:
+                await interaction.followup.send(f"❌ {result['error']}", ephemeral=True)
+                return
+            
+            # Get pack data and cards
+            pack_data = result["pack_data"]
+            cards = result["cards"]
+            hero_card = result["hero_card"]
+            
+            # Validate pack quality
+            is_valid, issues = PackQualityController.validate_pack_quality(pack_data)
+            quality_score = PackQualityController.get_pack_quality_score(pack_data)
+            
+            # Create preview embed
+            embed = discord.Embed(
+                title="🎯 Hybrid Pack Preview",
+                description=f"Professional TCG Design • Quality Score: {quality_score:.1%}",
+                color=discord.Color.purple()
+            )
+            
+            # Hero card preview
+            embed.add_field(
+                name="⭐ Hero Card",
+                value=f"**{hero_card.name}**\n"
+                      f"🎵 {hero_card.artist}\n"
+                      f"⚡ Power: {hero_card.power} | 💰 Cost: {hero_card.cost}\n"
+                      f"🏆 Rarity: {hero_card.rarity.value.title()}\n"
+                      f"🔥 Abilities: {len(hero_card.abilities)}",
+                inline=False
+            )
+            
+            # Pack statistics
+            embed.add_field(
+                name="📊 Pack Statistics",
+                value=f"🃏 Total Cards: {len(cards)}\n"
+                      f"⚡ Total Power: {pack_data['pack_power_total']}\n"
+                      f"🏆 Rarity Distribution: {pack_data['pack_rarity_distribution']}\n"
+                      f"✅ Quality Score: {quality_score:.1%}",
+                inline=False
+            )
+            
+            # Show all cards
+            card_list = ""
+            for i, card in enumerate(cards, 1):
+                rarity_emoji = {
+                    "common": "⚪", "uncommon": "🟢", "rare": "🔵", 
+                    "epic": "🟣", "legendary": "🟡"
+                }.get(card.rarity.value, "⚪")
+                
+                card_list += f"{i}. {rarity_emoji} **{card.name}** (Power: {card.power}, Cost: {card.cost})\n"
+            
+            embed.add_field(
+                name="🎴 Complete Pack",
+                value=card_list,
+                inline=False
+            )
+            
+            # Quality validation
+            if is_valid:
+                embed.color = discord.Color.green()
+                embed.set_footer(text="✅ Pack meets all quality standards")
+            else:
+                embed.color = discord.Color.orange()
+                embed.set_footer(text=f"⚠️ Quality issues: {'; '.join(issues)}")
+            
+            # Add accept/decline buttons
+            class HybridPackView(discord.ui.View):
+                def __init__(self, pack_data, cards, user_id):
+                    super().__init__(timeout=300)
+                    self.pack_data = pack_data
+                    self.cards = cards
+                    self.user_id = user_id
+                
+                @discord.ui.button(label="✅ Accept Pack", style=discord.ButtonStyle.green)
+                async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    await interaction.response.defer()
+                    
+                    try:
+                        # Save pack to database
+                        import sqlite3
+                        with sqlite3.connect("music_legends.db") as conn:
+                            cursor = conn.cursor()
+                            
+                            # Insert pack
+                            cursor.execute("""
+                                INSERT INTO creator_packs (
+                                    pack_id, creator_id, name, description, pack_size, 
+                                    status, cards_data, price
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                pack_data["pack_id"],
+                                user_id,
+                                pack_data["name"],
+                                pack_data["description"],
+                                len(cards),
+                                "live",
+                                pack_data["cards_data"],
+                                pack_data["price"]
+                            ))
+                            
+                            # Add to user inventory
+                            cursor.execute("""
+                                INSERT INTO user_packs (user_id, pack_id, acquired_at)
+                                VALUES (?, ?, datetime('now'))
+                            """, (user_id, pack_data["pack_id"]))
+                            
+                            # List in marketplace
+                            cursor.execute("""
+                                INSERT INTO marketplace (pack_id, price, stock)
+                                VALUES (?, ?, 1)
+                            """, (pack_data["pack_id"], pack_data["price"]))
+                            
+                            conn.commit()
+                        
+                        # Success message
+                        success_embed = discord.Embed(
+                            title="✅ Hybrid Pack Created!",
+                            description=f"Pack ID: `{pack_data['pack_id']}` is now LIVE in Marketplace.\n"
+                                      f"Quality Score: {quality_score:.1%}\n"
+                                      f"Total Power: {pack_data['pack_power_total']}",
+                            color=discord.Color.green()
+                        )
+                        success_embed.set_footer(text=f"Created by {interaction.user.display_name}")
+                        
+                        await interaction.followup.send(embed=success_embed)
+                        
+                    except Exception as e:
+                        await interaction.followup.send(f"❌ Error saving pack: {e}", ephemeral=True)
+                
+                @discord.ui.button(label="🔄 Regenerate", style=discord.ButtonStyle.secondary)
+                async def regenerate(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    await interaction.response.send_message("🔄 Regenerating pack...", ephemeral=True)
+                    # Note: Would need to implement regeneration logic
+            
+            await interaction.followup.send(embed=embed, view=HybridPackView(pack_data, cards, interaction.user.id))
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error creating hybrid pack: {e}", ephemeral=True)
     
     @app_commands.command(name="create_community_pack", description="Create a free community pack (Dev only)")
     @app_commands.describe(youtube_url="YouTube video URL for the hero card")
