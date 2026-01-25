@@ -19,14 +19,15 @@ import uuid
 import json
 import random
 
-# Import hybrid pack generation system
+# Import simple card stats system
 try:
-    from hybrid_pack_generator import HybridPackGenerator, PackQualityController
-    print("✅ Hybrid pack generator loaded")
+    from card_stats import create_card_from_video, generate_pack_cards, validate_pack_balance
+    print("✅ Card stats system loaded")
 except ImportError as e:
-    print(f"⚠️ Hybrid pack generator not available: {e}")
-    HybridPackGenerator = None
-    PackQualityController = None
+    print(f"⚠️ Card stats system not available: {e}")
+    create_card_from_video = None
+    generate_pack_cards = None
+    validate_pack_balance = None
 
 # Try to import stripe_manager, but don't fail if it doesn't work
 try:
@@ -76,16 +77,7 @@ class PackCreation(commands.Cog):
             print(f"❌ Failed to initialize YouTube API: {e}")
             self.youtube = None
         
-        # Initialize hybrid pack generator
-        if HybridPackGenerator and self.youtube:
-            try:
-                self.hybrid_generator = HybridPackGenerator(self)
-                print("✅ Hybrid pack generator initialized")
-            except Exception as e:
-                print(f"❌ Failed to initialize hybrid generator: {e}")
-                self.hybrid_generator = None
-        else:
-            self.hybrid_generator = None
+        # Card stats system is available via direct imports
     
     def is_dev(self, user_id: int) -> bool:
         """Check if user is a dev"""
@@ -845,52 +837,74 @@ class PackReviewView(discord.ui.View):
         
         await interaction.response.defer()
         
-        # Use hybrid system if available, fallback to old system
-        if self.hybrid_generator:
+        # Use simple card stats system
+        if create_card_from_video and generate_pack_cards:
             try:
-                print(f"🎬 Starting hybrid gold pack generation for: {youtube_url}")
+                print(f"🎬 Starting gold pack generation for: {youtube_url}")
                 
-                # Generate pack using hybrid system
-                result = await self.hybrid_generator.generate_pack(youtube_url, interaction.user.id)
-                
-                if not result["success"]:
-                    await interaction.followup.send(f"❌ {result['error']}", ephemeral=True)
+                # 2. Extract YouTube video ID
+                video_id = self.parse_youtube_url(youtube_url)
+                if not video_id:
+                    await interaction.followup.send("❌ Invalid YouTube URL. Please provide a valid YouTube video link.", ephemeral=True)
                     return
                 
-                # Get pack data and cards
-                pack_data = result["pack_data"]
-                cards = result["cards"]
-                hero_card = result["hero_card"]
+                # 3. Fetch YouTube metadata
+                video_data = await self.get_video_details(video_id)
+                if not video_data:
+                    await interaction.followup.send("❌ Could not fetch video details. Please try a different video.", ephemeral=True)
+                    return
                 
-                # Validate pack quality
-                is_valid, issues = PackQualityController.validate_pack_quality(pack_data)
-                quality_score = PackQualityController.get_pack_quality_score(pack_data)
+                # 4. Get related videos for pack generation
+                try:
+                    channel_id = video_data.get("channel_id", "")
+                    related_videos = []
+                    if channel_id:
+                        related_videos = await self.get_channel_videos(channel_id, [video_id], max_results=20)
+                except Exception as e:
+                    print(f"⚠️ Could not get related videos: {e}")
+                    related_videos = []
                 
-                # Create preview embed
+                # 5. Generate pack using exact normalization system
+                cards = generate_pack_cards(video_data, related_videos)
+                
+                # 6. Validate pack
+                is_balanced = validate_pack_balance(cards)
+                if not is_balanced:
+                    print("⚠️ Pack not balanced, but continuing anyway")
+                
+                # 7. Create preview embed
+                hero_card = cards[0]
+                total_power = sum(card["power"] for card in cards)
+                
                 embed = discord.Embed(
-                    title="🌟 Gold Pack - Professional TCG Design",
-                    description=f"Premium Quality • Quality Score: {quality_score:.1%}",
+                    title="🌟 Gold Pack - Normalized Stats",
+                    description=f"Using exact YouTube normalization formulas",
                     color=discord.Color.gold()
                 )
                 
                 # Hero card preview
                 embed.add_field(
                     name="⭐ Hero Card",
-                    value=f"**{hero_card.name}**\n"
-                          f"🎵 {hero_card.artist}\n"
-                          f"⚡ Power: {hero_card.power} | 💰 Cost: {hero_card.cost}\n"
-                          f"🏆 Rarity: {hero_card.rarity.value.title()}\n"
-                          f"🔥 Abilities: {len(hero_card.abilities)}",
+                    value=f"**{hero_card['name']}**\n"
+                          f"🎵 {hero_card['artist']}\n"
+                          f"⚡ Power: {hero_card['power']} | 💰 Cost: {hero_card['cost']}\n"
+                          f"🏆 Rarity: {hero_card['rarity']}\n"
+                          f"🔥 Abilities: {len(hero_card['abilities'])}",
                     inline=False
                 )
                 
                 # Pack statistics
+                rarity_dist = {}
+                for card in cards:
+                    rarity = card["rarity"]
+                    rarity_dist[rarity] = rarity_dist.get(rarity, 0) + 1
+                
                 embed.add_field(
                     name="📊 Pack Statistics",
                     value=f"🃏 Total Cards: {len(cards)}\n"
-                          f"⚡ Total Power: {pack_data['pack_power_total']}\n"
-                          f"🏆 Rarity Distribution: {pack_data['pack_rarity_distribution']}\n"
-                          f"✅ Quality Score: {quality_score:.1%}",
+                          f"⚡ Total Power: {total_power}\n"
+                          f"🏆 Rarity Distribution: {rarity_dist}\n"
+                          f"✅ Balanced: {is_balanced}",
                     inline=False
                 )
                 
@@ -898,11 +912,12 @@ class PackReviewView(discord.ui.View):
                 card_list = ""
                 for i, card in enumerate(cards, 1):
                     rarity_emoji = {
-                        "common": "⚪", "uncommon": "🟢", "rare": "🔵", 
-                        "epic": "🟣", "legendary": "🟡"
-                    }.get(card.rarity.value, "⚪")
+                        "Common": "⚪", "Uncommon": "🟢", "Rare": "🔵", 
+                        "Epic": "🟣", "Legendary": "🟡"
+                    }.get(card["rarity"], "⚪")
                     
-                    card_list += f"{i}. {rarity_emoji} **{card.name}** (Power: {card.power}, Cost: {card.cost})\n"
+                    abilities_str = f" | 🔥 {len(card['abilities'])} abilities" if card["abilities"] else ""
+                    card_list += f"{i}. {rarity_emoji} **{card['name']}** (Power: {card['power']}, Cost: {card['cost']}){abilities_str}\n"
                 
                 embed.add_field(
                     name="🎴 Complete Pack",
@@ -910,19 +925,10 @@ class PackReviewView(discord.ui.View):
                     inline=False
                 )
                 
-                # Quality validation
-                if is_valid:
-                    embed.color = discord.Color.gold()
-                    embed.set_footer(text="✅ Premium quality pack")
-                else:
-                    embed.color = discord.Color.orange()
-                    embed.set_footer(text=f"⚠️ Quality issues: {'; '.join(issues)}")
-                
-                # Add accept/decline buttons
+                # Add accept button
                 class GoldPackView(discord.ui.View):
-                    def __init__(self, pack_data, cards, user_id):
+                    def __init__(self, cards, user_id):
                         super().__init__(timeout=300)
-                        self.pack_data = pack_data
                         self.cards = cards
                         self.user_id = user_id
                     
@@ -933,6 +939,8 @@ class PackReviewView(discord.ui.View):
                         try:
                             # Save pack to database
                             import sqlite3
+                            pack_id = f"pack_{uuid.uuid4().hex[:8]}"
+                            
                             with sqlite3.connect("music_legends.db") as conn:
                                 cursor = conn.cursor()
                                 
@@ -943,13 +951,13 @@ class PackReviewView(discord.ui.View):
                                         status, cards_data, price
                                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
-                                    pack_data["pack_id"],
+                                    pack_id,
                                     user_id,
-                                    pack_data["name"],
-                                    pack_data["description"],
+                                    f"{hero_card['name']} Pack",
+                                    f"Featured: {hero_card['name']} + 4 normalized cards",
                                     len(cards),
                                     "live",
-                                    pack_data["cards_data"],
+                                    json.dumps(cards),
                                     9.99  # Gold pack price
                                 ))
                                 
@@ -957,23 +965,23 @@ class PackReviewView(discord.ui.View):
                                 cursor.execute("""
                                     INSERT INTO user_packs (user_id, pack_id, acquired_at)
                                     VALUES (?, ?, datetime('now'))
-                                """, (user_id, pack_data["pack_id"]))
+                                """, (user_id, pack_id))
                                 
                                 # List in marketplace
                                 cursor.execute("""
                                     INSERT INTO marketplace (pack_id, price, stock)
                                     VALUES (?, ?, 1)
-                                """, (pack_data["pack_id"], 9.99))
+                                """, (pack_id, 9.99))
                                 
                                 conn.commit()
                             
                             # Success message
                             success_embed = discord.Embed(
                                 title="✅ Gold Pack Created!",
-                                description=f"Pack ID: `{pack_data['pack_id']}` is now LIVE in Marketplace.\n"
-                                          f"Quality Score: {quality_score:.1%}\n"
-                                          f"Total Power: {pack_data['pack_power_total']}\n"
-                                          f"Price: $9.99",
+                                description=f"Pack ID: `{pack_id}` is now LIVE in Marketplace.\n"
+                                          f"Total Power: {total_power}\n"
+                                          f"Price: $9.99\n"
+                                          f"Using normalized YouTube stats",
                                 color=discord.Color.gold()
                             )
                             success_embed.set_footer(text=f"Created by {interaction.user.display_name}")
@@ -982,13 +990,8 @@ class PackReviewView(discord.ui.View):
                             
                         except Exception as e:
                             await interaction.followup.send(f"❌ Error saving pack: {e}", ephemeral=True)
-                    
-                    @discord.ui.button(label="🔄 Regenerate", style=discord.ButtonStyle.secondary)
-                    async def regenerate(self, interaction: discord.Interaction, button: discord.ui.Button):
-                        await interaction.response.send_message("🔄 Regenerating pack...", ephemeral=True)
-                        # Note: Would need to implement regeneration logic
                 
-                await interaction.followup.send(embed=embed, view=GoldPackView(pack_data, cards, interaction.user.id))
+                await interaction.followup.send(embed=embed, view=GoldPackView(cards, interaction.user.id))
                 
             except Exception as e:
                 await interaction.followup.send(f"❌ Error creating gold pack: {e}", ephemeral=True)

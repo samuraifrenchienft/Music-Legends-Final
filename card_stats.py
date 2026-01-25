@@ -1,301 +1,159 @@
 """
-Card Stats System - Professional TCG Design Principles
-Implements normalized stats, rarity tiers, and balanced pack generation
+Card Stats System - Exact normalization as specified
+Implements YouTube data to normalized stats with proper rarity mapping
 """
 
 import math
 import random
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
-from enum import Enum
+from typing import Dict, List, Optional
 
-class Rarity(Enum):
-    COMMON = "common"
-    UNCOMMON = "uncommon" 
-    RARE = "rare"
-    EPIC = "epic"
-    LEGENDARY = "legendary"
+# Simple rarity system as specified
+RARITY_WEIGHTS = {
+    "Common": 60,
+    "Uncommon": 28,
+    "Rare": 10,
+    "Epic": 1.5,
+    "Legendary": 0.5,
+}
 
-class CardType(Enum):
-    SONG = "song"
-    ARTIST = "artist"
-    COLLABORATION = "collaboration"
+def calc_power(view_count: int, like_count: int) -> int:
+    """Calculate normalized power from YouTube metrics"""
+    # Base power using log10 scaling: power = floor(log10(view_count + 1) * A + B)
+    # Using A=2, B=0 as specified
+    base = math.floor(math.log10(view_count + 1) * 2)
+    
+    # Engagement modifier: bonus = clamp(floor(engagement_ratio * C), 0, D)
+    # Using C=100, D=5 as specified
+    engagement_ratio = like_count / (view_count + 1)
+    bonus = min(int(engagement_ratio * 100), 5)
+    
+    # Final power
+    return base + bonus
 
-@dataclass
-class CardStats:
-    """Core card attributes following TCG design principles"""
-    power: int           # Direct gameplay strength (1-20)
-    cost: int            # Resource requirement (1-10)
-    rarity: Rarity       # Rarity tier
-    abilities: List[str] # Special effects/keywords
-    
-    # YouTube-derived metrics (normalized)
-    views: int
-    likes: int
-    engagement_ratio: float
-    
-    # Card metadata
-    name: str
-    artist: str
-    video_id: str
-    card_type: CardType
-    
-    def get_effective_power(self) -> int:
-        """Calculate power with ability bonuses"""
-        base_power = self.power
-        ability_bonus = len(self.abilities) * 2  # Each ability adds +2 power
-        return base_power + ability_bonus
+def assign_rarity(power: int) -> str:
+    """Assign rarity based on power using exact thresholds specified"""
+    if power >= 15:
+        return "Legendary"
+    elif power >= 12:
+        return "Epic"
+    elif power >= 8:
+        return "Rare"
+    elif power >= 4:
+        return "Uncommon"
+    else:
+        return "Common"
 
-class StatNormalizer:
-    """Normalizes YouTube metrics into balanced gameplay stats"""
-    
-    @staticmethod
-    def normalize_power(views: int, likes: int) -> int:
-        """
-        Convert YouTube metrics to balanced power stat
-        Uses log10 scaling to prevent outliers from dominating
-        """
-        # Log10 scaling compresses huge numbers
-        view_power = math.floor(math.log10(max(views, 1)) * 2)
-        
-        # Likes provide secondary bonus
-        like_bonus = math.floor(math.log10(max(likes, 1)) * 0.5)
-        
-        # Combine and cap at reasonable range
-        raw_power = view_power + like_bonus
-        return max(1, min(20, raw_power))  # Cap between 1-20
-    
-    @staticmethod
-    def calculate_cost(power: int, rarity: Rarity) -> int:
-        """Cost should correlate with power and rarity"""
-        base_cost = max(1, power // 3)  # Roughly 1 cost per 3 power
-        
-        # Rarity increases cost
-        rarity_cost_modifier = {
-            Rarity.COMMON: 0,
-            Rarity.UNCOMMON: 1,
-            Rarity.RARE: 2,
-            Rarity.EPIC: 3,
-            Rarity.LEGENDARY: 4
-        }
-        
-        total_cost = base_cost + rarity_cost_modifier[rarity]
-        return max(1, min(10, total_cost))  # Cap between 1-10
-    
-    @staticmethod
-    def calculate_engagement_ratio(views: int, likes: int) -> float:
-        """Calculate likes/views ratio for ability determination"""
-        if views == 0:
-            return 0.0
-        return min(1.0, likes / views)  # Cap at 1.0 (100%)
+def pick_random_rarity() -> str:
+    """Pick random rarity using weighted selection"""
+    choices = list(RARITY_WEIGHTS.keys())
+    weights = list(RARITY_WEIGHTS.values())
+    return random.choices(choices, weights, k=1)[0]
 
-class RarityAssigner:
-    """Assigns rarity based on normalized stats and engagement"""
+def create_card_from_video(video_data: Dict, is_hero: bool = False) -> Dict:
+    """Create card from YouTube video data using exact normalization"""
     
-    # Rarity buckets based on power and engagement
-    RARITY_THRESHOLDS = {
-        Rarity.LEGENDARY: {"power_min": 13, "engagement_min": 0.08},
-        Rarity.EPIC: {"power_min": 10, "engagement_min": 0.05},
-        Rarity.RARE: {"power_min": 7, "engagement_min": 0.03},
-        Rarity.UNCOMMON: {"power_min": 4, "engagement_min": 0.01},
-        Rarity.COMMON: {"power_min": 0, "engagement_min": 0.0}
+    # Extract metrics
+    views = video_data.get("views", 0)
+    likes = video_data.get("likes", 0)
+    title = video_data.get("title", "Unknown")
+    artist = video_data.get("artist", "Unknown Artist")
+    video_id = video_data.get("video_id", "")
+    
+    # Calculate power using exact formula
+    power = calc_power(views, likes)
+    
+    # Assign rarity based on power
+    rarity = assign_rarity(power)
+    
+    # Hero cards get rarity boost
+    if is_hero:
+        if rarity == "Common":
+            rarity = "Rare"
+        elif rarity == "Uncommon":
+            rarity = "Rare"
+        elif rarity == "Rare":
+            rarity = "Epic"
+        elif rarity == "Epic":
+            rarity = "Legendary"
+        # Legendary stays Legendary
+    
+    # Calculate cost (simple formula: 1 cost per 3 power, minimum 1)
+    cost = max(1, power // 3)
+    
+    # Generate simple abilities based on metrics
+    abilities = []
+    if views > 1000000:
+        abilities.append("Trendsetter")
+    if likes / max(views, 1) > 0.1:
+        abilities.append("Viral")
+    if views > 50000000:
+        abilities.append("Classic")
+    
+    # Higher rarity gets bonus abilities
+    if rarity == "Legendary" and len(abilities) < 2:
+        abilities.append("Special")
+    elif rarity == "Epic" and len(abilities) < 1:
+        abilities.append("Rare")
+    
+    return {
+        "name": title,
+        "artist": artist,
+        "power": power,
+        "cost": cost,
+        "rarity": rarity,
+        "abilities": abilities,
+        "views": views,
+        "likes": likes,
+        "video_id": video_id,
+        "card_type": "song"
     }
-    
-    # Frequency weights for pack generation
-    RARITY_WEIGHTS = {
-        Rarity.COMMON: 40,
-        Rarity.UNCOMMON: 30,
-        Rarity.RARE: 20,
-        Rarity.EPIC: 8,
-        Rarity.LEGENDARY: 2
-    }
-    
-    @classmethod
-    def assign_rarity(cls, power: int, engagement_ratio: float) -> Rarity:
-        """Assign rarity based on stats"""
-        for rarity in [Rarity.LEGENDARY, Rarity.EPIC, Rarity.RARE, Rarity.UNCOMMON, Rarity.COMMON]:
-            threshold = cls.RARITY_THRESHOLDS[rarity]
-            if power >= threshold["power_min"] and engagement_ratio >= threshold["engagement_min"]:
-                return rarity
-        return Rarity.COMMON
-    
-    @classmethod
-    def get_weighted_rarity(cls, exclude_rarities: List[Rarity] = None) -> Rarity:
-        """Get random rarity based on frequency weights"""
-        exclude_rarities = exclude_rarities or []
-        
-        # Filter out excluded rarities
-        available_rarities = {
-            rarity: weight for rarity, weight in cls.RARITY_WEIGHTS.items()
-            if rarity not in exclude_rarities
-        }
-        
-        if not available_rarities:
-            return Rarity.COMMON
-        
-        # Weighted random selection
-        total_weight = sum(available_rarities.values())
-        rand = random.random() * total_weight
-        
-        current_weight = 0
-        for rarity, weight in available_rarities.items():
-            current_weight += weight
-            if rand <= current_weight:
-                return rarity
-        
-        return list(available_rarities.keys())[0]
 
-class AbilityGenerator:
-    """Generates thematic abilities based on video metrics"""
+def generate_pack_cards(hero_video_data: Dict, other_videos: List[Dict]) -> List[Dict]:
+    """Generate a 5-card pack using exact specifications"""
     
-    ABILITIES = {
-        "trendsetter": {
-            "name": "Trendsetter",
-            "requirement": lambda views, likes: views > 1000000,  # 1M+ views
-            "description": "This card gains +1 power for each Trendsetter card in play"
-        },
-        "viral_surge": {
-            "name": "Viral Surge", 
-            "requirement": lambda views, likes: (likes / max(views, 1)) > 0.1,  # 10%+ engagement
-            "description": "When played, draw an extra card if this was the last card played"
-        },
-        "classic_hit": {
-            "name": "Classic Hit",
-            "requirement": lambda views, likes: views > 50000000,  # 50M+ views
-            "description": "This card cannot be removed from play by opponent's abilities"
-        },
-        "rising_star": {
-            "name": "Rising Star",
-            "requirement": lambda views, likes: 100000 < views < 1000000,  # 100K-1M views
-            "description": "This card gains +2 power if played in the first 3 turns"
-        },
-        "fan_favorite": {
-            "name": "Fan Favorite",
-            "requirement": lambda views, likes: (likes / max(views, 1)) > 0.05,  # 5%+ engagement
-            "description": "Reduce cost of next card by 1"
-        },
-        "breakout_hit": {
-            "name": "Breakout Hit",
-            "requirement": lambda views, likes: views < 50000 and likes > 10000,  # Low views, high likes
-            "description": "Double power when opponent has no cards in play"
-        }
-    }
+    cards = []
     
-    @classmethod
-    def generate_abilities(cls, views: int, likes: int, rarity: Rarity) -> List[str]:
-        """Generate abilities based on video metrics and rarity"""
-        abilities = []
-        
-        # Check each ability requirement
-        for ability_key, ability_data in cls.ABILITIES.items():
-            if ability_data["requirement"](views, likes):
-                abilities.append(ability_key)
-        
-        # Higher rarity cards get bonus abilities
-        rarity_bonus_abilities = {
-            Rarity.LEGENDARY: 2,
-            Rarity.EPIC: 1,
-            Rarity.RARE: 1,
-            Rarity.UNCOMMON: 0,
-            Rarity.COMMON: 0
-        }
-        
-        bonus_count = rarity_bonus_abilities[rarity]
-        if bonus_count > 0:
-            # Add random bonus abilities for higher rarity
-            all_abilities = list(cls.ABILITIES.keys())
-            available_bonus = [a for a in all_abilities if a not in abilities]
+    # Card 1: Hero (from YouTube URL → guaranteed)
+    hero_card = create_card_from_video(hero_video_data, is_hero=True)
+    cards.append(hero_card)
+    
+    # Cards 2-5: Weighted random picks from other videos
+    for i in range(4):
+        if other_videos:
+            # Pick random video
+            video_data = random.choice(other_videos)
             
-            if available_bonus:
-                bonus_abilities = random.sample(available_bonus, min(bonus_count, len(available_bonus)))
-                abilities.extend(bonus_abilities)
-        
-        return abilities
-
-class CardFactory:
-    """Factory for creating balanced cards from YouTube data"""
-    
-    @staticmethod
-    def create_card_from_video(video_data: Dict, is_hero: bool = False) -> CardStats:
-        """Create a balanced card from YouTube video data"""
-        
-        # Extract metrics
-        views = video_data.get("views", 0)
-        likes = video_data.get("likes", 0)
-        title = video_data.get("title", "Unknown")
-        artist = video_data.get("artist", "Unknown Artist")
-        video_id = video_data.get("video_id", "")
-        
-        # Normalize stats
-        power = StatNormalizer.normalize_power(views, likes)
-        engagement_ratio = StatNormalizer.calculate_engagement_ratio(views, likes)
-        
-        # Assign rarity (hero cards get rarity boost)
-        base_rarity = RarityAssigner.assign_rarity(power, engagement_ratio)
-        if is_hero:
-            # Hero cards get at least Rare rarity
-            rarity_upgrade = {
-                Rarity.COMMON: Rarity.RARE,
-                Rarity.UNCOMMON: Rarity.RARE,
-                Rarity.RARE: Rarity.EPIC,
-                Rarity.EPIC: Rarity.LEGENDARY,
-                Rarity.LEGENDARY: Rarity.LEGENDARY
-            }
-            rarity = rarity_upgrade[base_rarity]
+            # Create card
+            card = create_card_from_video(video_data, is_hero=False)
+            
+            # For secondary cards, sometimes force rarity for variety
+            if i == 0:  # Card 2: ensure at least uncommon
+                if card["rarity"] == "Common":
+                    card["rarity"] = "Uncommon"
+                    card["cost"] = max(1, card["power"] // 3)
+            
+            cards.append(card)
         else:
-            rarity = base_rarity
-        
-        # Calculate cost
-        cost = StatNormalizer.calculate_cost(power, rarity)
-        
-        # Generate abilities
-        abilities = AbilityGenerator.generate_abilities(views, likes, rarity)
-        
-        # Determine card type
-        card_type = CardType.SONG  # Default to song for YouTube videos
-        
-        return CardStats(
-            power=power,
-            cost=cost,
-            rarity=rarity,
-            abilities=abilities,
-            views=views,
-            likes=likes,
-            engagement_ratio=engagement_ratio,
-            name=title,
-            artist=artist,
-            video_id=video_id,
-            card_type=card_type
-        )
+            # Fallback: create generic card
+            fallback_card = {
+                "name": f"Generated Card {i+2}",
+                "artist": "System",
+                "power": random.randint(2, 8),
+                "cost": random.randint(1, 3),
+                "rarity": pick_random_rarity(),
+                "abilities": [],
+                "views": 0,
+                "likes": 0,
+                "video_id": f"generated_{i+2}",
+                "card_type": "song"
+            }
+            cards.append(fallback_card)
     
-    @staticmethod
-    def create_balanced_secondary_card(video_data: Dict, target_rarity: Optional[Rarity] = None) -> CardStats:
-        """Create a secondary card with balanced stats for pack generation"""
-        
-        card = CardFactory.create_card_from_video(video_data, is_hero=False)
-        
-        # If target rarity specified, adjust the card
-        if target_rarity and card.rarity != target_rarity:
-            # Adjust stats to match target rarity
-            card.rarity = target_rarity
-            card.cost = StatNormalizer.calculate_cost(card.power, target_rarity)
-            card.abilities = AbilityGenerator.generate_abilities(card.views, card.likes, target_rarity)
-        
-        return card
+    return cards
 
-# Pack generation configuration
-PACK_DISTRIBUTION = {
-    "total_cards": 5,
-    "hero_cards": 1,
-    "artist_top_cards": 1,
-    "related_cards": 2,
-    "wildcard_cards": 1
-}
-
-RARITY_DISTRIBUTION_PER_PACK = {
-    Rarity.COMMON: 2,
-    Rarity.UNCOMMON: 1,
-    Rarity.RARE: 1,
-    Rarity.EPIC: 0.5,  # 50% chance
-    Rarity.LEGENDARY: 0.1   # 10% chance
-}
+def validate_pack_balance(cards: List[Dict]) -> bool:
+    """Simple pack validation"""
+    total_power = sum(card["power"] for card in cards)
+    
+    # Basic balance check: total power should be reasonable
+    return 10 <= total_power <= 50
