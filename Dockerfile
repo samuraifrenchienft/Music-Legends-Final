@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-01-25-05-45-00
+ARG CACHE_BUST=2026-01-25-13-42-00
 
 # Set working directory
 WORKDIR /app
@@ -32,10 +32,6 @@ USER app
 
 # Expose port (if needed for health checks)
 EXPOSE 8080
-
-# Health check - comprehensive check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python health_check.py || exit 1
 
 # Default command
 CMD ["python", "main.py"]
