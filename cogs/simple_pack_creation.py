@@ -366,6 +366,11 @@ class SimplePackCreation(commands.Cog):
         
         return cards
     
+    @app_commands.command(name="test_pack", description="Test if pack creation cog is working")
+    async def test_pack(self, interaction: Interaction):
+        """Test command to verify cog is loaded"""
+        await interaction.response.send_message("✅ Pack creation cog is working! Commands available: /create_pack", ephemeral=True)
+    
     def is_dev(self, user_id: int) -> bool:
         """Check if user is a developer"""
         dev_ids = os.getenv("DEV_USER_IDS", "").split(",") if os.getenv("DEV_USER_IDS") else []
@@ -374,4 +379,10 @@ class SimplePackCreation(commands.Cog):
 async def setup(bot):
     cog = SimplePackCreation(bot)
     await bot.add_cog(cog)
-    print(f"🔥 SimplePackCreation cog loaded with create_pack command")
+    
+    # List all commands in this cog for debugging
+    commands = []
+    for cmd in cog.walk_app_commands():
+        commands.append(f"/{cmd.name}")
+    
+    print(f"🔥 SimplePackCreation cog loaded with commands: {commands}")
