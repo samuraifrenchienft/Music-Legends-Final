@@ -40,7 +40,7 @@ class Bot(commands.Bot):
             'cogs.start_game',                # Start game command
             'cogs.gameplay',                  # Drop and battle commands
             'cogs.card_game',                 # Collection and basic game commands
-            'cogs.simple_pack_creation',      # Simple artist name pack creation: /create_pack
+            'cogs.simple_pack_creation',      # Artist name pack creation with YouTube selection
         ]
         
         for cog in cogs:
