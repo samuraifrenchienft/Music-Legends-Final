@@ -39,8 +39,7 @@ class Bot(commands.Bot):
         cogs = [
             'cogs.start_game',                # Start game command
             'cogs.gameplay',                  # Drop and battle commands
-            'cogs.card_game',                 # Collection and basic game commands
-            'cogs.simple_pack_creation',      # Artist name pack creation with YouTube selection
+            'cogs.card_game',                 # Collection and pack creation commands
         ]
         
         for cog in cogs:
