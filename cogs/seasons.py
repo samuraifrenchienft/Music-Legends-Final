@@ -3,7 +3,6 @@ import discord
 from discord.ext import commands
 from discord import Interaction, app_commands, ui
 from typing import Dict, List, Optional
-import json
 from season_system import SeasonManager
 from database import DatabaseManager
 from card_economy import CardEconomyManager
@@ -100,7 +99,7 @@ class SeasonsCog(commands.Cog):
         )
         
         for reward in available_rewards[:10]:  # Show up to 10 rewards
-            reward_data = json.loads(reward['reward_data']) if reward['reward_data'] else {}
+            reward_data = eval(reward['reward_data']) if reward['reward_data'] else {}
             
             # Format reward description
             if reward['reward_type'] == 'currency':

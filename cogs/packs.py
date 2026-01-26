@@ -4,7 +4,6 @@ import random
 from discord.ext import commands
 from discord import Interaction, app_commands, ui
 from typing import Dict, List
-import json
 import sqlite3
 from card_economy import CardEconomyManager
 from database import DatabaseManager

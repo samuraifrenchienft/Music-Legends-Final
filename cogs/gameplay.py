@@ -202,7 +202,7 @@ class GameplayCog(commands.Cog):
         
         # Add card stats if available
         if card[12]:  # stats
-            stats = json.loads(card[12])
+            stats = eval(card[12])
             if stats:
                 stats_text = ""
                 for stat, value in stats.items():
@@ -421,7 +421,6 @@ class CardUpgradeView(ui.View):
 
 # Import sqlite3 for the view command
 import sqlite3
-import json
 from datetime import datetime
 
 async def setup(bot):

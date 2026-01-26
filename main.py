@@ -37,9 +37,11 @@ class Bot(commands.Bot):
         
         # Load all essential cogs
         cogs = [
-            'cogs.essential_commands',        # Core commands (duplicates removed)
+            'cogs.card_creation',             # Basic card creation commands
+            'cogs.card_game',                 # Complete pack creation and game commands
             'cogs.start_game',                # Start game command
             'cogs.gameplay',                  # Drop and battle commands
+            'cogs.simple_pack_creation',      # Simple pack creation (no YouTube API required)
             'cogs.pack_creation',             # URL-based pack creation: /create_community_pack, /create_gold_pack
             'cogs.wallet_connect_commands',   # Wallet and NFT functionality
             'cogs.founder_shop',              # Founder shop

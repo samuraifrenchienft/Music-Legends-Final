@@ -5,7 +5,6 @@ import uuid
 from discord.ext import commands
 from discord import Interaction, app_commands, ui
 from typing import Dict, List, Optional
-import json
 import sqlite3
 from card_economy import CardEconomyManager
 from database import DatabaseManager
@@ -290,7 +289,7 @@ class TradingCog(commands.Cog):
                 UPDATE cards 
                 SET owner_user_id = ?, owner_history = COALESCE(owner_history, '[]') || ?
                 WHERE card_id = ?
-            """, (interaction.user.id, json.dumps([seller_id]), card_id))
+            """, (interaction.user.id, str([seller_id]), card_id))
             
             # Mark listing as sold
             cursor.execute("""

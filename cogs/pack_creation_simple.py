@@ -6,7 +6,6 @@ import os
 import sqlite3
 from database import DatabaseManager
 import uuid
-import json
 
 class PackCreationSimple(commands.Cog):
     """Simple pack creation system - no YouTube API required"""
@@ -71,7 +70,7 @@ class PackCreationSimple(commands.Cog):
         
         # Database transaction
         pack_id = f"pack_{uuid.uuid4().hex[:8]}"
-        cards_json = json.dumps(cards)
+        cards_json = str(cards)
         
         try:
             import sqlite3

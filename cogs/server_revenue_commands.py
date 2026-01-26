@@ -74,7 +74,7 @@ class ServerRevenueCommands(commands.Cog):
         embed.add_field(
             name="🔗 Stripe Connect",
             value=f"{stripe_status}\n"
-                  f"Use `/connect_stripe` to set up automatic payouts",
+                  f"Contact support to set up automatic payouts",
             inline=False
         )
         
@@ -221,55 +221,6 @@ class ServerRevenueCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="connect_stripe", description="Connect Stripe for automatic payouts")
-    async def connect_stripe(self, interaction: Interaction):
-        """Connect Stripe account for payouts"""
-        
-        # Check if user is server owner
-        if interaction.guild.owner_id != interaction.user.id:
-            await interaction.response.send_message(
-                "❌ Only the server owner can connect Stripe!",
-                ephemeral=True
-            )
-            return
-        
-        # This would create Stripe Connect onboarding link
-        # For now, show placeholder
-        embed = discord.Embed(
-            title="🔗 Connect Stripe Account",
-            description="Set up automatic payouts for your server revenue!",
-            color=discord.Color.blue()
-        )
-        
-        embed.add_field(
-            name="💰 What You'll Earn",
-            value="• 10-30% of all pack sales in your server\n"
-                  "• Automatic weekly payouts\n"
-                  "• Full transaction history",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📋 Requirements",
-            value="• Valid bank account\n"
-                  "• Government ID for verification\n"
-                  "• Business or personal account",
-            inline=False
-        )
-        
-        # In production, this would be a real Stripe Connect link
-        connect_url = "https://connect.stripe.com/express/oauth/authorize?..."
-        
-        embed.add_field(
-            name="🚀 Next Steps",
-            value=f"[Click here to connect Stripe]({connect_url})\n\n"
-                  f"After connecting, payouts will be automatic!",
-            inline=False
-        )
-        
-        embed.set_footer(text="Secure payment processing via Stripe")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
+    
 async def setup(bot):
     await bot.add_cog(ServerRevenueCommands(bot))

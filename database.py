@@ -523,7 +523,7 @@ class DatabaseManager:
                     """
                     INSERT OR REPLACE INTO cards 
                     (card_id, name, title, rarity, era, variant, impact, skill, 
-                     longevity, culture, hype, image_url, spotify_url, youtube_url, card_type)
+                     longevity, culture, hype, image_url, spotify_url, youtube_url, type)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
@@ -533,7 +533,7 @@ class DatabaseManager:
                         card_data.get('longevity', 0), card_data.get('culture', 0),
                         card_data.get('hype', 0), card_data.get('image_url'),
                         card_data.get('spotify_url'), card_data.get('youtube_url'),
-                        card_data.get('card_type', 'artist')
+                        card_data.get('type', card_data.get('card_type', 'artist'))
                     )
                 )
                 conn.commit()

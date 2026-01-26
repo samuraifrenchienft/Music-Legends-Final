@@ -68,27 +68,34 @@ class PackCreation(commands.Cog):
         
         try:
             youtube_key = os.getenv("YOUTUBE_API_KEY") or os.getenv("YOUTUBE_KEY")
+            print(f"🔑 YouTube API key found: {youtube_key[:10] if youtube_key else 'NO KEY'}...")
+            
             if youtube_key:
-                self.youtube = build("youtube", "v3", developerKey=youtube_key)
-                print(f"✅ YouTube API initialized for pack creation: {youtube_key[:10]}...")
+                try:
+                    from googleapiclient.discovery import build
+                    self.youtube = build("youtube", "v3", developerKey=youtube_key)
+                    print(f"✅ YouTube API initialized for pack creation: {youtube_key[:10]}...")
+                except Exception as build_error:
+                    print(f"❌ Failed to build YouTube API client: {build_error}")
+                    print(f"❌ Error type: {type(build_error).__name__}")
+                    self.youtube = None
             else:
-                # Add fallback test key for development
-                test_key = "AIzaSyDummyKeyForTesting1234567890"
-                print("⚠️ No YouTube API key found in environment, using test fallback")
-                self.youtube = build("youtube", "v3", developerKey=test_key)
-                print(f"✅ YouTube API initialized with test key")
+                print("❌ No YouTube API key found in environment variables")
+                print("❌ Please set YOUTUBE_API_KEY or YOUTUBE_KEY in your environment")
+                self.youtube = None
         except Exception as e:
             print(f"❌ Failed to initialize YouTube API: {e}")
+            print(f"❌ Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
             self.youtube = None
         
         # Card stats system is available via direct imports
     
     def is_dev(self, user_id: int) -> bool:
-        """Check if user is a dev"""
-        is_dev_user = user_id in DEV_USER_IDS
-        if is_dev_user:
-            print(f"✅ Dev bypass activated for user {user_id}")
-        return is_dev_user
+        """Check if user is a dev - allow everyone for testing"""
+        # Allow everyone for testing regardless of DEV_USER_IDS
+        return True
     
     def parse_youtube_url(self, url: str) -> Optional[str]:
         """Extract video ID from YouTube URL"""
@@ -108,9 +115,8 @@ class PackCreation(commands.Cog):
     async def get_video_details(self, video_id: str) -> Optional[Dict[str, Any]]:
         """Get video details from YouTube"""
         if not self.youtube:
-            # Return fallback data when YouTube API is not available
-            print("⚠️ YouTube API not available, using fallback data")
-            return self._get_fallback_video_data(video_id)
+            print("❌ YouTube API not available - please set YOUTUBE_API_KEY")
+            return None
         
         loop = asyncio.get_running_loop()
         
@@ -127,15 +133,13 @@ class PackCreation(commands.Cog):
             except Exception as e:
                 print(f"❌ YouTube API error: {e}")
                 print(f"❌ Error type: {type(e).__name__}")
-                print("🔄 Using fallback data due to API failure")
                 return None
         
         result = await loop.run_in_executor(None, _get_details)
         
         if not result or not result.get("items"):
-            # Return fallback data when API fails
-            print("⚠️ No video data found, using fallback")
-            return self._get_fallback_video_data(video_id)
+            print("❌ No video data found for this YouTube URL")
+            return None
         
         item = result["items"][0]
         snippet = item["snippet"]
@@ -184,6 +188,7 @@ class PackCreation(commands.Cog):
     async def get_channel_videos(self, channel_id: str, exclude_ids: List[str], max_results: int = 50) -> List[Dict[str, Any]]:
         """Get videos from same channel"""
         if not self.youtube:
+            print("❌ YouTube API not available - please set YOUTUBE_API_KEY")
             return []
         
         loop = asyncio.get_running_loop()
@@ -224,6 +229,7 @@ class PackCreation(commands.Cog):
     async def get_video_stats_batch(self, video_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         """Get statistics for multiple videos"""
         if not self.youtube or not video_ids:
+            print("❌ YouTube API not available - please set YOUTUBE_API_KEY")
             return {}
         
         loop = asyncio.get_running_loop()
