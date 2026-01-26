@@ -348,9 +348,37 @@ class CardGameCog(Cog):
         # Clean up match
         del self.active_matches[match.match_id]
 
-    # Pack opening command removed - use pack_creation.py for URL-based pack creation
-
-    # Pack creation commands removed - use pack_creation.py for /create_community_pack and /create_gold_pack
+    # Pack Creation Commands
+    @app_commands.command(name="create_pack", description="Create a new pack with artist cards")
+    @app_commands.describe(pack_name="Name for your pack", artist_name="Main artist for the pack")
+    async def create_pack(self, interaction: Interaction, pack_name: str, artist_name: str):
+        """Create a new pack with artist cards"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Create pack using database method
+            pack_id = self.db.create_creator_pack(
+                creator_id=interaction.user.id,
+                pack_name=pack_name,
+                artist_name=artist_name,
+                pack_type="community"
+            )
+            
+            if pack_id:
+                embed = discord.Embed(
+                    title="✅ Pack Created!",
+                    description=f"Pack '{pack_name}' has been created successfully.",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Pack ID", value=pack_id, inline=False)
+                embed.add_field(name="Artist", value=artist_name, inline=False)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Failed to create pack", ephemeral=True)
+                
+        except Exception as e:
+            print(f"❌ Error creating pack: {e}")
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
     # Creator Dashboard Commands
     @app_commands.command(name="creator_earnings", description="View your creator earnings and balance")

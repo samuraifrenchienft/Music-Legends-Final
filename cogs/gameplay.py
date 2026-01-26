@@ -106,6 +106,12 @@ class GameplayCog(commands.Cog):
     @app_commands.command(name="my_collection", description="View your card collection")
     async def my_collection_command(self, interaction: Interaction, user: discord.User = None):
         """View user's card collection"""
+        # Call collection command
+        await self.collection_command(interaction, user)
+    
+    @app_commands.command(name="collection", description="View your card collection")
+    async def collection_command(self, interaction: Interaction, user: discord.User = None):
+        """View user's card collection"""
         target_user = user or interaction.user
         
         collection = self.economy.get_user_collection(target_user.id)
