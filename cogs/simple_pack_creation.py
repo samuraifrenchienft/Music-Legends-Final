@@ -10,74 +10,69 @@ import random
 from googleapiclient.discovery import build
 import asyncio
 
-class VideoSelectionView(discord.ui.View):
-    """View for selecting YouTube videos for pack creation"""
+class PackConfirmationView(discord.ui.View):
+    """View for confirming pack creation with main content + related videos"""
     
-    def __init__(self, cog, videos, artist_name, pack_type, user):
+    def __init__(self, cog, main_content, related_videos, artist_name, pack_type, user):
         super().__init__(timeout=180)  # 3 minutes timeout
         self.cog = cog
-        self.videos = videos
+        self.main_content = main_content
+        self.related_videos = related_videos
         self.artist_name = artist_name
         self.pack_type = pack_type
         self.user = user
-        self.current_page = 0
-        self.videos_per_page = 5
         
-        # Add navigation buttons
-        self.add_item(discord.ui.Button(label="◀️ Previous", style=discord.ButtonStyle.secondary, custom_id="prev"))
-        self.add_item(discord.ui.Button(label="▶️ Next", style=discord.ButtonStyle.secondary, custom_id="next"))
+        # Add confirmation button
+        confirm_button = discord.ui.Button(
+            label="✅ Create Pack",
+            style=discord.ButtonStyle.success,
+            custom_id="confirm_pack"
+        )
+        confirm_button.callback = self.create_pack_callback
+        self.add_item(confirm_button)
         
-        # Add video selection buttons
-        self.update_video_buttons()
+        # Add cancel button
+        cancel_button = discord.ui.Button(
+            label="❌ Cancel",
+            style=discord.ButtonStyle.danger,
+            custom_id="cancel_pack"
+        )
+        cancel_button.callback = self.cancel_callback
+        self.add_item(cancel_button)
     
-    def update_video_buttons(self):
-        """Update video selection buttons for current page"""
-        # Remove old video buttons
-        to_remove = []
+    async def create_pack_callback(self, interaction: discord.Interaction):
+        """Create the pack with main content + related videos"""
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ You can't create packs for someone else!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Create the pack
+        await self.cog.create_pack_with_content(
+            interaction, self.main_content, self.related_videos, 
+            self.artist_name, self.pack_type
+        )
+        
+        # Disable all buttons after creation
         for child in self.children:
-            if child.custom_id and child.custom_id.startswith("video_"):
-                to_remove.append(child)
+            child.disabled = True
         
-        for item in to_remove:
-            self.remove_item(item)
-        
-        # Add new video buttons for current page
-        start_idx = self.current_page * self.videos_per_page
-        end_idx = min(start_idx + self.videos_per_page, len(self.videos))
-        
-        for i in range(start_idx, end_idx):
-            video = self.videos[i]
-            button_text = f"📹 {video['title'][:30]}..."
-            
-            button = discord.ui.Button(
-                label=button_text,
-                style=discord.ButtonStyle.primary,
-                custom_id=f"video_{i}"
-            )
-            button.callback = self.create_video_callback(video, i)
-            self.add_item(button)
+        await interaction.edit_original_response(view=self)
     
-    def create_video_callback(self, video, index):
-        """Create callback for video selection"""
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user.id:
-                await interaction.response.send_message("❌ You can't select videos for someone else's pack!", ephemeral=True)
-                return
-            
-            await interaction.response.defer(ephemeral=True)
-            
-            # Create the pack with selected video
-            await self.cog.create_pack_from_video(
-                interaction, video, self.artist_name, self.pack_type
-            )
-            
-            # Disable all buttons after selection
-            for child in self.children:
-                child.disabled = True
-            
-            await interaction.edit_original_response(view=self)
+    async def cancel_callback(self, interaction: discord.Interaction):
+        """Cancel pack creation"""
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ You can't cancel someone else's pack!", ephemeral=True)
+            return
         
-        return callback
+        await interaction.response.send_message("❌ Pack creation cancelled", ephemeral=True)
+        
+        # Disable all buttons
+        for child in self.children:
+            child.disabled = True
+        
+        await interaction.edit_original_response(view=self)
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Only allow the original user to interact"""
@@ -140,93 +135,158 @@ class SimplePackCreation(commands.Cog):
             await interaction.followup.send("❌ Platinum packs are developer only!", ephemeral=True)
             return
         
-        # Search YouTube for artist videos
+        # Step 1: Get main artist content
         try:
-            videos = await self.search_artist_videos(artist_name)
+            main_content = await self.search_artist_main_content(artist_name)
             
-            if not videos:
-                await interaction.followup.send(f"❌ No videos found for artist: {artist_name}", ephemeral=True)
+            if not main_content:
+                await interaction.followup.send(f"❌ No main content found for artist: {artist_name}", ephemeral=True)
                 return
             
-            # Show video selection view
-            view = VideoSelectionView(self, videos, artist_name, pack_type, interaction.user)
+            # Step 2: Fetch related videos for full pack
+            related_videos = await self.fetch_related_videos(artist_name)
             
+            # Show main content confirmation
             embed = discord.Embed(
-                title=f"🎵 Select Video for {artist_name.title()} {pack_type.title()} Pack",
-                description=f"Found {len(videos)} videos. Choose one for the hero card:",
+                title=f"🎵 Create {artist_name.title()} {pack_type.title()} Pack",
+                description=f"**Main Card:** {main_content['title']}\n**Related Videos Found:** {len(related_videos)}",
                 color=discord.Color.blue()
             )
+            embed.set_thumbnail(url=main_content.get("thumbnail", ""))
+            embed.add_field(name="Main Content", value=f"👁️ {main_content.get('views', 0):,} views | ⏱️ {main_content.get('duration', 'Unknown')}", inline=False)
+            embed.add_field(name="Pack Size", value=f"1 main card + {len(related_videos)} related cards", inline=False)
             
-            # Show first few videos as preview
-            for i, video in enumerate(videos[:3], 1):
-                embed.add_field(
-                    name=f"Video {i}: {video['title'][:50]}...",
-                    value=f"👁️ {video.get('views', 0):,} views | ⏱️ {video.get('duration', 'Unknown')}",
-                    inline=False
-                )
-            
-            embed.set_footer(text="Click the buttons below to see all options and select")
+            # Add confirmation button
+            view = PackConfirmationView(self, main_content, related_videos, artist_name, pack_type, interaction.user)
             
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ Error searching videos: {e}")
-            await interaction.followup.send(f"❌ Error searching for videos: {e}", ephemeral=True)
+            print(f"❌ Error creating pack: {e}")
+            await interaction.followup.send(f"❌ Error creating pack: {e}", ephemeral=True)
     
-    async def search_artist_videos(self, artist_name: str, max_results: int = 10) -> list:
-        """Search YouTube for videos by artist"""
+    async def search_artist_main_content(self, artist_name: str) -> dict:
+        """Search for main artist content with image for hero card"""
         try:
-            # Search for artist + official videos
+            # Search for artist + official music videos
             search_query = f"{artist_name} official music video"
             
             request = self.youtube.search().list(
                 part="snippet",
                 q=search_query,
                 type="video",
-                maxResults=max_results,
+                maxResults=1,
                 videoCategoryId="10"  # Music category
             )
             
             response = request.execute()
             
-            videos = []
-            for item in response.get("items", []):
-                video_data = {
+            if not response.get("items"):
+                return None
+            
+            item = response["items"][0]
+            
+            # Get video details
+            try:
+                details_request = self.youtube.videos().list(
+                    part="statistics,contentDetails",
+                    id=item["id"]["videoId"]
+                )
+                details_response = details_request.execute()
+                
+                video_details = details_response["items"][0] if details_response.get("items") else {}
+                
+                main_content = {
                     "video_id": item["id"]["videoId"],
                     "title": item["snippet"]["title"],
                     "description": item["snippet"]["description"],
                     "channel_title": item["snippet"]["channelTitle"],
                     "published_at": item["snippet"]["publishedAt"],
-                    "thumbnail": item["snippet"]["thumbnails"]["high"]["url"] if "high" in item["snippet"]["thumbnails"] else item["snippet"]["thumbnails"]["default"]["url"]
+                    "thumbnail": item["snippet"]["thumbnails"]["high"]["url"] if "high" in item["snippet"]["thumbnails"] else item["snippet"]["thumbnails"]["default"]["url"],
+                    "views": int(video_details.get("statistics", {}).get("viewCount", 0)),
+                    "duration": self.parse_duration(video_details.get("contentDetails", {}).get("duration", "PT0S"))
                 }
                 
-                # Get video details for view count and duration
-                try:
-                    details_request = self.youtube.videos().list(
-                        part="statistics,contentDetails",
-                        id=item["id"]["videoId"]
-                    )
-                    details_response = details_request.execute()
-                    
-                    if details_response.get("items"):
-                        video_details = details_response["items"][0]
-                        video_data["views"] = int(video_details["statistics"].get("viewCount", 0))
-                        
-                        # Parse duration
-                        duration = video_details["contentDetails"].get("duration", "PT0S")
-                        video_data["duration"] = self.parse_duration(duration)
-                        
-                except Exception as e:
-                    print(f"Error getting video details: {e}")
-                    video_data["views"] = 0
-                    video_data["duration"] = "Unknown"
+                return main_content
                 
-                videos.append(video_data)
-            
-            return videos
+            except Exception as e:
+                print(f"Error getting video details: {e}")
+                return None
             
         except Exception as e:
-            print(f"❌ YouTube search error: {e}")
+            print(f"❌ YouTube main content search error: {e}")
+            return None
+    
+    async def fetch_related_videos(self, artist_name: str, max_results: int = 8) -> list:
+        """Fetch related videos for pack creation"""
+        try:
+            # Search for related content
+            search_queries = [
+                f"{artist_name} music video",
+                f"{artist_name} live performance",
+                f"{artist_name} remix",
+                f"{artist_name} acoustic"
+            ]
+            
+            all_videos = []
+            
+            for query in search_queries:
+                try:
+                    request = self.youtube.search().list(
+                        part="snippet",
+                        q=query,
+                        type="video",
+                        maxResults=2,  # Get 2 per query
+                        videoCategoryId="10"
+                    )
+                    
+                    response = request.execute()
+                    
+                    for item in response.get("items", []):
+                        video_data = {
+                            "video_id": item["id"]["videoId"],
+                            "title": item["snippet"]["title"],
+                            "description": item["snippet"]["description"],
+                            "channel_title": item["snippet"]["channelTitle"],
+                            "thumbnail": item["snippet"]["thumbnails"]["high"]["url"] if "high" in item["snippet"]["thumbnails"] else item["snippet"]["thumbnails"]["default"]["url"]
+                        }
+                        
+                        # Get basic stats
+                        try:
+                            details_request = self.youtube.videos().list(
+                                part="statistics",
+                                id=item["id"]["videoId"]
+                            )
+                            details_response = details_request.execute()
+                            
+                            if details_response.get("items"):
+                                video_details = details_response["items"][0]
+                                video_data["views"] = int(video_details["statistics"].get("viewCount", 0))
+                            else:
+                                video_data["views"] = 0
+                        except:
+                            video_data["views"] = 0
+                        
+                        all_videos.append(video_data)
+                        
+                except Exception as e:
+                    print(f"Error with query '{query}': {e}")
+                    continue
+            
+            # Remove duplicates and limit results
+            seen_ids = set()
+            unique_videos = []
+            for video in all_videos:
+                if video["video_id"] not in seen_ids:
+                    seen_ids.add(video["video_id"])
+                    unique_videos.append(video)
+                    if len(unique_videos) >= max_results:
+                        break
+            
+            return unique_videos
+            
+        except Exception as e:
+            print(f"❌ Related videos fetch error: {e}")
             return []
     
     def parse_duration(self, duration: str) -> str:
@@ -245,13 +305,13 @@ class SimplePackCreation(commands.Cog):
         except:
             return "Unknown"
     
-    async def create_pack_from_video(self, interaction: discord.Interaction, video: dict, artist_name: str, pack_type: str):
-        """Create pack using selected YouTube video"""
+    async def create_pack_with_content(self, interaction: discord.Interaction, main_content: dict, related_videos: list, artist_name: str, pack_type: str):
+        """Create pack using main content + related videos"""
         
         pack_id = f"pack_{uuid.uuid4().hex[:8]}"
         
-        # Generate cards based on selected video
-        cards = self.generate_cards_from_video(video, artist_name, pack_type)
+        # Generate cards based on main content + related videos
+        cards = self.generate_cards_from_content(main_content, related_videos, artist_name, pack_type)
         
         try:
             with sqlite3.connect(self.db.db_path) as conn:
@@ -267,7 +327,7 @@ class SimplePackCreation(commands.Cog):
                     pack_id,
                     interaction.user.id,
                     f"{artist_name.title()} {pack_type.title()} Pack",
-                    f"Featured: {video['title']} + {len(cards)-1} related cards",
+                    f"Featured: {main_content['title']} + {len(related_videos)} related cards",
                     len(cards),
                     "live",
                     str(cards),  # Store as Python dict string
@@ -288,7 +348,7 @@ class SimplePackCreation(commands.Cog):
                     """, (pack_id, price, "unlimited"))
                 
                 conn.commit()
-                print(f"✅ {pack_type.title()} pack {pack_id} created from video: {video['title']}")
+                print(f"✅ {pack_type.title()} pack {pack_id} created with main content + {len(related_videos)} related videos")
         
         except Exception as e:
             print(f"❌ Database error: {e}")
@@ -298,13 +358,14 @@ class SimplePackCreation(commands.Cog):
         # Send confirmation
         embed = discord.Embed(
             title=f"✅ {pack_type.title()} Pack Created!",
-            description=f"**{artist_name.title()}** pack created from selected video.",
+            description=f"**{artist_name.title()}** pack created with main content + related videos.",
             color=discord.Color.green()
         )
-        embed.set_thumbnail(url=video.get("thumbnail", ""))
-        embed.add_field(name="Selected Video", value=f"[{video['title']}]('https://youtube.com/watch?v={video['video_id']}')", inline=False)
+        embed.set_thumbnail(url=main_content.get("thumbnail", ""))
+        embed.add_field(name="Main Content", value=f"[{main_content['title']}]('https://youtube.com/watch?v={main_content['video_id']}')", inline=False)
+        embed.add_field(name="Related Videos", value=f"{len(related_videos)} videos included", inline=False)
         embed.add_field(name="Pack ID", value=pack_id, inline=False)
-        embed.add_field(name="Cards", value=f"{len(cards)} cards", inline=False)
+        embed.add_field(name="Total Cards", value=f"{len(cards)} cards", inline=False)
         embed.add_field(name="Price", value=f"${price}" if price > 0 else "Free", inline=False)
         
         # Show card preview
@@ -320,49 +381,72 @@ class SimplePackCreation(commands.Cog):
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
-    def generate_cards_from_video(self, video: dict, artist_name: str, pack_type: str) -> list:
-        """Generate cards based on selected YouTube video"""
+    def generate_cards_from_content(self, main_content: dict, related_videos: list, artist_name: str, pack_type: str) -> list:
+        """Generate cards based on main content + related videos"""
         cards = []
         
-        # Main hero card from video
+        # Main hero card from main content
         main_rarity = {"community": "gold", "gold": "platinum", "platinum": "legendary"}[pack_type]
         cards.append({
-            "name": video['title'],
+            "name": main_content['title'],
             "rarity": main_rarity,
             "impact": random.randint(70, 95),
             "skill": random.randint(70, 95),
             "longevity": random.randint(70, 95),
             "culture": random.randint(70, 95),
             "hype": random.randint(70, 95),
-            "video_id": video['video_id'],
-            "views": video.get('views', 0)
+            "video_id": main_content['video_id'],
+            "views": main_content.get('views', 0),
+            "thumbnail": main_content.get('thumbnail', ''),
+            "is_main": True
         })
         
-        # Generate supporting cards
+        # Generate cards from related videos
         supporting_rarities = {
             "community": ["community", "community", "community", "community"],
             "gold": ["gold", "community", "community", "community"],
             "platinum": ["platinum", "gold", "gold", "community"]
         }
         
-        for rarity in supporting_rarities[pack_type]:
-            # Generate related video names
-            related_names = [
-                f"{artist_name} Remix",
-                f"{artist_name} Live",
-                f"{artist_name} Acoustic",
-                f"{artist_name} Collab"
-            ]
-            
-            cards.append({
-                "name": random.choice(related_names),
-                "rarity": rarity,
-                "impact": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
-                "skill": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
-                "longevity": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
-                "culture": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
-                "hype": random.randint(50, 80) if rarity == "community" else random.randint(60, 85)
-            })
+        rarities = supporting_rarities[pack_type]
+        
+        # Use actual related videos first, then fill with generated ones if needed
+        for i, rarity in enumerate(rarities):
+            if i < len(related_videos):
+                # Use actual related video
+                video = related_videos[i]
+                cards.append({
+                    "name": video['title'],
+                    "rarity": rarity,
+                    "impact": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "skill": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "longevity": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "culture": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "hype": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "video_id": video['video_id'],
+                    "views": video.get('views', 0),
+                    "thumbnail": video.get('thumbnail', ''),
+                    "is_main": False
+                })
+            else:
+                # Generate fallback card if not enough related videos
+                related_names = [
+                    f"{artist_name} Remix",
+                    f"{artist_name} Live",
+                    f"{artist_name} Acoustic",
+                    f"{artist_name} Collab"
+                ]
+                
+                cards.append({
+                    "name": random.choice(related_names),
+                    "rarity": rarity,
+                    "impact": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "skill": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "longevity": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "culture": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "hype": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                    "is_main": False
+                })
         
         return cards
     
