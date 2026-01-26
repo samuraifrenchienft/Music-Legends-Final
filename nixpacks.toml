@@ -3,20 +3,8 @@ nixPkgs = ["python311", "gcc"]
 
 [phases.install]
 cmds = [
-    "python -m venv /opt/venv",
-    ". /opt/venv/bin/activate",
     "pip install --no-cache-dir -r requirements.txt"
 ]
 
-[phases.build]
-cmds = [
-    ". /opt/venv/bin/activate",
-    "pip install --no-cache-dir ."
-]
-
 [start]
-cmd = ". /opt/venv/bin/activate && python app.py"
-
-[variables]
-PHOENIX_APP_PORT = "8080"
-PORT = "8080"
+cmd = "python main.py"
