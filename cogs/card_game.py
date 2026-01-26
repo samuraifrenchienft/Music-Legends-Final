@@ -14,7 +14,7 @@ from typing import List, Dict
 # Import required modules
 from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
 from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
-from spotify_integration import spotify_integration
+from youtube_integration import youtube_integration
 from views.song_selection import SongSelectionView
 
 class CardGameCog(Cog):
@@ -342,18 +342,22 @@ class CardGameCog(Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Search for artist on Spotify
-            artists = spotify_integration.search_artists(artist_name, limit=5)
+            # Search for music videos on YouTube
+            videos = youtube_integration.search_music_video(artist_name, limit=25)
             
-            if not artists:
-                await interaction.followup.send(f"❌ Could not find artist '{artist_name}'", ephemeral=True)
+            if not videos:
+                await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
                 return
             
-            # Use first artist match
-            artist = artists[0]
+            # Create artist data from first video
+            artist = {
+                'name': artist_name,
+                'image_url': videos[0].get('thumbnail_url', '') if videos else '',
+                'popularity': 75,  # Default for pack creation
+                'followers': 1000000
+            }
             
-            # Search for top tracks by this artist
-            tracks = spotify_integration.search_tracks(artist['name'], artist_id=artist['id'], limit=25)
+            tracks = videos
             
             if not tracks:
                 await interaction.followup.send(f"❌ Could not find tracks for {artist['name']}", ephemeral=True)
@@ -362,7 +366,7 @@ class CardGameCog(Cog):
             # Show song selection UI
             selection_embed = discord.Embed(
                 title="🎵 Select Songs for Your Pack",
-                description=f"**{pack_name}** featuring **{artist['name']}**\n\nFound **{len(tracks)}** tracks. Select up to 10 songs for your pack.",
+                description=f"**{pack_name}** featuring **{artist['name']}**\n\nFound **{len(tracks)}** videos. Select up to 10 songs for your pack.",
                 color=discord.Color.blue()
             )
             
@@ -414,22 +418,48 @@ class CardGameCog(Cog):
             cards_created = []
             for track in selected_tracks:
                 try:
-                    # Generate card stats based on artist data
-                    stats = spotify_integration.generate_card_stats(artist)
-                    rarity = spotify_integration.determine_rarity(artist)
+                    # Generate random stats for pack cards (creator packs are 20-92 range)
+                    import random
+                    base_stat = random.randint(60, 85)
+                    variance = random.randint(-10, 10)
+                    
+                    stats = {
+                        'impact': min(92, max(20, base_stat + variance)),
+                        'skill': min(92, max(20, base_stat + random.randint(-10, 10))),
+                        'longevity': min(92, max(20, base_stat + random.randint(-10, 10))),
+                        'culture': min(92, max(20, base_stat + random.randint(-10, 10))),
+                        'hype': min(92, max(20, base_stat + random.randint(-10, 10)))
+                    }
+                    
+                    # Determine rarity based on average stats
+                    avg_stat = sum(stats.values()) / len(stats)
+                    if avg_stat >= 80:
+                        rarity = "legendary"
+                    elif avg_stat >= 70:
+                        rarity = "epic"
+                    elif avg_stat >= 60:
+                        rarity = "rare"
+                    else:
+                        rarity = "common"
+                    
+                    # Extract song title from video title (remove artist name if present)
+                    video_title = track.get('title', '')
+                    song_title = video_title.replace(artist['name'], '').replace('-', '').strip()
+                    if not song_title:
+                        song_title = video_title
                     
                     # Create card data
                     card_data = {
-                        'card_id': f"{pack_id}_{track['id']}",
+                        'card_id': f"{pack_id}_{track['video_id']}",
                         'name': artist['name'],
-                        'title': track['name'],
+                        'title': song_title,
                         'hero_artist': artist['name'],
-                        'hero_song': track['name'],
+                        'hero_song': song_title,
                         'rarity': rarity.lower(),
-                        'spotify_id': track['id'],
-                        'spotify_url': track.get('spotify_url', ''),
-                        'youtube_id': '',
-                        'image_url': track.get('image_url', ''),
+                        'spotify_id': '',
+                        'spotify_url': '',
+                        'youtube_id': track['video_id'],
+                        'image_url': track.get('thumbnail_url', ''),
                         'impact': stats['impact'],
                         'skill': stats['skill'],
                         'longevity': stats['longevity'],
