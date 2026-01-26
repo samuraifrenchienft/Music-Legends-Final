@@ -35,18 +35,12 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
         
-        # Load all essential cogs
+        # Load only essential cogs
         cogs = [
-            'cogs.card_creation',             # Basic card creation commands
-            'cogs.card_game',                 # Complete pack creation and game commands
             'cogs.start_game',                # Start game command
             'cogs.gameplay',                  # Drop and battle commands
-            'cogs.simple_pack_creation',      # Simple pack creation (no YouTube API required)
-            'cogs.pack_creation',             # URL-based pack creation: /create_community_pack, /create_gold_pack
-            'cogs.wallet_connect_commands',   # Wallet and NFT functionality
-            'cogs.founder_shop',              # Founder shop
-            'cogs.trading',                   # Trading system
-            'cogs.server_revenue_commands',   # Server revenue
+            'cogs.card_game',                 # Collection and basic game commands
+            'cogs.pack_creation',             # YouTube URL pack creation: /create_community_pack, /create_gold_pack
         ]
         
         for cog in cogs:
