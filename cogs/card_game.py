@@ -25,6 +25,10 @@ class CardGameCog(Cog):
         self.card_manager = CardDataManager(self.db)
         self.active_matches = {}  # match_id: MatchState
         
+        # Dev user IDs from environment
+        dev_ids = os.getenv("DEV_USER_IDS", "")
+        self.dev_users = [int(id.strip()) for id in dev_ids.split(",") if id.strip().isdigit()]
+        
         # Initialize database with sample cards
         self.card_manager.initialize_database_cards()
 
@@ -721,6 +725,56 @@ class CardGameCog(Cog):
             )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="delete_pack", description="[DEV ONLY] Delete a pack by ID")
+    @app_commands.describe(pack_id="Pack ID to delete")
+    async def delete_pack(self, interaction: Interaction, pack_id: str):
+        """Delete a pack - DEV ONLY"""
+        # Check if user is dev
+        if interaction.user.id not in self.dev_users:
+            await interaction.response.send_message("❌ This command is restricted to developers only.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            import sqlite3
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if pack exists
+                cursor.execute("SELECT name, creator_id FROM creator_packs WHERE pack_id = ?", (pack_id,))
+                pack = cursor.fetchone()
+                
+                if not pack:
+                    await interaction.followup.send(f"❌ Pack `{pack_id}` not found", ephemeral=True)
+                    return
+                
+                pack_name, creator_id = pack
+                
+                # Delete pack
+                cursor.execute("DELETE FROM creator_packs WHERE pack_id = ?", (pack_id,))
+                deleted = cursor.rowcount
+                
+                conn.commit()
+                
+                if deleted > 0:
+                    embed = discord.Embed(
+                        title="🗑️ Pack Deleted",
+                        description=f"Successfully deleted pack",
+                        color=discord.Color.red()
+                    )
+                    embed.add_field(name="Pack ID", value=f"`{pack_id}`", inline=False)
+                    embed.add_field(name="Name", value=pack_name, inline=True)
+                    embed.add_field(name="Creator ID", value=creator_id, inline=True)
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ Failed to delete pack", ephemeral=True)
+                    
+        except Exception as e:
+            print(f"Error deleting pack: {e}")
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
     @app_commands.command(name="server_analytics", description="View server usage analytics")
     async def server_analytics(self, interaction: Interaction, days: int = 30):

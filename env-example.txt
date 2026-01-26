@@ -10,5 +10,7 @@ REDIS_PASSWORD=
 # Optional: YouTube API (for pack creation)
 YOUTUBE_API_KEY=your_youtube_api_key_here
 
-# Optional: Developer IDs (for admin commands)
+# Optional: Developer IDs (for admin commands like /delete_pack)
+# Comma-separated list of Discord user IDs
+# Example: DEV_USER_IDS=123456789,987654321
 DEV_USER_IDS=your_discord_user_id_here
