@@ -45,11 +45,6 @@ class EssentialCommandsCog(commands.Cog):
             print(f"⚠️ Failed to initialize Stripe: {e}")
             self.stripe = None
     
-    @app_commands.command(name="collection", description="View your card collection")
-    async def collection(self, interaction: Interaction):
-        """View your card collection"""
-        await interaction.response.send_message("📦 Collection feature coming soon!", ephemeral=True)
-    
     @app_commands.command(name="drop", description="Create a card drop in this channel")
     async def drop(self, interaction: Interaction):
         """Create a card drop"""
