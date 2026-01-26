@@ -796,7 +796,12 @@ class PackReviewView(discord.ui.View):
     @app_commands.command(name="ping_pack", description="Test if pack creation cog is loaded")
     async def ping_pack(self, interaction: Interaction):
         """Simple test command"""
-        await interaction.response.send_message("✅ Pack creation cog is working!", ephemeral=True)
+        # List all commands in this cog
+        commands = []
+        for cmd in self.walk_app_commands():
+            commands.append(f"/{cmd.name}")
+        
+        await interaction.response.send_message(f"✅ Pack creation cog is working!\n\nCommands available: {commands}", ephemeral=True)
     
         
     @app_commands.command(name="create_community_pack", description="Create a free community pack (Dev only)")
