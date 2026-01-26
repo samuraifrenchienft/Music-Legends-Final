@@ -16,7 +16,6 @@ from typing import Optional, Dict, List, Any
 from googleapiclient.discovery import build
 from database import DatabaseManager
 import uuid
-import json
 import random
 
 # Import complete weighted pool system
@@ -357,7 +356,7 @@ class PackCreation(commands.Cog):
         
         # Database transaction
         pack_id = f"pack_{uuid.uuid4().hex[:8]}"
-        cards_json = json.dumps(cards)
+        cards_json = str(cards)
         
         marketplace_price = 4.99 if pack_type == "community" else 6.99
         
@@ -963,7 +962,7 @@ class PackReviewView(discord.ui.View):
                             f"Weighted pool pack: {pack_result['pack_theme']}",
                             len(all_cards),
                             "live",
-                            json.dumps(all_cards),
+                            str(all_cards),
                             9.99  # Gold pack price
                         ))
                         
