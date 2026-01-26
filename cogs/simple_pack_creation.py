@@ -1,161 +1,175 @@
-"""
-Simple Pack Creation - No YouTube API Required
-Creates packs using existing cards in database
-"""
+# cogs/simple_pack_creation.py - Simple artist name-based pack creation
 import discord
-import os
-from discord.ext import commands
 from discord import app_commands, Interaction
+from discord.ext import commands
+import os
 import sqlite3
-import random
-import uuid
 from database import DatabaseManager
+import uuid
+import random
 
 class SimplePackCreation(commands.Cog):
+    """Simple pack creation using artist names - no YouTube API required"""
+    
     def __init__(self, bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = None
     
-    def is_dev(self, user_id: int) -> bool:
-        """Check if user is a developer"""
-        dev_ids = [int(uid.strip()) for uid in (os.getenv("DEV_USER_IDS", "").split(",") if os.getenv("DEV_USER_IDS") else "")]
-        return user_id in dev_ids if dev_ids else True  # Allow everyone if no dev IDs set
-    
-    @app_commands.command(name="create_simple_pack", description="Create a pack using existing cards (No YouTube required)")
-    @app_commands.describe(pack_name="Name for your pack", pack_type="Type of pack: basic, premium, or legendary")
-    async def create_simple_pack(self, interaction: Interaction, pack_name: str, pack_type: str = "basic"):
-        """Create a simple pack using existing database cards"""
-        
-        await interaction.response.defer()
+    async def cog_load(self):
+        """Initialize database when cog loads"""
+        print("🔥 SimplePackCreation cog is loading!")
         
         try:
-            # Get existing cards from database
+            self.db = DatabaseManager()
+            print("✅ Database initialized for simple pack creation")
+        except Exception as e:
+            print(f"❌ Failed to initialize database: {e}")
+            self.db = None
+    
+    @app_commands.command(name="create_pack", description="Create a pack using artist name")
+    @app_commands.describe(artist_name="Name of the main artist", pack_type="Type of pack to create")
+    @app_commands.choices(pack_type=[
+        discord.app_commands.Choice(name="Community Pack", value="community"),
+        discord.app_commands.Choice(name="Gold Pack", value="gold"),
+        discord.app_commands.Choice(name="Platinum Pack", value="platinum")
+    ])
+    async def create_pack(self, interaction: Interaction, artist_name: str, pack_type: str = "community"):
+        """Create a pack using just the artist name"""
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        if not self.db:
+            await interaction.followup.send("❌ Database not available", ephemeral=True)
+            return
+        
+        # Check permissions for different pack types
+        is_dev = self.is_dev(interaction.user.id)
+        
+        if pack_type == "platinum" and not is_dev:
+            await interaction.followup.send("❌ Platinum packs are developer only!", ephemeral=True)
+            return
+        
+        # Create the pack
+        pack_id = f"pack_{uuid.uuid4().hex[:8]}"
+        
+        # Generate cards based on artist
+        cards = self.generate_cards_from_artist(artist_name, pack_type)
+        
+        try:
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT card_id, name, rarity FROM cards ORDER BY RANDOM() LIMIT 50")
-                available_cards = cursor.fetchall()
-            
-            if not available_cards:
-                await interaction.followup.send("❌ No cards found in database!", ephemeral=True)
-                return
-            
-            # Define pack configurations
-            pack_configs = {
-                "basic": {"size": 5, "rarities": {"Common": 3, "Rare": 2}},
-                "premium": {"size": 10, "rarities": {"Common": 4, "Rare": 4, "Epic": 2}},
-                "legendary": {"size": 15, "rarities": {"Common": 6, "Rare": 5, "Epic": 3, "Legendary": 1}}
-            }
-            
-            if pack_type not in pack_configs:
-                await interaction.followup.send("❌ Invalid pack type! Use: basic, premium, or legendary", ephemeral=True)
-                return
-            
-            config = pack_configs[pack_type]
-            
-            # Filter cards by required rarities
-            pack_cards = []
-            for rarity, count in config["rarities"].items():
-                rarity_cards = [card for card in available_cards if card[2] == rarity]
-                if len(rarity_cards) < count:
-                    await interaction.followup.send(f"❌ Not enough {rarity} cards available!", ephemeral=True)
-                    return
-                selected = random.sample(rarity_cards, count)
-                pack_cards.extend(selected)
-            
-            # Create pack record
-            pack_id = str(uuid.uuid4())[:8]
-            cards_data = []
-            
-            for card_id, name, rarity in pack_cards:
-                cards_data.append({
-                    "card_id": card_id,
-                    "name": name,
-                    "rarity": rarity
-                })
-            
-            # Store pack in database (using creator_packs table as temporary storage)
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
+                
+                # Insert pack
+                price = {"community": 0, "gold": 9.99, "platinum": 19.99}[pack_type]
+                
                 cursor.execute("""
-                    INSERT INTO creator_packs 
-                    (pack_id, creator_id, name, description, pack_size, cards_data, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO creator_packs (pack_id, creator_id, name, description, pack_size, status, cards_data, price)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     pack_id,
                     interaction.user.id,
-                    pack_name,
-                    f"Simple {pack_type} pack with {config['size']} cards",
-                    config["size"],
-                    str(cards_data),  # Store as JSON string
-                    "live"
+                    f"{artist_name.title()} {pack_type.title()} Pack",
+                    f"Featured: {artist_name.title()} + {len(cards)-1} related cards",
+                    len(cards),
+                    "live",
+                    str(cards),  # Store as Python dict string
+                    price
                 ))
-                conn.commit()
-            
-            # Create success embed
-            embed = discord.Embed(
-                title="✅ Simple Pack Created!",
-                description=f"Pack **{pack_name}** has been created successfully!",
-                color=discord.Color.green()
-            )
-            
-            embed.add_field(
-                name="Pack Details",
-                value=f"• ID: `{pack_id}`\n"
-                      f"• Type: {pack_type.title()}\n"
-                      f"• Size: {config['size']} cards\n"
-                      f"• Status: Live",
-                inline=False
-            )
-            
-            # Show card breakdown
-            rarity_emoji = {"Common": "🟩", "Rare": "🟦", "Epic": "🟪", "Legendary": "⭐"}
-            card_list = []
-            for card_id, name, rarity in pack_cards:
-                emoji = rarity_emoji.get(rarity, "🎴")
-                card_list.append(f"{emoji} **{name}** ({rarity})")
-            
-            embed.add_field(
-                name="Cards in Pack",
-                value="\n".join(card_list[:10]) + ("\n... and more" if len(card_list) > 10 else ""),
-                inline=False
-            )
-            
-            embed.set_footer(text=f"Created by {interaction.user.display_name}")
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error creating pack: {e}", ephemeral=True)
-    
-    @app_commands.command(name="test_cards", description="Test if cards are available in database")
-    async def test_cards(self, interaction: Interaction):
-        """Test command to check available cards"""
-        try:
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM cards")
-                total_cards = cursor.fetchone()[0]
                 
-                cursor.execute("SELECT rarity, COUNT(*) FROM cards GROUP BY rarity")
-                rarity_counts = cursor.fetchall()
-            
-            embed = discord.Embed(
-                title="📊 Database Card Status",
-                description=f"Total cards in database: {total_cards}",
-                color=discord.Color.blue()
-            )
-            
-            rarity_emoji = {"Common": "🟩", "Rare": "🟦", "Epic": "🟪", "Legendary": "⭐"}
-            
-            for rarity, count in rarity_counts:
-                emoji = rarity_emoji.get(rarity, "🎴")
-                embed.add_field(name=f"{emoji} {rarity}", value=f"{count} cards", inline=True)
-            
-            embed.set_footer(text="Cards are available for pack creation")
-            await interaction.response.send_message(embed=embed)
-            
+                # Add to user inventory
+                cursor.execute("""
+                    INSERT INTO user_packs (user_id, pack_id, acquired_at)
+                    VALUES (?, ?, datetime('now'))
+                """, (interaction.user.id, pack_id))
+                
+                # List in marketplace if paid pack
+                if price > 0:
+                    cursor.execute("""
+                        INSERT INTO marketplace (pack_id, price, stock)
+                        VALUES (?, ?, ?)
+                    """, (pack_id, price, "unlimited"))
+                
+                conn.commit()
+                print(f"✅ {pack_type.title()} pack {pack_id} created for {artist_name}")
+        
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error checking cards: {e}", ephemeral=True)
+            print(f"❌ Database error: {e}")
+            await interaction.followup.send(f"❌ Database error: {e}", ephemeral=True)
+            return
+        
+        # Send confirmation
+        embed = discord.Embed(
+            title=f"✅ {pack_type.title()} Pack Created!",
+            description=f"**{artist_name.title()}** pack has been created.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Pack ID", value=pack_id, inline=False)
+        embed.add_field(name="Cards", value=f"{len(cards)} cards", inline=False)
+        embed.add_field(name="Price", value=f"${price}" if price > 0 else "Free", inline=False)
+        
+        # Show card preview
+        rarity_emojis = {"community": "⚪", "gold": "🟡", "platinum": "🟣", "legendary": "🔴"}
+        for i, card in enumerate(cards[:3], 1):  # Show first 3 cards
+            rarity = card.get('rarity', 'community')
+            emoji = rarity_emojis.get(rarity, "🎴")
+            embed.add_field(
+                name=f"{emoji} Card {i}",
+                value=f"{card.get('name', 'Unknown')}\nRarity: {rarity.title()}",
+                inline=True
+            )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    def generate_cards_from_artist(self, artist_name: str, pack_type: str) -> list:
+        """Generate cards based on artist name and pack type"""
+        cards = []
+        
+        # Main artist card (always highest rarity for pack type)
+        main_rarity = {"community": "gold", "gold": "platinum", "platinum": "legendary"}[pack_type]
+        cards.append({
+            "name": artist_name,
+            "rarity": main_rarity,
+            "impact": random.randint(70, 95),
+            "skill": random.randint(70, 95),
+            "longevity": random.randint(70, 95),
+            "culture": random.randint(70, 95),
+            "hype": random.randint(70, 95)
+        })
+        
+        # Generate supporting cards
+        supporting_rarities = {
+            "community": ["community", "community", "community", "community"],
+            "gold": ["gold", "community", "community", "community"],
+            "platinum": ["platinum", "gold", "gold", "community"]
+        }
+        
+        for rarity in supporting_rarities[pack_type]:
+            # Generate related artist names
+            related_names = [
+                f"{artist_name} Remix",
+                f"{artist_name} Collab",
+                f"{artist_name} Live",
+                f"{artist_name} Acoustic"
+            ]
+            
+            cards.append({
+                "name": random.choice(related_names),
+                "rarity": rarity,
+                "impact": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                "skill": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                "longevity": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                "culture": random.randint(50, 80) if rarity == "community" else random.randint(60, 85),
+                "hype": random.randint(50, 80) if rarity == "community" else random.randint(60, 85)
+            })
+        
+        return cards
+    
+    def is_dev(self, user_id: int) -> bool:
+        """Check if user is a developer"""
+        dev_ids = os.getenv("DEV_USER_IDS", "").split(",") if os.getenv("DEV_USER_IDS") else []
+        return str(user_id) in dev_ids or user_id == 123456789  # Add your Discord ID here
 
 async def setup(bot):
-    await bot.add_cog(SimplePackCreation(bot))
-    print("✅ SimplePackCreation cog loaded - no YouTube API required")
+    cog = SimplePackCreation(bot)
+    await bot.add_cog(cog)
+    print(f"🔥 SimplePackCreation cog loaded with create_pack command")
