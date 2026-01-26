@@ -408,6 +408,26 @@ class CardGameCog(Cog):
                     print(f"Error creating card for {track['name']}: {e}")
                     continue
             
+            # Publish pack to marketplace (set status to LIVE)
+            import sqlite3
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE creator_packs 
+                    SET status = 'LIVE', published_at = CURRENT_TIMESTAMP
+                    WHERE pack_id = ?
+                """, (pack_id,))
+                conn.commit()
+            
+            # Give creator a free copy of the pack
+            # Open the pack and add all cards to creator's collection
+            for card in cards_created:
+                self.db.add_card_to_collection(
+                    user_id=interaction.user.id,
+                    card_id=card['card_id'],
+                    acquired_from='pack_creation'
+                )
+            
             # Create visual confirmation embed
             embed = discord.Embed(
                 title="✅ Pack Created Successfully!",
@@ -443,7 +463,13 @@ class CardGameCog(Cog):
             rarity_text = " | ".join([f"{r.title()}: {c}" for r, c in rarity_counts.items()])
             embed.add_field(name="🎯 Rarity Distribution", value=rarity_text, inline=False)
             
-            embed.set_footer(text=f"Use /packs to view all your packs | Pack created by {interaction.user.name}")
+            embed.add_field(
+                name="📢 Status",
+                value="✅ Published to Marketplace\n🎁 Free copy added to your collection",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Use /packs to browse marketplace | Use /collection to see your cards")
             
             await interaction.followup.send(embed=embed, ephemeral=True)
                 
