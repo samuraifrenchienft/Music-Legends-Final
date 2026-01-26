@@ -63,27 +63,7 @@ class CardGameCog(Cog):
             hype=card_data.get('hype', 0)
         )
 
-    @app_commands.command(name="card", description="View a specific card")
-    @app_commands.describe(card_id="ID of the card to view")
-    async def view_card(self, interaction: Interaction, card_id: str):
-        # Get user
-        user = self._get_user(
-            interaction.user.id, 
-            interaction.user.name, 
-            str(interaction.user)
-        )
-        
-        # Find card in database
-        card_data = self.card_manager.get_card_by_id(card_id)
-        if not card_data:
-            await interaction.response.send_message("Card not found!", ephemeral=True)
-            return
-
-        # Convert to display card
-        display_card = self._convert_to_artist_card(card_data)
-        embed = build_artist_embed(display_card)
-        
-        await interaction.response.send_message(embed=embed)
+    # Card viewing removed - use /view from gameplay.py
 
     # Collection command removed - use /my_collection from gameplay.py
 
@@ -359,9 +339,9 @@ class CardGameCog(Cog):
             # Create pack using database method
             pack_id = self.db.create_creator_pack(
                 creator_id=interaction.user.id,
-                pack_name=pack_name,
-                artist_name=artist_name,
-                pack_type="community"
+                name=pack_name,
+                description=f"Artist pack featuring {artist_name}",
+                pack_size=10
             )
             
             if pack_id:

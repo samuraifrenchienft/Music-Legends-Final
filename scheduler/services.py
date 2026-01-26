@@ -33,7 +33,7 @@ class RewardsService:
                     tickets = COALESCE(tickets, 0) + 5
                 WHERE user_id IN (
                     SELECT DISTINCT user_id FROM user_cards 
-                    WHERE acquisition_date >= date('now', '-7 days')
+                    WHERE acquired_at >= datetime('now', '-7 days')
                 )
             """)
             
@@ -310,46 +310,43 @@ class DataService:
         """Prune old data - cleanup task"""
         logging.info("Pruning old data")
         
+        total_deleted = 0
+        
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
             
+            # Helper function to safely delete from table if it exists
+            def safe_delete(table_name, time_column, cutoff_time):
+                try:
+                    cursor.execute(f"""
+                        DELETE FROM {table_name} 
+                        WHERE {time_column} < ?
+                    """, (cutoff_time.isoformat(),))
+                    return cursor.rowcount
+                except sqlite3.OperationalError:
+                    # Table doesn't exist, skip
+                    return 0
+            
             # Delete old job execution logs (older than 7 days)
             cutoff_time = datetime.now() - timedelta(days=7)
-            
-            cursor.execute("""
-                DELETE FROM job_logs 
-                WHERE executed_at < ?
-            """, (cutoff_time.isoformat(),))
+            total_deleted += safe_delete('job_logs', 'executed_at', cutoff_time)
             
             # Delete old analytics logs (older than 30 days)
             analytics_cutoff = datetime.now() - timedelta(days=30)
-            
-            cursor.execute("""
-                DELETE FROM analytics_logs 
-                WHERE timestamp < ?
-            """, (analytics_cutoff.isoformat(),))
+            total_deleted += safe_delete('analytics_logs', 'timestamp', analytics_cutoff)
             
             # Delete expired drops (older than 1 hour)
             drop_cutoff = datetime.now() - timedelta(hours=1)
-            
-            cursor.execute("""
-                DELETE FROM active_drops 
-                WHERE expires_at < ?
-            """, (drop_cutoff.isoformat(),))
+            total_deleted += safe_delete('active_drops', 'expires_at', drop_cutoff)
             
             # Delete expired locks (older than 5 minutes)
             lock_cutoff = datetime.now() - timedelta(minutes=5)
+            total_deleted += safe_delete('locks', 'created_at', lock_cutoff)
             
-            cursor.execute("""
-                DELETE FROM locks 
-                WHERE created_at < ?
-            """, (lock_cutoff.isoformat(),))
-            
-            deleted_rows = cursor.rowcount
             conn.commit()
         
-        logging.info(f"Pruned {deleted_rows} old data records")
-        return {'success': True, 'deleted_rows': deleted_rows}
+        logging.info(f"Pruned {total_deleted} old data records")
+        return {'success': True, 'deleted_rows': total_deleted}
 
 # Service instances
 rewards = RewardsService()

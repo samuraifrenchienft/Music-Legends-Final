@@ -3,9 +3,8 @@ import os
 import asyncio
 import logging
 from message_queue import initialize_message_queue
-from cron_service import cron_service
 from rate_limiter import initialize_rate_limiter
-from scheduler.cron import cron_service as cron_scheduler
+from scheduler.cron import cron_service
 
 class InfrastructureManager:
     def __init__(self, redis_url: str = None):
@@ -28,11 +27,7 @@ class InfrastructureManager:
         self.rate_limiter = initialize_rate_limiter(self.redis_url)
         logging.info("✅ Rate limiter initialized")
         
-        # Initialize cron service
-        await cron_scheduler.start()
-        logging.info("✅ Scheduler started")
-        
-        # Start cron service
+        # Initialize cron service (APScheduler)
         await cron_service.start()
         logging.info("✅ Cron service started")
         
@@ -61,10 +56,6 @@ class InfrastructureManager:
         cron_service.stop()
         logging.info("✅ Cron service stopped")
         
-        # Stop scheduler
-        cron_scheduler.stop()
-        logging.info("✅ Scheduler stopped")
-        
         self.running = False
         logging.info("🛑 Infrastructure shutdown complete")
     
@@ -74,8 +65,7 @@ class InfrastructureManager:
             'running': self.running,
             'message_queue': self.message_queue is not None,
             'rate_limiter': self.rate_limiter is not None,
-            'cron_service': cron_service.running,
-            'scheduler': cron_scheduler.running
+            'cron_service': cron_service.running
         }
 
 # Global infrastructure manager

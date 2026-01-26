@@ -52,7 +52,7 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
         
-        # Load only essential cogs
+        # Load essential cogs without duplicates
         cogs = [
             'cogs.start_game',                # Start game command
             'cogs.gameplay',                  # Drop and battle commands
@@ -82,6 +82,14 @@ class Bot(commands.Bot):
         print(f"📋 Total commands loaded: {len(loaded_commands)}")
         print(f"📋 Commands: {loaded_commands}")
 
+    async def on_ready(self):
+        """Sync commands when bot is ready"""
+        print(f'✅ Bot is ready!')
+        print(f'Logged in as: {self.user.name}')
+        print(f'Bot ID: {self.user.id}')
+        print(f'Connected to {len(self.guilds)} servers')
+        
+        # Sync commands now that bot is ready
         test_server_id = os.getenv("TEST_SERVER_ID")
         
         try:
@@ -103,12 +111,6 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"❌ Unexpected error during sync: {e}")
             print("⚠️ Bot will still run with basic commands")
-
-    async def on_ready(self):
-        print(f'✅ Bot is ready!')
-        print(f'Logged in as: {self.user.name}')
-        print(f'Bot ID: {self.user.id}')
-        print(f'Connected to {len(self.guilds)} servers')
         
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
 

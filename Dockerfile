@@ -33,5 +33,5 @@ USER app
 # Expose port (if needed for health checks)
 EXPOSE 8080
 
-# Default command - run Discord bot directly
-CMD ["python", "main.py"]
+# Default command - run Discord bot with proper error handling
+CMD ["python", "run_bot.py"]

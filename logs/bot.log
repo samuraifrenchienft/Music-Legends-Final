@@ -1,0 +1,96 @@
+2026-01-26 03:07:19,571 - __main__ - INFO - Starting Music Legends Bot...
+2026-01-26 03:07:19,572 - __main__ - ERROR - BOT_TOKEN is required but not set
+2026-01-26 03:07:29,749 - __main__ - INFO - Starting Music Legends Bot...
+2026-01-26 03:07:36,258 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-01-26 03:07:36,264 - discord.client - INFO - logging in using static token
+2026-01-26 03:07:38,175 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: b0d1a520cc7522425eee9ab3c5213ce6).
+2026-01-26 03:19:28,571 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-1' coro=<Client.run.<locals>.runner() done, defined at C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py:916> exception=KeyboardInterrupt()>
+Traceback (most recent call last):
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\base_events.py", line 636, in run_until_complete
+    self.run_forever()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\windows_events.py", line 321, in run_forever
+    super().run_forever()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\base_events.py", line 603, in run_forever
+    self._run_once()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\base_events.py", line 1871, in _run_once
+    event_list = self._selector.select(timeout)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\windows_events.py", line 444, in select
+    self._poll(timeout)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\windows_events.py", line 797, in _poll
+    status = _overlapped.GetQueuedCompletionStatus(self._iocp, ms)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py", line 918, in runner
+    await self.start(token, reconnect=reconnect)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py", line 847, in start
+    await self.connect(reconnect=reconnect)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py", line 727, in connect
+    await self.ws.poll_event()
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\gateway.py", line 636, in poll_event
+    msg = await self.socket.receive(timeout=self._max_heartbeat_timeout)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\aiohttp\client_ws.py", line 244, in receive
+    msg = await self._reader.read()
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\aiohttp\streams.py", line 663, in read
+    return await super().read()
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\aiohttp\streams.py", line 622, in read
+    await self._waiter
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py", line 929, in run
+    asyncio.run(runner())
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\runners.py", line 47, in run
+    _cancel_all_tasks(loop)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\runners.py", line 63, in _cancel_all_tasks
+    loop.run_until_complete(tasks.gather(*to_cancel, return_exceptions=True))
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\base_events.py", line 636, in run_until_complete
+    self.run_forever()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\windows_events.py", line 321, in run_forever
+    super().run_forever()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\base_events.py", line 603, in run_forever
+    self._run_once()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\base_events.py", line 1909, in _run_once
+    handle._run()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\asyncio\events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py", line 917, in runner
+    async with self:
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\client.py", line 357, in __aexit__
+    await self.close()
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\main.py", line 123, in close
+    from db_manager import db_manager
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\db_manager.py", line 2, in <module>
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\sqlalchemy\ext\asyncio\__init__.py", line 18, in <module>
+    from .scoping import async_scoped_session as async_scoped_session
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\sqlalchemy\ext\asyncio\scoping.py", line 24, in <module>
+    from .session import _AS
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\sqlalchemy\ext\asyncio\session.py", line 35, in <module>
+    from ...orm import close_all_sessions as _sync_close_all_sessions
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\sqlalchemy\orm\__init__.py", line 57, in <module>
+    from .decl_api import add_mapped_attribute as add_mapped_attribute
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\sqlalchemy\orm\decl_api.py", line 36, in <module>
+    from . import clsregistry
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 879, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 975, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1074, in get_data
+KeyboardInterrupt
+2026-01-26 03:19:42,319 - __main__ - INFO - Starting Music Legends Bot...
+2026-01-26 03:19:42,958 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-01-26 03:19:42,961 - discord.client - INFO - logging in using static token
+2026-01-26 03:19:44,150 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: 1b67c88c3b93e57730dd8a271e3f9e37).
+2026-01-26 03:45:32,222 - __main__ - INFO - Starting Music Legends Bot...
+2026-01-26 03:45:35,380 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-01-26 03:45:35,389 - discord.client - INFO - logging in using static token
+2026-01-26 03:45:37,022 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: d0f36f2dbd4e7a3316921627045aa769).
