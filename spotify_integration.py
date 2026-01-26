@@ -224,31 +224,57 @@ class SpotifyIntegration:
     # Mock methods for when API is not available
     def _mock_artist_search(self, query: str, limit: int) -> List[Dict]:
         """Mock artist search results"""
+        # Mock artist images (using placeholder service)
+        artist_hash = abs(hash(query.lower())) % 1000
         return [{
             'id': f"mock_{query.lower().replace(' ', '_')}",
             'name': query,
             'popularity': 75,
             'followers': 1000000,
-            'genres': ['pop', 'electronic'],
-            'image_url': '',
+            'genres': ['hip-hop', 'rap', 'pop'],
+            'image_url': f"https://i.scdn.co/image/ab6761610000e5eb{artist_hash:032x}",
             'external_urls': {'spotify': f"https://open.spotify.com/artist/{query.lower().replace(' ', '_')}"},
             'spotify_url': f"https://open.spotify.com/artist/{query.lower().replace(' ', '_')}"
         }]
     
     def _mock_track_search(self, query: str, limit: int) -> List[Dict]:
-        """Mock track search results"""
-        return [{
-            'id': f"mock_track_{query.lower().replace(' ', '_')}",
-            'name': f"{query} (Single)",
-            'artist_name': query,
-            'artist_id': f"mock_{query.lower().replace(' ', '_')}",
-            'album_name': f"{query} Album",
-            'image_url': '',
-            'duration_ms': 180000,
-            'external_urls': {'spotify': f"https://open.spotify.com/track/{query.lower().replace(' ', '_')}"},
-            'spotify_url': f"https://open.spotify.com/track/{query.lower().replace(' ', '_')}",
-            'preview_url': ''
-        }]
+        """Mock track search results with realistic data"""
+        # Popular Drake songs as example mock data
+        mock_songs = {
+            'drake': [
+                "God's Plan", "One Dance", "Hotline Bling", "In My Feelings", "Nice For What",
+                "Passionfruit", "Started From the Bottom", "Hold On, We're Going Home", 
+                "Controlla", "Too Good"
+            ],
+            'default': [
+                f"{query} - Hit Single", f"{query} - Popular Track", f"{query} - Chart Topper",
+                f"{query} - Fan Favorite", f"{query} - Classic Hit", f"{query} - New Release",
+                f"{query} - Radio Hit", f"{query} - Viral Track", f"{query} - Top Song",
+                f"{query} - Greatest Hit"
+            ]
+        }
+        
+        # Get appropriate song list
+        artist_key = query.lower()
+        songs = mock_songs.get(artist_key, mock_songs['default'])
+        
+        # Generate mock tracks
+        tracks = []
+        for i, song_name in enumerate(songs[:limit]):
+            tracks.append({
+                'id': f"mock_track_{i}_{query.lower().replace(' ', '_')}",
+                'name': song_name,
+                'artist_name': query,
+                'artist_id': f"mock_{query.lower().replace(' ', '_')}",
+                'album_name': f"{song_name} - Single",
+                'image_url': f"https://i.scdn.co/image/ab67616d0000b273{i:032x}",  # Mock Spotify CDN URL
+                'duration_ms': 180000 + (i * 10000),
+                'external_urls': {'spotify': f"https://open.spotify.com/track/mock_{i}"},
+                'spotify_url': f"https://open.spotify.com/track/mock_{i}",
+                'preview_url': ''
+            })
+        
+        return tracks
     
     def _mock_artist_response(self, artist_name: str) -> Dict:
         """Mock artist response"""

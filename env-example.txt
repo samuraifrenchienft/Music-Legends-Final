@@ -7,6 +7,11 @@ TEST_SERVER_ID=your_test_server_id_here
 REDIS_URL=redis://localhost:6379
 REDIS_PASSWORD=
 
+# Optional: Spotify API (for pack creation with real artist/track data)
+# Get credentials from: https://developer.spotify.com/dashboard
+SPOTIFY_CLIENT_ID=your_spotify_client_id_here
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret_here
+
 # Optional: YouTube API (for pack creation)
 YOUTUBE_API_KEY=your_youtube_api_key_here
 

@@ -15,6 +15,7 @@ from typing import List, Dict
 from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
 from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
 from spotify_integration import spotify_integration
+from views.song_selection import SongSelectionView
 
 class CardGameCog(Cog):
     def __init__(self, bot):
@@ -352,27 +353,66 @@ class CardGameCog(Cog):
             artist = artists[0]
             
             # Search for top tracks by this artist
-            tracks = spotify_integration.search_tracks(artist['name'], artist_id=artist['id'], limit=10)
+            tracks = spotify_integration.search_tracks(artist['name'], artist_id=artist['id'], limit=25)
             
             if not tracks:
                 await interaction.followup.send(f"❌ Could not find tracks for {artist['name']}", ephemeral=True)
                 return
             
+            # Show song selection UI
+            selection_embed = discord.Embed(
+                title="🎵 Select Songs for Your Pack",
+                description=f"**{pack_name}** featuring **{artist['name']}**\n\nFound **{len(tracks)}** tracks. Select up to 10 songs for your pack.",
+                color=discord.Color.blue()
+            )
+            
+            if artist.get('image_url'):
+                selection_embed.set_thumbnail(url=artist['image_url'])
+            
+            selection_embed.add_field(
+                name="📋 Instructions",
+                value="1. Select songs from the dropdown menu\n2. Click 'Confirm Selection' to create your pack\n3. Your pack will be published to the marketplace",
+                inline=False
+            )
+            
+            # Create callback for when songs are selected
+            async def on_songs_selected(confirm_interaction: Interaction, selected_tracks: List[Dict]):
+                await self._finalize_pack_creation(
+                    confirm_interaction,
+                    pack_name,
+                    artist,
+                    selected_tracks,
+                    interaction.user.id
+                )
+            
+            # Show selection view
+            view = SongSelectionView(tracks, max_selections=10, callback=on_songs_selected)
+            await interaction.followup.send(embed=selection_embed, view=view, ephemeral=True)
+                
+        except Exception as e:
+            print(f"❌ Error creating pack: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+    
+    async def _finalize_pack_creation(self, interaction: Interaction, pack_name: str, artist: Dict, selected_tracks: List[Dict], creator_id: int):
+        """Finalize pack creation after song selection"""
+        try:
             # Create pack in database
             pack_id = self.db.create_creator_pack(
-                creator_id=interaction.user.id,
+                creator_id=creator_id,
                 name=pack_name,
                 description=f"Artist pack featuring {artist['name']}",
-                pack_size=len(tracks)
+                pack_size=len(selected_tracks)
             )
             
             if not pack_id:
                 await interaction.followup.send("❌ Failed to create pack in database", ephemeral=True)
                 return
             
-            # Generate cards for each track
+            # Generate cards for each selected track
             cards_created = []
-            for track in tracks:
+            for track in selected_tracks:
                 try:
                     # Generate card stats based on artist data
                     stats = spotify_integration.generate_card_stats(artist)
@@ -420,10 +460,9 @@ class CardGameCog(Cog):
                 conn.commit()
             
             # Give creator a free copy of the pack
-            # Open the pack and add all cards to creator's collection
             for card in cards_created:
                 self.db.add_card_to_collection(
-                    user_id=interaction.user.id,
+                    user_id=creator_id,
                     card_id=card['card_id'],
                     acquired_from='pack_creation'
                 )
@@ -442,14 +481,11 @@ class CardGameCog(Cog):
             if artist.get('image_url'):
                 embed.set_thumbnail(url=artist['image_url'])
             
-            # Show first 5 cards in pack
+            # Show all selected cards
             card_list = ""
-            for i, card in enumerate(cards_created[:5], 1):
+            for i, card in enumerate(cards_created, 1):
                 rarity_emoji = {"legendary": "🌟", "epic": "💜", "rare": "💙", "common": "⚪"}.get(card['rarity'], "⚪")
                 card_list += f"{rarity_emoji} **{card['title']}** ({card['rarity'].title()})\n"
-            
-            if len(cards_created) > 5:
-                card_list += f"\n_...and {len(cards_created) - 5} more cards_"
             
             embed.add_field(name="🎴 Pack Contents", value=card_list or "No cards", inline=False)
             
@@ -474,7 +510,7 @@ class CardGameCog(Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
                 
         except Exception as e:
-            print(f"❌ Error creating pack: {e}")
+            print(f"❌ Error finalizing pack: {e}")
             import traceback
             traceback.print_exc()
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
