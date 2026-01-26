@@ -1117,6 +1117,5 @@ class PackReviewView(discord.ui.View):
 
 
 async def setup(bot):
-    cog = PackCreation(bot)
-    await bot.add_cog(cog)
-    print(f"🔥 PackCreation cog added with {len([cmd for cmd in cog.walk_commands()])} commands")
+    await bot.add_cog(PackCreation(bot))
+    print("🔥 PackCreation cog loaded")
