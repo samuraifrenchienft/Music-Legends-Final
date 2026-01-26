@@ -14,6 +14,7 @@ from typing import List, Dict
 # Import required modules
 from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
 from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
+from spotify_integration import spotify_integration
 
 class CardGameCog(Cog):
     def __init__(self, bot):
@@ -332,32 +333,120 @@ class CardGameCog(Cog):
     @app_commands.command(name="create_pack", description="Create a new pack with artist cards")
     @app_commands.describe(pack_name="Name for your pack", artist_name="Main artist for the pack")
     async def create_pack(self, interaction: Interaction, pack_name: str, artist_name: str):
-        """Create a new pack with artist cards"""
+        """Create a new pack with artist cards - Interactive workflow"""
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Create pack using database method
+            # Search for artist on Spotify
+            artists = spotify_integration.search_artists(artist_name, limit=5)
+            
+            if not artists:
+                await interaction.followup.send(f"❌ Could not find artist '{artist_name}'", ephemeral=True)
+                return
+            
+            # Use first artist match
+            artist = artists[0]
+            
+            # Search for top tracks by this artist
+            tracks = spotify_integration.search_tracks(artist['name'], artist_id=artist['id'], limit=10)
+            
+            if not tracks:
+                await interaction.followup.send(f"❌ Could not find tracks for {artist['name']}", ephemeral=True)
+                return
+            
+            # Create pack in database
             pack_id = self.db.create_creator_pack(
                 creator_id=interaction.user.id,
                 name=pack_name,
-                description=f"Artist pack featuring {artist_name}",
-                pack_size=10
+                description=f"Artist pack featuring {artist['name']}",
+                pack_size=len(tracks)
             )
             
-            if pack_id:
-                embed = discord.Embed(
-                    title="✅ Pack Created!",
-                    description=f"Pack '{pack_name}' has been created successfully.",
-                    color=discord.Color.green()
-                )
-                embed.add_field(name="Pack ID", value=pack_id, inline=False)
-                embed.add_field(name="Artist", value=artist_name, inline=False)
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                await interaction.followup.send("❌ Failed to create pack", ephemeral=True)
+            if not pack_id:
+                await interaction.followup.send("❌ Failed to create pack in database", ephemeral=True)
+                return
+            
+            # Generate cards for each track
+            cards_created = []
+            for track in tracks:
+                try:
+                    # Generate card stats based on artist data
+                    stats = spotify_integration.generate_card_stats(artist)
+                    rarity = spotify_integration.determine_rarity(artist)
+                    
+                    # Create card data
+                    card_data = {
+                        'card_id': f"{pack_id}_{track['id']}",
+                        'name': artist['name'],
+                        'title': track['name'],
+                        'hero_artist': artist['name'],
+                        'hero_song': track['name'],
+                        'rarity': rarity.lower(),
+                        'spotify_id': track['id'],
+                        'spotify_url': track.get('spotify_url', ''),
+                        'youtube_id': '',
+                        'image_url': track.get('image_url', ''),
+                        'impact': stats['impact'],
+                        'skill': stats['skill'],
+                        'longevity': stats['longevity'],
+                        'culture': stats['culture'],
+                        'hype': stats['hype']
+                    }
+                    
+                    # Add card to master list
+                    success = self.db.add_card_to_master(card_data)
+                    if success:
+                        # Add card to pack
+                        self.db.add_card_to_pack(pack_id, card_data)
+                        cards_created.append(card_data)
+                    
+                except Exception as e:
+                    print(f"Error creating card for {track['name']}: {e}")
+                    continue
+            
+            # Create visual confirmation embed
+            embed = discord.Embed(
+                title="✅ Pack Created Successfully!",
+                description=f"**{pack_name}** featuring {artist['name']}",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(name="📦 Pack ID", value=f"`{pack_id}`", inline=False)
+            embed.add_field(name="🎤 Artist", value=artist['name'], inline=True)
+            embed.add_field(name="🎵 Cards Created", value=str(len(cards_created)), inline=True)
+            
+            if artist.get('image_url'):
+                embed.set_thumbnail(url=artist['image_url'])
+            
+            # Show first 5 cards in pack
+            card_list = ""
+            for i, card in enumerate(cards_created[:5], 1):
+                rarity_emoji = {"legendary": "🌟", "epic": "💜", "rare": "💙", "common": "⚪"}.get(card['rarity'], "⚪")
+                card_list += f"{rarity_emoji} **{card['title']}** ({card['rarity'].title()})\n"
+            
+            if len(cards_created) > 5:
+                card_list += f"\n_...and {len(cards_created) - 5} more cards_"
+            
+            embed.add_field(name="🎴 Pack Contents", value=card_list or "No cards", inline=False)
+            
+            # Add pack stats
+            avg_power = sum(c['impact'] + c['skill'] + c['longevity'] + c['culture'] for c in cards_created) / len(cards_created) if cards_created else 0
+            embed.add_field(name="📊 Average Power", value=f"{avg_power:.1f}", inline=True)
+            
+            rarity_counts = {}
+            for card in cards_created:
+                rarity_counts[card['rarity']] = rarity_counts.get(card['rarity'], 0) + 1
+            rarity_text = " | ".join([f"{r.title()}: {c}" for r, c in rarity_counts.items()])
+            embed.add_field(name="🎯 Rarity Distribution", value=rarity_text, inline=False)
+            
+            embed.set_footer(text=f"Use /packs to view all your packs | Pack created by {interaction.user.name}")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
                 
         except Exception as e:
             print(f"❌ Error creating pack: {e}")
+            import traceback
+            traceback.print_exc()
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
     # Creator Dashboard Commands
