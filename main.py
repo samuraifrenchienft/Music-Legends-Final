@@ -1,8 +1,6 @@
-import json
 import os
 import discord
 from dotenv import load_dotenv
-from discord import Interaction
 from discord.ext import commands
 
 # Load environment variables
@@ -19,11 +17,18 @@ intents.reactions = True  # Enable reaction intent
 
 class Bot(commands.Bot):
     def __init__(self):
+        app_id = os.getenv("DISCORD_APPLICATION_ID")
+        if app_id:
+            try:
+                app_id = int(app_id)
+            except ValueError:
+                app_id = None
+        
         super().__init__(
-            command_prefix = "!",
-            help_command = None,
-            intents = intents,
-            application_id = None
+            command_prefix="!",
+            help_command=None,
+            intents=intents,
+            application_id=app_id
         )
 
     async def setup_hook(self):
@@ -50,22 +55,16 @@ class Bot(commands.Bot):
                 # Continue loading other cogs - don't break the whole bot
 
         test_server_id = os.getenv("TEST_SERVER_ID")
-        print(f"TEST_SERVER_ID: {test_server_id}")
-        
-        # Clear old commands first
-        print("🧹 Clearing old commands...")
-        self.tree.clear_commands(guild=None)
-        if test_server_id and test_server_id != "":
-            self.tree.clear_commands(guild=discord.Object(id=int(test_server_id)))
         
         try:
-            if test_server_id == "" or test_server_id is None:
+            if not test_server_id or test_server_id == "":
                 print("🔄 Syncing commands globally...")
                 synced = await self.tree.sync()
                 print(f"✅ Synced {len(synced)} commands globally")
             else:
+                guild = discord.Object(id=int(test_server_id))
                 print(f"🔄 Syncing commands to test server {test_server_id}...")
-                synced = await self.tree.sync(guild=discord.Object(id=int(test_server_id)))
+                synced = await self.tree.sync(guild=guild)
                 print(f"✅ Synced {len(synced)} commands to test server")
         except discord.Forbidden as e:
             print(f"❌ Command sync failed (Forbidden): {e}")
