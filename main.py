@@ -4,8 +4,25 @@ from dotenv import load_dotenv
 from discord.ext import commands
 
 # Load environment variables
+print("🔧 Loading environment variables...")
 if os.getenv("REDIS_URL") is None or os.getenv("BOT_TOKEN") is None:
+    print("📄 Loading from .env.txt file")
     load_dotenv('.env.txt')
+else:
+    print("✅ Environment variables already loaded")
+
+# Check critical environment variables
+bot_token = os.getenv("BOT_TOKEN")
+app_id = os.getenv("DISCORD_APPLICATION_ID")
+test_server = os.getenv("TEST_SERVER_ID")
+
+print(f"🔍 BOT_TOKEN: {'✅ Set' if bot_token else '❌ MISSING'}")
+print(f"🔍 DISCORD_APPLICATION_ID: {'✅ Set' if app_id else '❌ MISSING'}")
+print(f"🔍 TEST_SERVER_ID: {'✅ Set' if test_server else '❌ MISSING'}")
+
+if not bot_token:
+    print("❌ CRITICAL: BOT_TOKEN is missing!")
+    exit(1)
 
 # Bot setup
 intents = discord.Intents.default()
@@ -42,14 +59,28 @@ class Bot(commands.Bot):
             'cogs.card_game',                 # Collection and pack creation commands
         ]
         
+        print(f"📦 Attempting to load {len(cogs)} cogs...")
+        
         for cog in cogs:
             try:
+                print(f"🔄 Loading {cog}...")
                 await self.load_extension(cog)
                 print(f'✅ Loaded extension: {cog}')
             except Exception as e:
                 print(f'❌ Failed to load extension {cog}: {e}')
                 print(f'⚠️ Continuing without {cog} - bot will still run')
                 # Continue loading other cogs - don't break the whole bot
+        
+        print("🔍 Checking loaded commands...")
+        loaded_commands = []
+        for cog_name in self.cogs:
+            cog = self.get_cog(cog_name)
+            if cog:
+                for cmd in cog.walk_app_commands():
+                    loaded_commands.append(f"/{cmd.name}")
+        
+        print(f"📋 Total commands loaded: {len(loaded_commands)}")
+        print(f"📋 Commands: {loaded_commands}")
 
         test_server_id = os.getenv("TEST_SERVER_ID")
         
@@ -97,14 +128,13 @@ class Bot(commands.Bot):
         print("Bot shutdown complete")
 
 if __name__ == "__main__":
+    print("🚀 Starting Discord bot...")
+    print(f"🔍 Python version: {os.sys.version}")
+    print(f"🔍 Current directory: {os.getcwd()}")
+    print(f"🔍 Files in directory: {os.listdir('.')}")
+
     try:
         token = os.getenv("BOT_TOKEN")
-        if not token:
-            print("❌ No BOT_TOKEN found in environment variables")
-            print("⚠️ Please set BOT_TOKEN and restart")
-            exit(1)
-        
-        token = token.strip()
         if not token:
             print("❌ BOT_TOKEN is empty")
             print("⚠️ Please set valid BOT_TOKEN and restart")
