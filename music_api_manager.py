@@ -66,7 +66,7 @@ class MusicAPIManager:
         # This method is kept for future use if needed
         return None
     
-    def calculate_card_stats(self, playcount: int, pack_type: str = 'community') -> Dict[str, int]:
+    def calculate_card_stats(self, playcount: int, pack_type: str = 'community', track_name: str = '') -> Dict[str, int]:
         """
         Calculate card stats based on Last.fm play count
         
@@ -102,13 +102,19 @@ class MusicAPIManager:
         else:
             base_power = min_stat
         
-        # Add randomness (±5)
-        import random
-        variance = random.randint(-5, 5)
+        # Make stats deterministic based on play count (no randomness)
+        # Use play count to create consistent variations
+        import hashlib
+        hash_seed = int(hashlib.md5(f"{playcount}{track_name}".encode()).hexdigest()[:8], 16)
         
-        attack = max(min_stat, min(max_stat, base_power + variance))
-        defense = max(min_stat, min(max_stat, base_power + random.randint(-5, 5)))
-        speed = max(min_stat, min(max_stat, base_power + random.randint(-5, 5)))
+        # Create consistent variations (0-4 range instead of random)
+        attack_var = (hash_seed % 5)
+        defense_var = ((hash_seed // 5) % 5) 
+        speed_var = ((hash_seed // 25) % 5)
+        
+        attack = max(min_stat, min(max_stat, base_power + attack_var))
+        defense = max(min_stat, min(max_stat, base_power + defense_var))
+        speed = max(min_stat, min(max_stat, base_power + speed_var))
         
         return {
             'attack': attack,
@@ -188,7 +194,7 @@ class MusicAPIManager:
             Card data dict
         """
         playcount = track.get('playcount', 0)
-        stats = self.calculate_card_stats(playcount, pack_type)
+        stats = self.calculate_card_stats(playcount, pack_type, track['name'])
         rarity = self.determine_rarity(stats, pack_type)
         
         # Use provided image or fallback to track image
@@ -237,7 +243,7 @@ if __name__ == "__main__":
             print(f"\n   Top Tracks:")
             
             for i, track in enumerate(tracks, 1):
-                stats = music_api.calculate_card_stats(track['playcount'], 'gold')
+                stats = music_api.calculate_card_stats(track['playcount'], 'gold', track['name'])
                 rarity = music_api.determine_rarity(stats, 'gold')
                 print(f"   {i}. {track['name']}")
                 print(f"      Plays: {track['playcount']:,}")

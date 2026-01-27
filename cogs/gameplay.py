@@ -270,22 +270,39 @@ class GameplayCog(commands.Cog):
         display_title = f"{card_name} — \"{card_title}\"" if card_title else card_name
         
         embed = discord.Embed(
-            title=f"{rarity_emoji} {rarity.upper()} — ARTIST CARD",
+            title=f"{rarity_emoji} {rarity.upper()} ARTIST CARD",
             description=f"**{display_title}**\n`ID: {card_id}`" + (f" • `Variant: {variant}`" if variant else "") + (f" • `Era: {era}`" if era else ""),
             color=rarity_color
         )
         
-        # Stats block
-        stats_text = (
-            f"**Impact:** {impact}\n"
-            f"**Skill:** {skill}\n"
-            f"**Longevity:** {longevity}\n"
-            f"**Culture:** {culture}\n"
-            f"**Hype:** {hype} *(tiebreaker)*\n"
-            f"───────────\n"
-            f"**Total Power:** {total_power}"
+        # Add visual separator
+        embed.add_field(name="═" * 20, value="═" * 20, inline=False)
+        
+        # Add card stats with better formatting
+        embed.add_field(
+            name="⚔️ **IMPACT**", 
+            value=f"```{impact}```", 
+            inline=True
         )
-        embed.add_field(name="📊 Battle Stats", value=stats_text, inline=True)
+        embed.add_field(
+            name="🛡️ **SKILL**", 
+            value=f"```{skill}```", 
+            inline=True
+        )
+        embed.add_field(
+            name="⚡ **LONGEVITY**", 
+            value=f"```{longevity}```", 
+            inline=True
+        )
+        
+        # Add power rating with visual bar
+        power = (impact + skill + longevity) // 3
+        power_bar = "█" * (power // 10) + "░" * (10 - (power // 10))
+        embed.add_field(
+            name="� **POWER RATING**",
+            value=f"```{power_bar}```\n**{power}** / 100",
+            inline=False
+        )
         
         # Card info
         info_text = f"**Rarity:** {rarity.title()}\n"
