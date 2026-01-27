@@ -1061,6 +1061,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             artist_name = self.artist_name.value
             pack_name = self.pack_name.value
             
+            print(f"🔧 DEV PANEL: Creating {self.pack_type} pack")
+            print(f"   Artist: {artist_name}")
+            print(f"   Pack Name: {pack_name}")
+            
             # Send initial message
             await interaction.followup.send(
                 f"🔍 Searching for **{artist_name}**...",
@@ -1096,10 +1100,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 # Show Last.fm artist image (large display)
                 if artist_data.get('image_xlarge'):
                     image_url = artist_data['image_xlarge']
-                    print(f"🖼️ Setting artist image: {image_url}")
+                    print(f"� DEV PANEL: Setting Last.fm artist image: {image_url}")
                     preview_embed.set_image(url=image_url)
                 else:
-                    print(f"⚠️ No image_xlarge found for {artist_data.get('name')}")
+                    print(f"🔧 DEV PANEL: ⚠️ No image_xlarge found for {artist_data.get('name')}")
                 
                 # Show top tracks
                 tracks_text = "\n".join([
