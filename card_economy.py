@@ -450,10 +450,13 @@ class CardEconomyManager:
             cursor.execute("SELECT * FROM user_inventory WHERE user_id = ?", (user_id,))
             inventory = cursor.fetchone()
             
-            # Get user's cards
+            # Get user's cards from user_cards table (joined with cards for details)
             cursor.execute("""
-                SELECT * FROM cards WHERE owner_user_id = ? 
-                ORDER BY tier DESC, acquisition_date DESC
+                SELECT c.*, uc.acquired_at, uc.acquired_from
+                FROM user_cards uc
+                JOIN cards c ON uc.card_id = c.card_id
+                WHERE uc.user_id = ?
+                ORDER BY c.rarity DESC, uc.acquired_at DESC
             """, (user_id,))
             cards = cursor.fetchall()
             

@@ -127,17 +127,19 @@ class GameplayCog(commands.Cog):
                 inline=True
             )
         
-        # Group cards by tier
-        tier_counts = {"community": 0, "gold": 0, "platinum": 0, "legendary": 0}
+        # Group cards by rarity (not tier)
+        rarity_counts = {"common": 0, "rare": 0, "epic": 0, "legendary": 0}
         for card in collection['cards']:
-            tier_counts[card[3]] += 1  # tier is at index 3
+            rarity = card[9] if len(card) > 9 else "common"  # rarity column
+            if rarity in rarity_counts:
+                rarity_counts[rarity] += 1
         
         embed.add_field(
-            name="📊 Collection by Tier",
-            value=f"⚪ Community: {tier_counts['community']}\n"
-                  f"🟡 Gold: {tier_counts['gold']}\n"
-                  f"🟣 Platinum: {tier_counts['platinum']}\n"
-                  f"🔴 Legendary: {tier_counts['legendary']}",
+            name="📊 Collection by Rarity",
+            value=f"⚪ Common: {rarity_counts['common']}\n"
+                  f"� Rare: {rarity_counts['rare']}\n"
+                  f"� Epic: {rarity_counts['epic']}\n"
+                  f"🌟 Legendary: {rarity_counts['legendary']}",
             inline=True
         )
         
@@ -145,8 +147,12 @@ class GameplayCog(commands.Cog):
         if collection['cards']:
             recent_text = ""
             for card in collection['cards'][:10]:
-                tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣", "legendary": "🔴"}.get(card[3], "⚪")
-                recent_text += f"{tier_emoji} {card[2]} ({card[3]})\n"  # artist_name, tier
+                rarity = card[9] if len(card) > 9 else "common"
+                rarity_emoji = {"common": "⚪", "rare": "�", "epic": "�", "legendary": "🌟"}.get(rarity, "⚪")
+                card_name = card[4] if len(card) > 4 else "Unknown"  # name column
+                card_title = card[5] if len(card) > 5 else ""  # title column
+                display = f"{card_name} - {card_title}" if card_title else card_name
+                recent_text += f"{rarity_emoji} {display} ({rarity})\n"
             
             embed.add_field(
                 name="🆕 Recent Cards",
