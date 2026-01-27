@@ -343,7 +343,7 @@ class CardGameCog(Cog):
         
         try:
             # Search for music videos on YouTube
-            videos = youtube_integration.search_music_video(artist_name, limit=25)
+            videos = youtube_integration.search_music_video(artist_name, limit=10)
             
             if not videos:
                 await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
@@ -366,7 +366,7 @@ class CardGameCog(Cog):
             # Show song selection UI
             selection_embed = discord.Embed(
                 title="🎵 Select Songs for Your Pack",
-                description=f"**{pack_name}** featuring **{artist['name']}**\n\nFound **{len(tracks)}** videos. Select up to 10 songs for your pack.",
+                description=f"**{pack_name}** featuring **{artist['name']}**\n\nFound **{len(tracks)}** videos. Select up to 5 songs for your pack.",
                 color=discord.Color.blue()
             )
             
@@ -390,7 +390,7 @@ class CardGameCog(Cog):
                 )
             
             # Show selection view
-            view = SongSelectionView(tracks, max_selections=10, callback=on_songs_selected)
+            view = SongSelectionView(tracks, max_selections=5, callback=on_songs_selected)
             await interaction.followup.send(embed=selection_embed, view=view, ephemeral=True)
                 
         except Exception as e:

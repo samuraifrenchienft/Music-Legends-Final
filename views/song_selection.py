@@ -71,7 +71,8 @@ class SongSelectMenu(ui.Select):
         # List selected songs
         song_list = ""
         for i, track in enumerate(selected_tracks, 1):
-            song_list += f"{i}. **{track['name']}**\n"
+            track_title = track.get('title', track.get('name', 'Unknown Song'))
+            song_list += f"{i}. **{track_title}**\n"
         
         embed.add_field(name="Selected Songs", value=song_list, inline=False)
         embed.set_footer(text="Click 'Confirm Selection' to create your pack")
@@ -97,11 +98,14 @@ class ConfirmButton(ui.Button):
     
     async def callback(self, interaction: Interaction):
         """Handle confirmation"""
+        # Defer the response immediately to prevent timeout
+        await interaction.response.defer()
+        
         # Disable all buttons
         for item in self.view.children:
             item.disabled = True
         
-        await interaction.response.edit_message(view=self.view)
+        await interaction.edit_original_response(view=self.view)
         
         # Call the pack creation callback
         if self.pack_callback:
