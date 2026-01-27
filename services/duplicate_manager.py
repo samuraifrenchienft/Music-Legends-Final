@@ -27,54 +27,70 @@ class DuplicateManager:
     
     def _ensure_schema(self):
         """Ensure duplicate protection schema exists"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Check if quantity column exists
-            cursor.execute("PRAGMA table_info(user_cards)")
-            columns = [col[1] for col in cursor.fetchall()]
-            
-            if 'quantity' not in columns:
-                cursor.execute("ALTER TABLE user_cards ADD COLUMN quantity INTEGER DEFAULT 1")
-            
-            if 'first_acquired_at' not in columns:
-                cursor.execute("ALTER TABLE user_cards ADD COLUMN first_acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-            
-            # Update existing records
-            cursor.execute("UPDATE user_cards SET quantity = 1 WHERE quantity IS NULL")
-            
-            # Create dust table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_dust (
-                    user_id INTEGER PRIMARY KEY,
-                    dust_amount INTEGER DEFAULT 0,
-                    total_dust_earned INTEGER DEFAULT 0,
-                    total_dust_spent INTEGER DEFAULT 0,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            # Create dust transactions table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS dust_transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    amount INTEGER,
-                    transaction_type TEXT,
-                    card_id TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            # Create index
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_user_cards_lookup 
-                ON user_cards(user_id, card_id)
-            """)
-            
-            conn.commit()
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if quantity column exists
+                cursor.execute("PRAGMA table_info(user_cards)")
+                columns = [col[1] for col in cursor.fetchall()]
+                
+                if 'quantity' not in columns:
+                    try:
+                        cursor.execute("ALTER TABLE user_cards ADD COLUMN quantity INTEGER DEFAULT 1")
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ Could not add quantity column: {e}")
+                
+                if 'first_acquired_at' not in columns:
+                    try:
+                        cursor.execute("ALTER TABLE user_cards ADD COLUMN first_acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                    except sqlite3.OperationalError as e:
+                        print(f"⚠️ Could not add first_acquired_at column: {e}")
+                
+                # Update existing records
+                try:
+                    cursor.execute("UPDATE user_cards SET quantity = 1 WHERE quantity IS NULL")
+                except sqlite3.OperationalError:
+                    pass
+                
+                # Create dust table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_dust (
+                        user_id INTEGER PRIMARY KEY,
+                        dust_amount INTEGER DEFAULT 0,
+                        total_dust_earned INTEGER DEFAULT 0,
+                        total_dust_spent INTEGER DEFAULT 0,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    )
+                """)
+                
+                # Create dust transactions table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS dust_transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        amount INTEGER,
+                        transaction_type TEXT,
+                        card_id TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    )
+                """)
+                
+                # Create index (skip if already exists)
+                try:
+                    cursor.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_user_cards_lookup 
+                        ON user_cards(user_id, card_id)
+                    """)
+                except sqlite3.OperationalError:
+                    # Index or constraint already exists, skip
+                    pass
+                
+                conn.commit()
+        except Exception as e:
+            print(f"⚠️ Error ensuring duplicate protection schema: {e}")
     
     def check_duplicate(self, user_id: int, card_id: str) -> Tuple[bool, int]:
         """

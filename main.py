@@ -72,12 +72,14 @@ class Bot(commands.Bot):
                 print(f'⚠️ Continuing without {cog} - bot will still run')
                 # Continue loading other cogs - don't break the whole bot
         
-        await self.load_extension("cogs.admin_commands")
-        await self.load_extension("cogs.card_game")
-        await self.load_extension("cogs.economy")
-        await self.load_extension("cogs.menu_system")
-        await self.load_extension("cogs.vip")
-        await self.load_extension("cogs.dust_commands")
+        # Load additional cogs with error handling
+        additional_cogs = ['cogs.dust_commands']
+        for cog in additional_cogs:
+            try:
+                await self.load_extension(cog)
+                print(f'✅ Loaded extension: {cog}')
+            except Exception as e:
+                print(f'⚠️ Could not load {cog}: {e}')
         
         print("🔍 Checking loaded commands...")
         loaded_commands = []
