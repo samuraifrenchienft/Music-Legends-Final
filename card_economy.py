@@ -58,7 +58,12 @@ class CardEconomyManager:
             if "tier" not in existing_columns:
                 cursor.execute("ALTER TABLE cards ADD COLUMN tier TEXT DEFAULT 'community'")
             if "serial_number" not in existing_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT UNIQUE")
+                try:
+                    # Try adding with UNIQUE constraint
+                    cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT UNIQUE")
+                except sqlite3.OperationalError:
+                    # If UNIQUE fails (table has data), add without constraint
+                    cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT")
             if "print_number" not in existing_columns:
                 cursor.execute("ALTER TABLE cards ADD COLUMN print_number INTEGER")
             if "quality" not in existing_columns:

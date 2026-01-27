@@ -16,7 +16,7 @@ import json
 
 from database import DatabaseManager
 from card_economy import CardEconomyManager
-import youtube_integration
+from youtube_integration import youtube_integration
 from music_api_manager import music_api
 from views.song_selection import SongSelectionView
 from cogs.pack_creation_helpers import show_song_selection_lastfm, finalize_pack_creation_lastfm
@@ -1093,9 +1093,13 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
                 )
                 
-                # Show Last.fm artist image
+                # Show Last.fm artist image (large display)
                 if artist_data.get('image_xlarge'):
-                    preview_embed.set_thumbnail(url=artist_data['image_xlarge'])
+                    image_url = artist_data['image_xlarge']
+                    print(f"🖼️ Setting artist image: {image_url}")
+                    preview_embed.set_image(url=image_url)
+                else:
+                    print(f"⚠️ No image_xlarge found for {artist_data.get('name')}")
                 
                 # Show top tracks
                 tracks_text = "\n".join([
@@ -1148,7 +1152,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                         embed=None,
                         view=None
                     )
-                    await self._search_youtube_fallback(interaction, pack_name, artist_name)
+                    await self._search_youtube_fallback(interaction, pack_name, artist_name, artist_data, tracks)
             else:
                 # Last.fm failed or unavailable, use YouTube
                 await interaction.edit_original_response(
@@ -1179,6 +1183,9 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
         import random
         
         try:
+            print(f"🎯 Starting pack creation for {pack_name} by {artist['name']}")
+            print(f"   Selected tracks: {len(selected_tracks)}")
+            
             # Create pack in database
             pack_id = self.db.create_creator_pack(
                 creator_id=creator_id,
@@ -1188,8 +1195,11 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             )
             
             if not pack_id:
+                print(f"❌ Failed to create pack in database")
                 await interaction.followup.send("❌ Failed to create pack in database", ephemeral=True)
                 return
+            
+            print(f"✅ Pack created with ID: {pack_id}")
             
             # Generate cards for each selected track
             cards_created = []
@@ -1204,6 +1214,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             
             for track in selected_tracks:
                 try:
+                    # Debug: print track data to see what we're working with
+                    print(f"📦 Processing track: {track.get('title', track.get('name', 'Unknown'))}")
+                    print(f"   Track keys: {list(track.keys())}")
+                    
                     # Generate stats
                     base_stat = random.randint(stat_min, stat_max)
                     
@@ -1227,22 +1241,36 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                         rarity = "common"
                     
                     # Extract song title
-                    video_title = track.get('title', '')
+                    video_title = track.get('title', track.get('name', ''))
                     song_title = video_title.replace(artist['name'], '').replace('-', '').strip()
                     for suffix in ['(Official Music Video)', '(Official Video)', '(Lyrics)', '(Audio)', 'ft.', 'feat.']:
                         song_title = song_title.replace(suffix, '').strip()
                     if not song_title or len(song_title) < 2:
                         song_title = video_title[:50]
                     
+                    # Get image URL - try multiple possible field names
+                    image_url = (
+                        track.get('thumbnail_url') or 
+                        track.get('youtube_thumbnail') or 
+                        track.get('image_url') or 
+                        track.get('image_xlarge') or
+                        artist.get('image_url', '')
+                    )
+                    print(f"   Image URL: {image_url[:50] if image_url else 'NONE'}...")
+                    
+                    # Get video ID
+                    video_id = track.get('video_id', str(random.randint(1000, 9999)))
+                    youtube_url = track.get('youtube_url', f"https://youtube.com/watch?v={video_id}")
+                    
                     # Create card data
-                    card_id = f"{pack_id}_{track.get('video_id', random.randint(1000, 9999))}"
+                    card_id = f"{pack_id}_{video_id}"
                     card_data = {
                         'card_id': card_id,
                         'name': artist['name'],
                         'title': song_title[:100],
                         'rarity': rarity,
-                        'image_url': track.get('thumbnail_url', ''),
-                        'youtube_url': f"https://youtube.com/watch?v={track.get('video_id', '')}",
+                        'image_url': image_url,
+                        'youtube_url': youtube_url,
                         'impact': stats['impact'],
                         'skill': stats['skill'],
                         'longevity': stats['longevity'],
@@ -1253,15 +1281,21 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     }
                     
                     # Add card to master list
+                    print(f"   Adding card to database: {card_id}")
                     success = self.db.add_card_to_master(card_data)
                     if success:
+                        print(f"   ✅ Card added to master list")
                         self.db.add_card_to_pack(pack_id, card_data)
                         # Give creator a copy
                         self.db.add_card_to_collection(creator_id, card_id, 'pack_creation')
                         cards_created.append(card_data)
+                    else:
+                        print(f"   ❌ Failed to add card to master list")
                     
                 except Exception as e:
-                    print(f"Error creating card: {e}")
+                    print(f"❌ Error creating card: {e}")
+                    import traceback
+                    traceback.print_exc()
                     continue
             
             # Publish pack
@@ -1320,9 +1354,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             traceback.print_exc()
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
-    async def _search_youtube_fallback(self, interaction: Interaction, pack_name: str, artist_name: str):
-        """Fall back to YouTube search for images"""
+    async def _search_youtube_fallback(self, interaction: Interaction, pack_name: str, artist_name: str, artist_data: dict = None, lastfm_tracks: list = None):
+        """Fall back to YouTube search for images while preserving Last.fm data"""
         
+        # Search YouTube for videos
         videos = youtube_integration.search_music_video(artist_name, limit=10)
         
         if not videos:
@@ -1334,7 +1369,45 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             )
             return
         
-        # Create artist data from first video
+        # If we have Last.fm data, use it with YouTube images
+        if artist_data and lastfm_tracks:
+            # Match Last.fm tracks with YouTube videos for images
+            enhanced_tracks = []
+            for track in lastfm_tracks:
+                # Try to find matching YouTube video
+                matching_video = None
+                track_name_lower = track['name'].lower()
+                for video in videos:
+                    video_title_lower = video['title'].lower()
+                    if track_name_lower in video_title_lower or any(word in video_title_lower for word in track_name_lower.split() if len(word) > 3):
+                        matching_video = video
+                        break
+                
+                # Create enhanced track with YouTube image
+                enhanced_track = track.copy()
+                if matching_video:
+                    enhanced_track['youtube_thumbnail'] = matching_video.get('thumbnail_url', '')
+                    enhanced_track['youtube_url'] = matching_video.get('youtube_url', '')
+                else:
+                    # Use first video as fallback
+                    enhanced_track['youtube_thumbnail'] = videos[0].get('thumbnail_url', '') if videos else ''
+                    enhanced_track['youtube_url'] = videos[0].get('youtube_url', '') if videos else ''
+                
+                enhanced_tracks.append(enhanced_track)
+            
+            # Use Last.fm flow with YouTube images
+            await show_song_selection_lastfm(
+                interaction,
+                pack_name,
+                artist_data,
+                enhanced_tracks,
+                self.pack_type,
+                self.db,
+                finalize_pack_creation_lastfm
+            )
+            return
+        
+        # No Last.fm data - pure YouTube fallback
         artist = {
             'name': artist_name,
             'image_url': videos[0].get('thumbnail_url', '') if videos else '',
@@ -1668,6 +1741,8 @@ class MenuSystemCog(commands.Cog):
         embed = discord.Embed(
             title="🔧 Developer Control Panel",
             description=(
+                "**Important:** After bot restarts, run `/setup_dev_panel` again\n"
+                "to refresh the panel buttons in this channel.\n\n"
                 "**Pack Management:**\n"
                 "• Create Community/Gold Packs (free)\n\n"
                 "**User Management:**\n"
@@ -1686,6 +1761,16 @@ class MenuSystemCog(commands.Cog):
             color=0xe74c3c
         )
         embed.set_footer(text="Dev Panel • Only visible to developers")
+        
+        # Delete old panel message if exists
+        try:
+            async for message in interaction.channel.history(limit=50):
+                if message.author == self.bot.user and message.embeds:
+                    if message.embeds[0].title == "🔧 Developer Control Panel":
+                        await message.delete()
+                        break
+        except:
+            pass
         
         await interaction.response.send_message(embed=embed, view=view)
     
