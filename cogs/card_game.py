@@ -442,10 +442,11 @@ class CardGameCog(Cog):
                     else:
                         rarity = "common"
                     
-                    # Extract song title from video title (remove artist name if present)
+                    # Extract song title from video title
                     video_title = track.get('title', '')
-                    song_title = video_title.replace(artist['name'], '').replace('-', '').strip()
-                    if not song_title:
+                    # Remove artist name, dash, and "(Official Music Video)" text
+                    song_title = video_title.replace(artist['name'], '').replace('-', '').replace('(Official Music Video)', '').strip()
+                    if not song_title or len(song_title) < 2:
                         song_title = video_title
                     
                     # Create card data
