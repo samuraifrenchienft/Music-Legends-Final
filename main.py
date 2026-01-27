@@ -91,15 +91,8 @@ class Bot(commands.Bot):
         
         print(f"📋 Total commands loaded: {len(loaded_commands)}")
         print(f"📋 Commands: {loaded_commands}")
-
-    async def on_ready(self):
-        """Sync commands when bot is ready"""
-        print(f'✅ Bot is ready!')
-        print(f'Logged in as: {self.user.name}')
-        print(f'Bot ID: {self.user.id}')
-        print(f'Connected to {len(self.guilds)} servers')
         
-        # Sync commands now that bot is ready
+        # Sync commands in setup_hook (runs before on_ready)
         test_server_id = os.getenv("TEST_SERVER_ID")
         
         try:
@@ -114,13 +107,21 @@ class Bot(commands.Bot):
                 print(f"✅ Synced {len(synced)} commands to test server")
         except discord.Forbidden as e:
             print(f"❌ Command sync failed (Forbidden): {e}")
-            print("⚠️ Bot will still run with basic commands")
+            print("⚠️ Bot may not have applications.commands scope")
         except discord.HTTPException as e:
             print(f"❌ Command sync failed (HTTPException): {e}")
             print("⚠️ Bot will still run with basic commands")
         except Exception as e:
             print(f"❌ Unexpected error during sync: {e}")
-            print("⚠️ Bot will still run with basic commands")
+            import traceback
+            traceback.print_exc()
+
+    async def on_ready(self):
+        """Called when bot is ready"""
+        print(f'✅ Bot is ready!')
+        print(f'Logged in as: {self.user.name}')
+        print(f'Bot ID: {self.user.id}')
+        print(f'Connected to {len(self.guilds)} servers')
         
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
 
