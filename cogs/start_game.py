@@ -191,12 +191,4 @@ class StartGameCog(commands.Cog):
             await interaction.followup.send(embed=error_embed, ephemeral=True)
 
 async def setup(bot):
-    # Check if we should sync globally or to test server
-    test_server_id = os.getenv("TEST_SERVER_ID")
-    if test_server_id == "" or test_server_id is None:
-        await bot.add_cog(StartGameCog(bot))
-    else:
-        await bot.add_cog(
-            StartGameCog(bot),
-            guild=discord.Object(id=int(test_server_id))
-        )
+    await bot.add_cog(StartGameCog(bot))

@@ -911,12 +911,4 @@ class CardGameCog(Cog):
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
-    # Check if we should sync globally or to test server
-    test_server_id = os.getenv("TEST_SERVER_ID")
-    if test_server_id == "" or test_server_id is None:
-        await bot.add_cog(CardGameCog(bot))
-    else:
-        await bot.add_cog(
-            CardGameCog(bot),
-            guild=discord.Object(id=int(test_server_id))
-        )
+    await bot.add_cog(CardGameCog(bot))
