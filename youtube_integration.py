@@ -24,7 +24,7 @@ class YouTubeIntegration:
                 'part': 'snippet',
                 'q': query,
                 'type': 'video',
-                'maxResults': 3,
+                'maxResults': limit,
                 'videoCategoryId': '10',  # Music category
                 'key': self.api_key
             }
