@@ -1633,9 +1633,9 @@ class MenuSystemCog(commands.Cog):
         self.bot.add_view(DevPanelView(self.db))
         print("✅ Persistent menu views registered")
     
-    @commands.command(name="post_user_hub")
-    @commands.has_permissions(administrator=True)
-    async def post_user_hub(self, ctx: commands.Context):
+    @app_commands.command(name="setup_user_hub", description="Post persistent User Hub in this channel")
+    @app_commands.default_permissions(administrator=True)
+    async def setup_user_hub(self, interaction: Interaction):
         """Post persistent user hub in current channel"""
         view = UserHubView(self.db)
         
@@ -1657,15 +1657,11 @@ class MenuSystemCog(commands.Cog):
         )
         embed.set_footer(text="Tip: Click any button to get started!")
         
-        await ctx.send(embed=embed, view=view)
-        try:
-            await ctx.message.delete()
-        except:
-            pass
+        await interaction.response.send_message(embed=embed, view=view)
     
-    @commands.command(name="post_dev_panel")
-    @commands.has_permissions(administrator=True)
-    async def post_dev_panel(self, ctx: commands.Context):
+    @app_commands.command(name="setup_dev_panel", description="Post persistent Dev Panel in this channel")
+    @app_commands.default_permissions(administrator=True)
+    async def setup_dev_panel(self, interaction: Interaction):
         """Post persistent dev panel in current channel (dev-only channel)"""
         view = DevPanelView(self.db)
         
@@ -1691,11 +1687,7 @@ class MenuSystemCog(commands.Cog):
         )
         embed.set_footer(text="Dev Panel • Only visible to developers")
         
-        await ctx.send(embed=embed, view=view)
-        try:
-            await ctx.message.delete()
-        except:
-            pass
+        await interaction.response.send_message(embed=embed, view=view)
     
     @app_commands.command(name="menu", description="Open the main menu")
     async def menu_command(self, interaction: Interaction):
