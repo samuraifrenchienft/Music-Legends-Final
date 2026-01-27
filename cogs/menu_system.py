@@ -1054,22 +1054,27 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     )
     
     async def on_submit(self, interaction: Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
         try:
+            # MUST defer immediately to prevent timeout
+            await interaction.response.defer(ephemeral=True)
+            
             artist_name = self.artist_name.value
             pack_name = self.pack_name.value
+            
+            # Send initial message
+            await interaction.followup.send(
+                f"🔍 Searching for **{artist_name}**...",
+                ephemeral=True
+            )
             
             # Step 1: Try Last.fm first (if API key is available)
             lastfm_result = None
             try:
-                await interaction.followup.send(
-                    f"🔍 Searching for **{artist_name}**...",
-                    ephemeral=True
-                )
                 lastfm_result = await music_api.search_artist_with_tracks(artist_name, limit=10)
             except Exception as e:
-                print(f"Last.fm unavailable: {e}")
+                print(f"Last.fm error: {e}")
+                import traceback
+                traceback.print_exc()
                 lastfm_result = None
             
             if lastfm_result:
@@ -1155,7 +1160,19 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             print(f"❌ Error in pack creation modal: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            try:
+                await interaction.followup.send(
+                    f"❌ Error creating pack: {str(e)}\n\nPlease try again or contact support.",
+                    ephemeral=True
+                )
+            except:
+                # If followup fails, try editing original response
+                try:
+                    await interaction.edit_original_response(
+                        content=f"❌ Error: {str(e)}"
+                    )
+                except:
+                    pass
     
     async def _finalize_pack_creation(self, interaction: Interaction, pack_name: str, artist: dict, selected_tracks: list, creator_id: int, pack_type: str):
         """Finalize pack creation after song selection"""
