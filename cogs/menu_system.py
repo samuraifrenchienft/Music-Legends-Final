@@ -1060,13 +1060,17 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             artist_name = self.artist_name.value
             pack_name = self.pack_name.value
             
-            # Step 1: Try Last.fm first
-            await interaction.followup.send(
-                f"🔍 Searching Last.fm for **{artist_name}**...",
-                ephemeral=True
-            )
-            
-            lastfm_result = await music_api.search_artist_with_tracks(artist_name, limit=10)
+            # Step 1: Try Last.fm first (if API key is available)
+            lastfm_result = None
+            try:
+                await interaction.followup.send(
+                    f"🔍 Searching for **{artist_name}**...",
+                    ephemeral=True
+                )
+                lastfm_result = await music_api.search_artist_with_tracks(artist_name, limit=10)
+            except Exception as e:
+                print(f"Last.fm unavailable: {e}")
+                lastfm_result = None
             
             if lastfm_result:
                 # Last.fm found the artist - show image confirmation
@@ -1141,9 +1145,9 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     )
                     await self._search_youtube_fallback(interaction, pack_name, artist_name)
             else:
-                # Last.fm failed, fall back to YouTube
+                # Last.fm failed or unavailable, use YouTube
                 await interaction.edit_original_response(
-                    content=f"⚠️ Artist not found on Last.fm. Searching YouTube..."
+                    content=f"🔍 Searching YouTube for **{artist_name}**..."
                 )
                 await self._search_youtube_fallback(interaction, pack_name, artist_name)
             
