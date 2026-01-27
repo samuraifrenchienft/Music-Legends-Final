@@ -283,7 +283,7 @@ class GameplayCommands(commands.Cog):
         # Build the card embed
         display_title = f"{card_name} — \"{card_title}\"" if card_title else card_name
         
-        # Create branded card design
+        # Create clean, professional card design
         rarity_display = {
             "common": "⚪ COMMON",
             "rare": "🔵 RARE", 
@@ -293,15 +293,15 @@ class GameplayCommands(commands.Cog):
         }.get(rarity.lower(), "⚪ COMMON")
         
         embed = discord.Embed(
-            title=f"🎵 MUSIC LEGENDS CARD",
-            description=f"**{rarity_display}**\n\n**{display_title}**",
+            title=f"{rarity_display} CARD",
+            description=f"**{display_title}**",
             color=rarity_color
         )
         
-        # Add branded header
+        # Clean separator
         embed.add_field(
-            name="═══════════════════════════════════════",
-            value="🎶 **ARTIST PROFILE** 🎶",
+            name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            value="**� ARTIST STATS** �",
             inline=False
         )
         
@@ -342,10 +342,10 @@ class GameplayCommands(commands.Cog):
             inline=False
         )
         
-        # Branded footer
+        # Clean footer
         embed.add_field(
-            name="═══════════════════════════════════════",
-            value="🎵 **MUSIC LEGENDS** - THE ULTIMATE ARTIST BATTLE GAME 🎵",
+            name="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            value="**Music Legends** • Artist Battle Game",
             inline=False
         )
         

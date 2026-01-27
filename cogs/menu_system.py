@@ -1106,25 +1106,40 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
                 )
                 
-                # Show Last.fm artist image with comprehensive fallbacks
+                # Show Last.fm artist image with AGGRESSIVE fallbacks
+                print(f"🔧 DEV PANEL: Available image keys: {[k for k in artist_data.keys() if 'image' in k.lower()]}")
+                print(f"🔧 DEV PANEL: All artist_data keys: {list(artist_data.keys())}")
+                
                 image_url = None
                 image_sizes = ['image_xlarge', 'image_large', 'image_medium', 'image']
                 
                 for size in image_sizes:
                     if artist_data.get(size):
                         image_url = artist_data[size]
-                        print(f"🔧 DEV PANEL: Found {size}: {image_url[:50]}...")
+                        print(f"🔧 DEV PANEL: ✅ Found {size}: {image_url[:80]}...")
                         break
+                
+                # Try ANY field with 'image' in the name
+                if not image_url:
+                    for key, value in artist_data.items():
+                        if 'image' in key.lower() and value and isinstance(value, str):
+                            image_url = value
+                            print(f"🔧 DEV PANEL: ✅ Found fallback {key}: {image_url[:80]}...")
+                            break
                 
                 if image_url:
                     preview_embed.set_image(url=image_url)
-                    print(f"🔧 DEV PANEL: Set image: {image_url}")
+                    print(f"🔧 DEV PANEL: 🖼️ SET IMAGE: {image_url}")
+                    
+                    # TEST: Also set as thumbnail to be safe
+                    preview_embed.set_thumbnail(url=image_url)
+                    print(f"🔧 DEV PANEL: 🖼️ ALSO SET THUMBNAIL")
                 else:
-                    print(f"🔧 DEV PANEL: ❌ No images found for {artist_data.get('name')}")
+                    print(f"🔧 DEV PANEL: ❌ NO IMAGES FOUND for {artist_data.get('name')}")
                     # Add a placeholder field
                     preview_embed.add_field(
                         name="🖼️ Image Status",
-                        value="No artist image available - will use YouTube fallback",
+                        value="❌ No artist image found - will use YouTube fallback",
                         inline=False
                     )
                 
