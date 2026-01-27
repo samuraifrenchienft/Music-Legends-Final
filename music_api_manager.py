@@ -1,18 +1,20 @@
 # music_api_manager.py
 """
 Unified Music API Manager for Music Legends
-Handles Last.fm (primary) + YouTube (fallback) integration
+Handles Last.fm (primary) + YouTube (fallback) + TheAudioDB (images) integration
 """
 
 import os
 from typing import List, Dict, Optional, Tuple
 from lastfm_integration import lastfm_integration
+from audiodb_integration import AudioDBIntegration
 
 class MusicAPIManager:
-    """Manages music data from Last.fm and YouTube with smart fallbacks"""
+    """Manages music data from Last.fm (primary) + YouTube (fallback) + TheAudioDB (images)"""
     
     def __init__(self):
         self.lastfm = lastfm_integration
+        self.audiodb = AudioDBIntegration()
     
     async def search_artist_with_tracks(self, artist_name: str, limit: int = 10) -> Optional[Dict]:
         """
@@ -38,10 +40,27 @@ class MusicAPIManager:
                 print(f"⚠️ No tracks found for '{artist_name}' on Last.fm")
                 return None
             
+            # ENHANCE with TheAudioDB for better images
+            try:
+                print(f"🖼️ Enhancing images with TheAudioDB for {artist_name}")
+                audiodb_artist = self.audiodb.search_artist(artist_name)
+                
+                if audiodb_artist and audiodb_artist.get('strArtistThumb'):
+                    # Replace Last.fm image with higher quality TheAudioDB image
+                    artist_data['image_xlarge'] = audiodb_artist['strArtistThumb']
+                    artist_data['image_large'] = audiodb_artist.get('strArtistClearart', audiodb_artist['strArtistThumb'])
+                    artist_data['image_medium'] = audiodb_artist.get('strArtistFanart', audiodb_artist['strArtistThumb'])
+                    print(f"✅ Enhanced with TheAudioDB images for {artist_name}")
+                else:
+                    print(f"⚠️ No TheAudioDB images found for {artist_name}")
+                    
+            except Exception as e:
+                print(f"⚠️ TheAudioDB enhancement failed: {e}")
+            
             return {
                 'artist': artist_data,
                 'tracks': tracks,
-                'source': 'lastfm'
+                'source': 'lastfm_enhanced'
             }
         
         except Exception as e:
