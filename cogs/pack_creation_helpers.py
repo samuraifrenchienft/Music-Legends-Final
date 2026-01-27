@@ -70,8 +70,15 @@ async def show_song_selection_lastfm(
         })
     
     # Create callback for when songs are selected
-    async def on_songs_selected(confirm_interaction: Interaction, selected_indices: list):
-        selected_tracks = [formatted_tracks[i]['track_data'] for i in selected_indices]
+    async def on_songs_selected(confirm_interaction: Interaction, selected_tracks_raw: list):
+        # selected_tracks_raw are formatted track dicts from SongSelectionView
+        # Extract the actual track_data from each formatted track
+        selected_tracks = []
+        for item in selected_tracks_raw:
+            if isinstance(item, dict) and 'track_data' in item:
+                selected_tracks.append(item['track_data'])
+            else:
+                selected_tracks.append(item)
         
         # Generate preview cards
         preview_cards = []

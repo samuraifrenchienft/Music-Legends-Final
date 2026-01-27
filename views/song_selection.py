@@ -107,8 +107,9 @@ class ConfirmButton(ui.Button):
         
         await interaction.edit_original_response(view=self.view)
         
-        # Call the pack creation callback
+        # Call the pack creation callback with the actual track objects
         if self.pack_callback:
+            # Pass the selected tracks directly (not indices)
             await self.pack_callback(interaction, self.selected_tracks)
 
 class CancelButton(ui.Button):
