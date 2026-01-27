@@ -187,5 +187,6 @@ class YouTubeIntegration:
             'youtube_url': f"https://www.youtube.com/watch?v={video_id}"
         }
 
-# Global instance
-youtube_integration = YouTubeIntegration()
+# Global instance - load API key from environment
+import os
+youtube_integration = YouTubeIntegration(api_key=os.getenv('YOUTUBE_API_KEY'))
