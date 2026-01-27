@@ -52,6 +52,27 @@ class Bot(commands.Bot):
         """Initialize infrastructure and load cogs"""
         print("🚀 Bot starting - loading cogs...")
         
+        # Initialize database with persistent storage
+        from db_manager import db_manager
+        db_manager.init_engine()
+        
+        # Check for database restore on Railway
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            restored = await db_manager.restore_database_if_needed()
+            if restored:
+                print("✅ Database restored from backup")
+        
+        # Create automatic backup every hour
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            import asyncio
+            async def backup_loop():
+                while True:
+                    await asyncio.sleep(3600)  # 1 hour
+                    await db_manager.backup_database()
+            
+            asyncio.create_task(backup_loop())
+            print("⏰ Automatic hourly backups enabled")
+        
         # Load essential cogs without duplicates
         cogs = [
             'cogs.start_game',                # Start game command

@@ -66,17 +66,27 @@ async def show_song_selection_lastfm(
     for track in tracks:
         # Choose image size based on user preference
         if use_smaller_image:
-            # Try smaller image sizes in order of preference
+            # Try ALL available image sizes in order of preference
             thumbnail = (track.get('image_medium') or 
                         track.get('image_large') or 
+                        track.get('image_xlarge') or
                         artist_data.get('image_medium') or 
                         artist_data.get('image_large') or 
-                        track.get('image_xlarge') or 
-                        artist_data.get('image_xlarge', ''))
+                        artist_data.get('image_xlarge') or
+                        track.get('image') or  # Fallback to any image
+                        artist_data.get('image', ''))
             print(f"🔧 Using smaller image: {thumbnail[:50] if thumbnail else 'NO IMAGE'}")
         else:
-            # Use largest available image
-            thumbnail = track.get('youtube_thumbnail') or track.get('image_xlarge') or artist_data.get('image_xlarge', '')
+            # Use largest available image with fallbacks
+            thumbnail = (track.get('youtube_thumbnail') or 
+                        track.get('image_xlarge') or 
+                        track.get('image_large') or 
+                        track.get('image_medium') or
+                        artist_data.get('image_xlarge') or 
+                        artist_data.get('image_large') or 
+                        artist_data.get('image_medium') or
+                        track.get('image') or
+                        artist_data.get('image', ''))
         
         formatted_tracks.append({
             'title': f"{track['name']} ({track['playcount']:,} plays)",

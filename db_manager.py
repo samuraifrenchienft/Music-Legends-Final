@@ -18,8 +18,13 @@ class DatabaseManager:
         if self._engine is not None:
             return
 
-        # Use SQLite with async driver for Railway compatibility
-        database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///music_legends.db")
+        # Use Railway persistent storage or fallback to local
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            # Railway persistent volume
+            database_url = "sqlite+aiosqlite:////data/music_legends.db"
+        else:
+            # Local development
+            database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///music_legends.db")
         
         # Create Async engine — nonblocking
         self._engine = create_async_engine(
@@ -27,6 +32,12 @@ class DatabaseManager:
             future=True,
             echo=False  # Set to True for SQL debugging
         )
+        
+        print(f"🗄️ Database initialized: {database_url}")
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            print("📁 Using Railway persistent storage (/data/music_legends.db)")
+        else:
+            print("💻 Using local database")
 
         # Create session factory
         self._session_factory = async_sessionmaker(
@@ -57,9 +68,46 @@ class DatabaseManager:
                 await session.close()
 
     async def close(self):
-        """Close the engine when shutting down."""
+        """Close the engine."""
         if self._engine:
             await self._engine.dispose()
+    
+    async def backup_database(self):
+        """Create a backup of the database to persistent storage"""
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            try:
+                import shutil
+                import datetime
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = f"/data/music_legends_backup_{timestamp}.db"
+                shutil.copy2("/data/music_legends.db", backup_path)
+                print(f"💾 Database backed up to: {backup_path}")
+                
+                # Keep only last 5 backups
+                import glob
+                backups = sorted(glob.glob("/data/music_legends_backup_*.db"))
+                if len(backups) > 5:
+                    for old_backup in backups[:-5]:
+                        os.remove(old_backup)
+                        print(f"🗑️ Removed old backup: {old_backup}")
+                        
+            except Exception as e:
+                print(f"❌ Backup failed: {e}")
+    
+    async def restore_database_if_needed(self):
+        """Restore from backup if main database doesn't exist"""
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            if not os.path.exists("/data/music_legends.db"):
+                # Look for latest backup
+                import glob
+                backups = sorted(glob.glob("/data/music_legends_backup_*.db"))
+                if backups:
+                    latest_backup = backups[-1]
+                    import shutil
+                    shutil.copy2(latest_backup, "/data/music_legends.db")
+                    print(f"🔄 Restored database from: {latest_backup}")
+                    return True
+        return False
 
 # Single global instance
 db_manager = DatabaseManager()
