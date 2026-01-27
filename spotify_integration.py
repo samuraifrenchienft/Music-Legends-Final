@@ -47,7 +47,7 @@ class SpotifyIntegration:
         """Search for artists on Spotify"""
         token = self._get_access_token()
         if not token:
-            return self._mock_artist_search(query, limit)
+            raise ValueError("❌ NO SPOTIFY API KEY - Cannot search artists. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.")
         
         try:
             headers = {'Authorization': f'Bearer {token}'}
@@ -81,18 +81,20 @@ class SpotifyIntegration:
                 
                 return artists
             else:
-                print(f"Spotify search error: {response.status_code}")
-                return self._mock_artist_search(query, limit)
+                error_msg = f"❌ Spotify API error {response.status_code}: {response.text[:200]}"
+                print(error_msg)
+                raise ValueError(error_msg)
                 
         except Exception as e:
-            print(f"Spotify search error: {e}")
-            return self._mock_artist_search(query, limit)
+            error_msg = f"❌ Spotify search error: {e}"
+            print(error_msg)
+            raise ValueError(error_msg)
     
     def get_artist_by_id(self, artist_id: str) -> Optional[Dict]:
         """Get detailed artist info by ID"""
         token = self._get_access_token()
         if not token:
-            return self._mock_artist_response(f"Artist {artist_id}")
+            raise ValueError("❌ NO SPOTIFY API KEY - Cannot get artist info. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.")
         
         try:
             headers = {'Authorization': f'Bearer {token}'}
@@ -114,17 +116,20 @@ class SpotifyIntegration:
                     'spotify_url': artist.get('external_urls', {}).get('spotify', '')
                 }
             else:
-                return self._mock_artist_response(f"Artist {artist_id}")
+                error_msg = f"❌ Spotify API error {response.status_code}: {response.text[:200]}"
+                print(error_msg)
+                raise ValueError(error_msg)
                 
         except Exception as e:
-            print(f"Spotify artist error: {e}")
-            return self._mock_artist_response(f"Artist {artist_id}")
+            error_msg = f"❌ Spotify artist error: {e}"
+            print(error_msg)
+            raise ValueError(error_msg)
     
     def search_tracks(self, query: str, artist_id: str = None, limit: int = 10) -> List[Dict]:
         """Search for tracks, optionally by artist"""
         token = self._get_access_token()
         if not token:
-            return self._mock_track_search(query, limit)
+            raise ValueError("❌ NO SPOTIFY API KEY - Cannot search tracks. Please add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.")
         
         try:
             headers = {'Authorization': f'Bearer {token}'}
@@ -160,11 +165,14 @@ class SpotifyIntegration:
                 
                 return tracks
             else:
-                return self._mock_track_search(query, limit)
+                error_msg = f"❌ Spotify API error {response.status_code}: {response.text[:200]}"
+                print(error_msg)
+                raise ValueError(error_msg)
                 
         except Exception as e:
-            print(f"Spotify track search error: {e}")
-            return self._mock_track_search(query, limit)
+            error_msg = f"❌ Spotify track search error: {e}"
+            print(error_msg)
+            raise ValueError(error_msg)
     
     def validate_spotify_url(self, url: str) -> bool:
         """Validate if a URL is a valid Spotify URL"""
@@ -221,76 +229,5 @@ class SpotifyIntegration:
         else:
             return "Common"
     
-    # Mock methods for when API is not available
-    def _mock_artist_search(self, query: str, limit: int) -> List[Dict]:
-        """Mock artist search results"""
-        # Mock artist images (using placeholder service)
-        artist_hash = abs(hash(query.lower())) % 1000
-        return [{
-            'id': f"mock_{query.lower().replace(' ', '_')}",
-            'name': query,
-            'popularity': 75,
-            'followers': 1000000,
-            'genres': ['hip-hop', 'rap', 'pop'],
-            'image_url': f"https://i.scdn.co/image/ab6761610000e5eb{artist_hash:032x}",
-            'external_urls': {'spotify': f"https://open.spotify.com/artist/{query.lower().replace(' ', '_')}"},
-            'spotify_url': f"https://open.spotify.com/artist/{query.lower().replace(' ', '_')}"
-        }]
-    
-    def _mock_track_search(self, query: str, limit: int) -> List[Dict]:
-        """Mock track search results with realistic data"""
-        # Popular Drake songs as example mock data
-        mock_songs = {
-            'drake': [
-                "God's Plan", "One Dance", "Hotline Bling", "In My Feelings", "Nice For What",
-                "Passionfruit", "Started From the Bottom", "Hold On, We're Going Home", 
-                "Controlla", "Too Good"
-            ],
-            'default': [
-                f"{query} - Hit Single", f"{query} - Popular Track", f"{query} - Chart Topper",
-                f"{query} - Fan Favorite", f"{query} - Classic Hit", f"{query} - New Release",
-                f"{query} - Radio Hit", f"{query} - Viral Track", f"{query} - Top Song",
-                f"{query} - Greatest Hit"
-            ]
-        }
-        
-        # Get appropriate song list
-        artist_key = query.lower()
-        songs = mock_songs.get(artist_key, mock_songs['default'])
-        
-        # Generate mock tracks
-        tracks = []
-        for i, song_name in enumerate(songs[:limit]):
-            tracks.append({
-                'id': f"mock_track_{i}_{query.lower().replace(' ', '_')}",
-                'name': song_name,
-                'artist_name': query,
-                'artist_id': f"mock_{query.lower().replace(' ', '_')}",
-                'album_name': f"{song_name} - Single",
-                'image_url': f"https://i.scdn.co/image/ab67616d0000b273{i:032x}",  # Mock Spotify CDN URL
-                'duration_ms': 180000 + (i * 10000),
-                'external_urls': {'spotify': f"https://open.spotify.com/track/mock_{i}"},
-                'spotify_url': f"https://open.spotify.com/track/mock_{i}",
-                'preview_url': ''
-            })
-        
-        return tracks
-    
-    def _mock_artist_response(self, artist_name: str) -> Dict:
-        """Mock artist response"""
-        return {
-            'name': artist_name,
-            'id': f"mock_{artist_name.lower().replace(' ', '_')}",
-            'external_urls': {
-                'spotify': f"https://open.spotify.com/artist/{artist_name.lower().replace(' ', '_')}"
-            },
-            'images': [
-                {'url': '', 'height': 300, 'width': 300}
-            ],
-            'genres': ['pop', 'electronic'],
-            'popularity': 75,
-            'followers': {'total': 1000000}
-        }
-
 # Global instance
 spotify_integration = SpotifyIntegration()
