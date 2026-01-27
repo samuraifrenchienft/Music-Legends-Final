@@ -1753,6 +1753,9 @@ class MenuSystemCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def setup_dev_panel(self, interaction: Interaction):
         """Post persistent dev panel in current channel (dev-only channel)"""
+        # MUST defer immediately to prevent timeout
+        await interaction.response.defer(ephemeral=False)
+        
         view = DevPanelView(self.db)
         
         embed = discord.Embed(
@@ -1789,7 +1792,7 @@ class MenuSystemCog(commands.Cog):
         except:
             pass
         
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view)
     
     @app_commands.command(name="sync_commands", description="Force sync slash commands to this server")
     @app_commands.default_permissions(administrator=True)
