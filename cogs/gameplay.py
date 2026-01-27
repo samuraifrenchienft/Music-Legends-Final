@@ -238,7 +238,6 @@ class GameplayCommands(commands.Cog):
         card_title = card.get('title', '')
         rarity = card.get('rarity', 'Common')
         image_url = card.get('image_url', '')
-        spotify_url = card.get('spotify_url', '')
         youtube_url = card.get('youtube_url', '')
         variant = card.get('variant', 'Classic')
         era = card.get('era', '')
@@ -352,8 +351,6 @@ class GameplayCommands(commands.Cog):
         
         # Links
         links = []
-        if spotify_url:
-            links.append(f"[🎧 Spotify]({spotify_url})")
         if youtube_url:
             links.append(f"[▶️ YouTube]({youtube_url})")
         if links:
@@ -406,7 +403,6 @@ class GameplayCommands(commands.Cog):
         card_title = card.get('title', '')
         rarity = card.get('rarity', 'Common')
         image_url = card.get('image_url', '')
-        spotify_url = card.get('spotify_url', '')
         youtube_url = card.get('youtube_url', '')
         variant = card.get('variant', 'Classic')
         era = card.get('era', '')

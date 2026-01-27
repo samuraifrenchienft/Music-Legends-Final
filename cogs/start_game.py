@@ -84,8 +84,7 @@ class StartGameCog(commands.Cog):
                         'name': artist_data['name'],
                         'rarity': artist_data['tier'],
                         'image_url': artist_data.get('image', ''),
-                        'spotify_url': f"https://youtube.com/channel/{artist_data['youtube_channel_id']}",
-                        'card_type': 'artist',
+                                                'card_type': 'artist',
                         'era': 'Modern',
                         'impact': artist_data['game_data']['power_level'] // 5,
                         'skill': artist_data['game_data']['power_level'] // 5, 
@@ -100,11 +99,10 @@ class StartGameCog(commands.Cog):
                         cursor = conn.cursor()
                         cursor.execute("""
                             INSERT OR IGNORE INTO cards 
-                            (card_id, name, rarity, image_url, spotify_url, card_type, era, impact, skill, longevity, culture, hype)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (card_id, name, rarity, image_url, youtube_url, card_type, era, impact, skill, longevity, culture, hype)
                         """, (
                             card_data['card_id'], card_data['name'], card_data['rarity'],
-                            card_data['image_url'], card_data['spotify_url'], card_data['card_type'],
+                            card_data['image_url'], card_data.get('youtube_url', ''), card_data['card_type'],
                             card_data['era'], card_data['impact'], card_data['skill'],
                             card_data['longevity'], card_data['culture'], card_data['hype']
                         ))

@@ -52,7 +52,6 @@ class CardGameCog(Cog):
             culture=card_data.get('culture', 0),
             hype=card_data.get('hype', 0),
             image_url=card_data.get('image_url'),
-            spotify_url=card_data.get('spotify_url'),
             youtube_url=card_data.get('youtube_url')
         )
 
@@ -723,9 +722,7 @@ class CardGameCog(Cog):
                         'hero_artist': artist['name'],
                         'hero_song': song_title,
                         'rarity': rarity.lower(),
-                        'spotify_id': '',
-                        'spotify_url': '',
-                        'youtube_id': track['video_id'],
+                                                'youtube_id': track['video_id'],
                         'image_url': track.get('thumbnail_url', ''),
                         'impact': stats['impact'],
                         'skill': stats['skill'],
