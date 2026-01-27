@@ -48,25 +48,25 @@ class CardEconomyManager:
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
             
-            # Enhanced cards table with economy metadata
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS cards (
-                    card_id TEXT PRIMARY KEY,
-                    artist_name TEXT NOT NULL,
-                    genre TEXT,
-                    tier TEXT NOT NULL CHECK (tier IN ('community', 'gold', 'platinum', 'legendary')),
-                    serial_number TEXT UNIQUE,
-                    print_number INTEGER,
-                    quality TEXT DEFAULT 'standard',
-                    acquisition_source TEXT,
-                    owner_user_id INTEGER,
-                    acquisition_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    owner_history TEXT, -- JSON array of previous owners
-                    spotify_id TEXT,
-                    stats TEXT, -- JSON object with card stats
-                    FOREIGN KEY (owner_user_id) REFERENCES users(user_id)
-                )
-            """)
+            # Economy metadata columns for cards table (extends database.py schema)
+            # Note: Main cards table is created in database.py
+            # We only add economy-specific columns if they don't exist
+            cursor.execute("PRAGMA table_info(cards)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            
+            # Add economy columns to existing cards table if missing
+            if "tier" not in existing_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN tier TEXT DEFAULT 'community'")
+            if "serial_number" not in existing_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT UNIQUE")
+            if "print_number" not in existing_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN print_number INTEGER")
+            if "quality" not in existing_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN quality TEXT DEFAULT 'standard'")
+            if "artist_name" not in existing_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN artist_name TEXT")
+            if "genre" not in existing_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN genre TEXT")
             
             # User inventory and currency
             cursor.execute("""
@@ -77,10 +77,59 @@ class CardEconomyManager:
                     tickets INTEGER DEFAULT 0,
                     gems INTEGER DEFAULT 0,
                     keys INTEGER DEFAULT 0,
+                    xp INTEGER DEFAULT 0,
                     total_cards_obtained INTEGER DEFAULT 0,
                     unique_artists TEXT, -- JSON array of unique artists collected
                     collection_value INTEGER DEFAULT 0,
                     last_daily TIMESTAMP,
+                    daily_streak INTEGER DEFAULT 0,
+                    first_win_today INTEGER DEFAULT 0,
+                    last_first_win DATE,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Add new columns to existing user_inventory table if missing
+            cursor.execute("PRAGMA table_info(user_inventory)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            
+            if "daily_streak" not in existing_cols:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN daily_streak INTEGER DEFAULT 0")
+            if "xp" not in existing_cols:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN xp INTEGER DEFAULT 0")
+            if "first_win_today" not in existing_cols:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN first_win_today INTEGER DEFAULT 0")
+            if "last_first_win" not in existing_cols:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN last_first_win DATE")
+            
+            # Battle Pass progression table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS battle_pass_progress (
+                    user_id INTEGER PRIMARY KEY,
+                    season_number INTEGER DEFAULT 1,
+                    battle_pass_xp INTEGER DEFAULT 0,
+                    current_tier INTEGER DEFAULT 1,
+                    has_premium INTEGER DEFAULT 0,
+                    premium_purchased_at TIMESTAMP,
+                    claimed_free_tiers TEXT DEFAULT '[]',
+                    claimed_premium_tiers TEXT DEFAULT '[]',
+                    tiers_skipped INTEGER DEFAULT 0,
+                    last_xp_gain TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # VIP subscription table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS vip_subscriptions (
+                    user_id INTEGER PRIMARY KEY,
+                    subscription_id TEXT,
+                    status TEXT DEFAULT 'inactive',
+                    started_at TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    auto_renew INTEGER DEFAULT 1,
+                    total_months INTEGER DEFAULT 0,
                     FOREIGN KEY (user_id) REFERENCES users(user_id)
                 )
             """)
@@ -393,37 +442,53 @@ class CardEconomyManager:
 
     def _award_card_to_user(self, user_id: int, card_data: Dict):
         """Award a card to a user's inventory"""
+        from config.economy import NEW_PLAYER_GOLD
+        
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
+            
+            # Check if this is a new player (no inventory record)
+            cursor.execute("SELECT user_id FROM user_inventory WHERE user_id = ?", (user_id,))
+            is_new_player = cursor.fetchone() is None
             
             # Add card to existing cards table
             cursor.execute("""
                 INSERT INTO cards 
-                (card_id, type, name, rarity, spotify_artist_id, created_by_user_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (card_id, type, name, rarity, spotify_artist_id, created_by_user_id,
+                 tier, serial_number, print_number, quality, artist_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 card_data['card_id'], card_data['type'], card_data['name'], 
-                card_data['rarity'], card_data.get('spotify_artist_id'), user_id
+                card_data['rarity'], card_data.get('spotify_artist_id'), user_id,
+                card_data.get('tier', 'community'), card_data.get('serial_number'),
+                card_data.get('print_number'), card_data.get('quality', 'standard'),
+                card_data.get('artist_name', card_data['name'])
             ))
             
             # Add to user_cards table (existing ownership system)
             cursor.execute("""
                 INSERT INTO user_cards 
-                (user_id, card_id, acquisition_date, acquisition_source)
+                (user_id, card_id, acquired_at, acquired_from)
                 VALUES (?, ?, CURRENT_TIMESTAMP, ?)
             """, (user_id, card_data['card_id'], card_data['acquisition_source']))
             
-            # Update user inventory (new system)
+            # Update user inventory - give starting gold to new players
+            starting_gold = NEW_PLAYER_GOLD if is_new_player else 0
+            
             cursor.execute("""
-                INSERT OR REPLACE INTO user_inventory 
-                (user_id, total_cards_obtained, collection_value)
-                VALUES (?, 
-                    COALESCE((SELECT total_cards_obtained FROM user_inventory WHERE user_id = ?), 0) + 1,
-                    COALESCE((SELECT collection_value FROM user_inventory WHERE user_id = ?), 0) + ?
-                )
-            """, (user_id, user_id, user_id, self.tier_values[card_data['tier']]['gold_value']))
+                INSERT INTO user_inventory 
+                (user_id, gold, total_cards_obtained, collection_value)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    total_cards_obtained = total_cards_obtained + 1,
+                    collection_value = collection_value + ?
+            """, (user_id, starting_gold, self.tier_values[card_data['tier']]['gold_value'],
+                  self.tier_values[card_data['tier']]['gold_value']))
             
             conn.commit()
+            
+            # Return whether this was a new player (for welcome message)
+            return is_new_player
         
         # Update season progress
         if self.season_manager:

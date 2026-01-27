@@ -57,6 +57,7 @@ class Bot(commands.Bot):
             'cogs.start_game',                # Start game command
             'cogs.gameplay',                  # Drop and battle commands
             'cogs.card_game',                 # Collection and pack creation commands
+            'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")

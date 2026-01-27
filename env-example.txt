@@ -7,11 +7,20 @@ TEST_SERVER_ID=your_test_server_id_here
 REDIS_URL=redis://localhost:6379
 REDIS_PASSWORD=
 
-# Optional: YouTube API (for pack creation with real music video data)
-# Get API key from: https://console.cloud.google.com/apis/credentials
+# Music API Keys (for pack creation with artist/track data)
+# YouTube API - Get from: https://console.cloud.google.com/apis/credentials
 YOUTUBE_API_KEY=your_youtube_api_key_here
 
-# Optional: Developer IDs (for admin commands like /delete_pack)
+# Last.fm API (Primary) - Get from: https://www.last.fm/api/account/create
+LASTFM_API_KEY=your_lastfm_api_key_here
+LASTFM_SHARED_SECRET=your_lastfm_shared_secret_here
+
+# TheAudioDB API (Images) - Get from: https://www.theaudiodb.com/api_guide.php
+# Note: Free tier may be unreliable. Patreon key ($3/mo) recommended for production.
+# Leave as "1" for now - Last.fm is primary source
+AUDIODB_API_KEY=1
+
+# Developer IDs (for admin commands like /delete_pack)
 # Comma-separated list of Discord user IDs
 # Example: DEV_USER_IDS=123456789,987654321
 DEV_USER_IDS=your_discord_user_id_here

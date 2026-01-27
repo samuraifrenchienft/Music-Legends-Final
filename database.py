@@ -1224,6 +1224,42 @@ class DatabaseManager:
             conn.commit()
             return card_id
     
+    def get_all_artists(self, limit: int = 100) -> List[Dict]:
+        """Get all unique artists from the cards table"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT name, image_url, spotify_url
+                FROM cards 
+                WHERE name IS NOT NULL AND name != ''
+                LIMIT ?
+            """, (limit,))
+            
+            artists = []
+            for row in cursor.fetchall():
+                artists.append({
+                    'name': row[0],
+                    'image_url': row[1],
+                    'spotify_url': row[2],
+                    'stats': {}
+                })
+            
+            # If no artists in database, return some defaults
+            if not artists:
+                default_artists = [
+                    "Taylor Swift", "Drake", "Bad Bunny", "The Weeknd",
+                    "Ariana Grande", "Ed Sheeran", "Billie Eilish", "Post Malone"
+                ]
+                for name in default_artists[:limit]:
+                    artists.append({
+                        'name': name,
+                        'image_url': '',
+                        'spotify_url': '',
+                        'stats': {}
+                    })
+            
+            return artists
+    
     def close(self):
         """Close database connection"""
         pass  # SQLite connections are closed automatically

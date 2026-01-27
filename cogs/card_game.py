@@ -171,29 +171,67 @@ class CardGameCog(Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="battle", description="Challenge someone to a card battle")
-    @app_commands.describe(opponent="User to challenge")
-    async def battle_challenge(self, interaction: Interaction, opponent: discord.User):
+    @app_commands.describe(
+        opponent="User to challenge",
+        wager="Wager level (required)"
+    )
+    @app_commands.choices(wager=[
+        app_commands.Choice(name="Casual (50 gold)", value="casual"),
+        app_commands.Choice(name="Standard (100 gold)", value="standard"),
+        app_commands.Choice(name="High Stakes (250 gold)", value="high"),
+        app_commands.Choice(name="Extreme (500 gold)", value="extreme")
+    ])
+    async def battle_challenge(self, interaction: Interaction, opponent: discord.User, wager: str):
+        from config.economy import BATTLE_WAGERS, FIRST_WIN_BONUS
+        
         if opponent.id == interaction.user.id:
             await interaction.response.send_message("You can't challenge yourself!", ephemeral=True)
+            return
+        
+        if opponent.bot:
+            await interaction.response.send_message("You can't battle a bot!", ephemeral=True)
+            return
+
+        # Get wager config
+        wager_config = BATTLE_WAGERS.get(wager, BATTLE_WAGERS["casual"])
+        wager_amount = wager_config["wager"]
+
+        # Check if challenger has enough gold
+        import sqlite3
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (interaction.user.id,))
+            challenger_gold = cursor.fetchone()
+            challenger_gold = challenger_gold[0] if challenger_gold else 0
+            
+            cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (opponent.id,))
+            opponent_gold = cursor.fetchone()
+            opponent_gold = opponent_gold[0] if opponent_gold else 0
+
+        if challenger_gold < wager_amount:
+            await interaction.response.send_message(
+                f"❌ You need {wager_amount} gold to wager! You have {challenger_gold} gold.", 
+                ephemeral=True
+            )
             return
 
         # Get both users
         challenger = self._get_user(interaction.user.id, interaction.user.name, str(interaction.user))
         challenged = self._get_user(opponent.id, opponent.name, str(opponent))
 
-        # Check if both have decks
-        challenger_deck = self.db.get_user_deck(interaction.user.id, 3)
-        challenged_deck = self.db.get_user_deck(opponent.id, 3)
+        # Check if both have at least 1 card (simplified battle)
+        challenger_deck = self.db.get_user_deck(interaction.user.id, 1)
+        challenged_deck = self.db.get_user_deck(opponent.id, 1)
 
-        if len(challenger_deck) < 3:
-            await interaction.response.send_message("You need at least 3 cards to battle! Use `/pack` to get more cards.", ephemeral=True)
+        if len(challenger_deck) < 1:
+            await interaction.response.send_message("You need at least 1 card to battle! Use `/drop` to get cards.", ephemeral=True)
             return
 
-        if len(challenged_deck) < 3:
-            await interaction.response.send_message(f"{opponent.name} doesn't have enough cards to battle!", ephemeral=True)
+        if len(challenged_deck) < 1:
+            await interaction.response.send_message(f"{opponent.name} doesn't have any cards to battle with!", ephemeral=True)
             return
 
-        # Create match
+        # Create match with wager info
         match_id = str(uuid.uuid4())[:8]
         player_a = PlayerState(
             user_id=interaction.user.id, 
@@ -205,6 +243,8 @@ class CardGameCog(Cog):
         )
         
         match = MatchState(match_id=match_id, a=player_a, b=player_b)
+        match.wager_type = wager
+        match.wager_amount = wager_amount
         self.active_matches[match_id] = match
 
         embed = discord.Embed(
@@ -212,8 +252,25 @@ class CardGameCog(Cog):
             description=f"{interaction.user.mention} has challenged {opponent.mention} to a card battle!",
             color=discord.Color.red()
         )
-        embed.add_field(name="Match ID", value=match_id, inline=False)
-        embed.set_footer(text="Use /battle_accept to accept the challenge")
+        
+        embed.add_field(
+            name="💰 Wager",
+            value=f"**{wager.title()}**: {wager_amount} gold\n"
+                  f"Winner gets: {wager_amount + wager_config['win_bonus']} gold + {wager_config['win_xp']} XP",
+            inline=False
+        )
+        
+        embed.add_field(name="Match ID", value=f"`{match_id}`", inline=True)
+        
+        # Check if opponent has enough gold
+        if opponent_gold < wager_amount:
+            embed.add_field(
+                name="⚠️ Warning",
+                value=f"{opponent.name} only has {opponent_gold} gold (needs {wager_amount})",
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Use /battle_accept {match_id} to accept the challenge")
 
         await interaction.response.send_message(embed=embed)
 
@@ -305,9 +362,103 @@ class CardGameCog(Cog):
             await self._start_battle_round(interaction, match, round_index + 1)
 
     async def _end_battle(self, interaction: Interaction, match: MatchState):
-        """End the battle and show final results"""
-        winner_id = match.a.user_id if match.a.score > match.b.score else match.b.user_id
-        winner_name = "Player A" if match.a.score > match.b.score else "Player B"
+        """End the battle and distribute wager rewards"""
+        from config.economy import BATTLE_WAGERS, FIRST_WIN_BONUS, calculate_battle_rewards
+        from datetime import date
+        
+        is_tie = match.a.score == match.b.score
+        winner_id = None
+        loser_id = None
+        
+        if not is_tie:
+            winner_id = match.a.user_id if match.a.score > match.b.score else match.b.user_id
+            loser_id = match.b.user_id if match.a.score > match.b.score else match.a.user_id
+        
+        # Get wager info
+        wager_type = getattr(match, 'wager_type', 'casual')
+        wager_amount = getattr(match, 'wager_amount', 50)
+        wager_config = BATTLE_WAGERS.get(wager_type, BATTLE_WAGERS["casual"])
+        
+        # Calculate rewards
+        winner_gold = 0
+        winner_xp = 0
+        loser_gold = 0
+        loser_xp = 0
+        first_win_bonus = 0
+        
+        if is_tie:
+            # Tie - both get wager back + tie bonus
+            tie_gold = wager_config["tie_gold"]
+            tie_xp = wager_config["tie_xp"]
+            winner_gold = tie_gold  # Both players get this
+            winner_xp = tie_xp
+        else:
+            # Winner gets wager + bonus
+            win_rewards = calculate_battle_rewards(wager_type, "win")
+            winner_gold = win_rewards["gold"]
+            winner_xp = win_rewards["xp"]
+            
+            # Loser gets consolation
+            loss_rewards = calculate_battle_rewards(wager_type, "loss")
+            loser_gold = loss_rewards["gold"]
+            loser_xp = loss_rewards["xp"]
+        
+        # Apply rewards to database
+        import sqlite3
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.cursor()
+            today = date.today().isoformat()
+            
+            if is_tie:
+                # Both players get tie rewards (wager returned)
+                for player_id in [match.a.user_id, match.b.user_id]:
+                    cursor.execute("""
+                        INSERT INTO user_inventory (user_id, gold, xp)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET
+                            gold = gold + ?,
+                            xp = xp + ?
+                    """, (player_id, winner_gold, winner_xp, winner_gold, winner_xp))
+            else:
+                # Check for first win bonus
+                cursor.execute("""
+                    SELECT first_win_today, last_first_win FROM user_inventory WHERE user_id = ?
+                """, (winner_id,))
+                first_win_row = cursor.fetchone()
+                
+                if first_win_row:
+                    first_win_claimed, last_first_win = first_win_row
+                    if last_first_win != today:
+                        first_win_bonus = FIRST_WIN_BONUS["gold"]
+                        winner_gold += first_win_bonus
+                        winner_xp += FIRST_WIN_BONUS["xp"]
+                else:
+                    first_win_bonus = FIRST_WIN_BONUS["gold"]
+                    winner_gold += first_win_bonus
+                    winner_xp += FIRST_WIN_BONUS["xp"]
+                
+                # Winner: add gold and XP, deduct wager already happened at accept
+                cursor.execute("""
+                    INSERT INTO user_inventory (user_id, gold, xp, first_win_today, last_first_win)
+                    VALUES (?, ?, ?, 1, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        gold = gold + ?,
+                        xp = xp + ?,
+                        first_win_today = 1,
+                        last_first_win = ?
+                """, (winner_id, winner_gold, winner_xp, today, winner_gold, winner_xp, today))
+                
+                # Loser: deduct wager, add consolation
+                net_loss = wager_amount - loser_gold
+                cursor.execute("""
+                    INSERT INTO user_inventory (user_id, gold, xp)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        gold = MAX(0, gold - ?),
+                        xp = xp + ?
+                """, (loser_id, 0, loser_xp, net_loss, loser_xp))
+            
+            conn.commit()
         
         # Record match in database
         match_data = {
@@ -317,17 +468,50 @@ class CardGameCog(Cog):
             'winner_id': winner_id,
             'final_score_a': match.a.score,
             'final_score_b': match.b.score,
-            'match_type': 'casual'
+            'match_type': wager_type
         }
         self.db.record_match(match_data)
         
-        embed = discord.Embed(
-            title="🏆 Battle Complete!",
-            description=f"Winner: **{winner_name}**",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="Final Score", value=f"A: {match.a.score} | B: {match.b.score}", inline=False)
-        embed.add_field(name="Reward", value="+1 Victory Pack Token", inline=False)
+        # Create result embed
+        if is_tie:
+            embed = discord.Embed(
+                title="🤝 Battle Tied!",
+                description=f"Both players fought to a draw!",
+                color=discord.Color.yellow()
+            )
+            embed.add_field(name="Final Score", value=f"A: {match.a.score} | B: {match.b.score}", inline=False)
+            embed.add_field(
+                name="💰 Rewards (Each)",
+                value=f"Gold: +{winner_gold} (wager returned)\nXP: +{winner_xp}",
+                inline=False
+            )
+        else:
+            winner_mention = f"<@{winner_id}>"
+            loser_mention = f"<@{loser_id}>"
+            
+            embed = discord.Embed(
+                title="🏆 Battle Complete!",
+                description=f"**Winner:** {winner_mention}",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Final Score", value=f"A: {match.a.score} | B: {match.b.score}", inline=False)
+            
+            winner_reward_text = f"💰 Gold: +{winner_gold}"
+            if first_win_bonus > 0:
+                winner_reward_text += f" (includes +{first_win_bonus} first win bonus!)"
+            winner_reward_text += f"\n⭐ XP: +{winner_xp}"
+            
+            embed.add_field(
+                name=f"🎉 Winner Rewards",
+                value=winner_reward_text,
+                inline=True
+            )
+            
+            embed.add_field(
+                name=f"😢 Loser",
+                value=f"💰 Gold: -{wager_amount - loser_gold} (lost wager)\n⭐ XP: +{loser_xp} (consolation)",
+                inline=True
+            )
         
         await interaction.followup.send(embed=embed)
         
