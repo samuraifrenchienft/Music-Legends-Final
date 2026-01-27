@@ -628,13 +628,6 @@ class CardGameCog(Cog):
             traceback.print_exc()
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
-    async def setup_hook(self):
-        """Register the bot when it joins servers"""
-        # Register this cog's commands
-        self.bot.tree.add_command(self.browse_packs)
-        self.bot.tree.add_command(self.premium_subscribe)
-        self.bot.tree.add_command(self.server_info)
-        self.bot.tree.add_command(self.server_analytics)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
