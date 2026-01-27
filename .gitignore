@@ -2,3 +2,25 @@
 .env.*
 .env.txt
 *.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary test files
+test_*.py
+debug_*.py
+cleanup_*.py
+check_*.py
+verify_*.py
+fix_*.py
+list_*.py
+clear_*.py
