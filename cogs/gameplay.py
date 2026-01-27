@@ -11,15 +11,30 @@ import random
 from card_economy import CardEconomyManager
 from database import DatabaseManager
 
-class GameplayCog(commands.Cog):
-    def __init__(self, bot):
+class GameplayCommands(commands.Cog):
+    """Main gameplay commands - drops, collection, viewing, trading"""
+    
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = DatabaseManager()
         self.economy = CardEconomyManager(self.db)
+        self.active_drop_messages = {}  # Store active drop messages
         self.economy.initialize_economy_tables()
         
-        # Store active drop messages for reaction handling
-        self.active_drop_messages = {}  # message_id -> drop_data
+    def _get_power_tier(self, power: int) -> str:
+        """Get power tier description based on power level"""
+        if power >= 90:
+            return "🔥 **GOD TIER** - Untouchable!"
+        elif power >= 80:
+            return "⭐ **LEGENDARY** - Elite Status!"
+        elif power >= 70:
+            return "🟣 **EPIC** - Powerful Force!"
+        elif power >= 60:
+            return "🔵 **RARE** - Above Average!"
+        elif power >= 50:
+            return "⚪ **COMMON** - Standard Power!"
+        else:
+            return "🌱 **ROOKIE** - Growing Potential!"
 
     @app_commands.command(name="drop", description="Spawn a card drop in this channel")
     async def drop_command(self, interaction: Interaction):
@@ -269,49 +284,71 @@ class GameplayCog(commands.Cog):
         # Build the card embed
         display_title = f"{card_name} — \"{card_title}\"" if card_title else card_name
         
+        # Create branded card design
+        rarity_display = {
+            "common": "⚪ COMMON",
+            "rare": "🔵 RARE", 
+            "epic": "🟣 EPIC",
+            "legendary": "⭐ LEGENDARY",
+            "mythic": "🔴 MYTHIC"
+        }.get(rarity.lower(), "⚪ COMMON")
+        
         embed = discord.Embed(
-            title=f"{rarity_emoji} {rarity.upper()} ARTIST CARD",
-            description=f"**{display_title}**\n`ID: {card_id}`" + (f" • `Variant: {variant}`" if variant else "") + (f" • `Era: {era}`" if era else ""),
+            title=f"🎵 MUSIC LEGENDS CARD",
+            description=f"**{rarity_display}**\n\n**{display_title}**",
             color=rarity_color
         )
         
-        # Add visual separator
-        embed.add_field(name="═" * 20, value="═" * 20, inline=False)
-        
-        # Add card stats with better formatting
+        # Add branded header
         embed.add_field(
-            name="⚔️ **IMPACT**", 
-            value=f"```{impact}```", 
-            inline=True
-        )
-        embed.add_field(
-            name="🛡️ **SKILL**", 
-            value=f"```{skill}```", 
-            inline=True
-        )
-        embed.add_field(
-            name="⚡ **LONGEVITY**", 
-            value=f"```{longevity}```", 
-            inline=True
-        )
-        
-        # Add power rating with visual bar
-        power = (impact + skill + longevity) // 3
-        power_bar = "█" * (power // 10) + "░" * (10 - (power // 10))
-        embed.add_field(
-            name="� **POWER RATING**",
-            value=f"```{power_bar}```\n**{power}** / 100",
+            name="═══════════════════════════════════════",
+            value="🎶 **ARTIST PROFILE** 🎶",
             inline=False
         )
         
-        # Card info
-        info_text = f"**Rarity:** {rarity.title()}\n"
+        # Card info with branding
+        info_value = f"**🆔 Card ID:** `{card_id}`\n"
         if variant and variant != 'Classic':
-            info_text += f"**Variant:** {variant}\n"
+            info_value += f"**🎨 Variant:** {variant}\n"
         if era:
-            info_text += f"**Era:** {era}\n"
-        info_text += f"**Favorite:** {'⭐ Yes' if is_favorite else 'No'}"
-        embed.add_field(name="📋 Card Info", value=info_text, inline=True)
+            info_value += f"**⏰ Era:** {era}\n"
+        info_value += f"**⭐ Favorite:** {'⭐ Yes' if is_favorite else 'No'}"
+        
+        embed.add_field(
+            name="📋 **CARD DETAILS**",
+            value=info_value,
+            inline=True
+        )
+        
+        # Stats with visual design
+        stats_value = f"⚔️ **Impact:** `{impact:02d}`\n"
+        stats_value += f"🛡️ **Skill:** `{skill:02d}`\n"
+        stats_value += f"⚡ **Longevity:** `{longevity:02d}`\n"
+        stats_value += f"🎭 **Culture:** `{culture:02d}`\n"
+        stats_value += f"🔥 **Hype:** `{hype:02d}`"
+        
+        embed.add_field(
+            name="📊 **BATTLE STATS**",
+            value=stats_value,
+            inline=True
+        )
+        
+        # Power rating with enhanced visual
+        total_power = (impact + skill + longevity + culture + hype) // 5
+        power_bar = "██████████"[:total_power // 10] + "░░░░░░░░░░"[total_power // 10:]
+        
+        embed.add_field(
+            name="💪 **POWER LEVEL**",
+            value=f"```{power_bar}```\n**{total_power}** / 100 **POWER**\n{self._get_power_tier(total_power)}",
+            inline=False
+        )
+        
+        # Branded footer
+        embed.add_field(
+            name="═══════════════════════════════════════",
+            value="🎵 **MUSIC LEGENDS** - THE ULTIMATE ARTIST BATTLE GAME 🎵",
+            inline=False
+        )
         
         # Links
         links = []
@@ -320,13 +357,13 @@ class GameplayCog(commands.Cog):
         if youtube_url:
             links.append(f"[▶️ YouTube]({youtube_url})")
         if links:
-            embed.add_field(name="🔗 Links", value=" • ".join(links), inline=False)
+            embed.add_field(name="🔗 **STREAMING LINKS**", value=" • ".join(links), inline=False)
         
         # Acquisition info
         acq_date = acquired_at[:10] if acquired_at and len(acquired_at) >= 10 else 'Unknown'
         embed.add_field(
-            name="📅 Acquired",
-            value=f"**Date:** {acq_date}\n**Source:** {acquired_from.replace('_', ' ').title()}",
+            name="📅 **ACQUISITION**",
+            value=f"**Date:** {acq_date}\n**Source:** {acquired_from.replace('_', ' ').title()}\n**Serial:** {card.get('serial_number', 'Unknown')}",
             inline=False
         )
         

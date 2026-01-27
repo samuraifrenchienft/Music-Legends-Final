@@ -1106,13 +1106,27 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
                 )
                 
-                # Show Last.fm artist image (large display)
-                if artist_data.get('image_xlarge'):
-                    image_url = artist_data['image_xlarge']
-                    print(f"� DEV PANEL: Setting Last.fm artist image: {image_url}")
+                # Show Last.fm artist image with comprehensive fallbacks
+                image_url = None
+                image_sizes = ['image_xlarge', 'image_large', 'image_medium', 'image']
+                
+                for size in image_sizes:
+                    if artist_data.get(size):
+                        image_url = artist_data[size]
+                        print(f"🔧 DEV PANEL: Found {size}: {image_url[:50]}...")
+                        break
+                
+                if image_url:
                     preview_embed.set_image(url=image_url)
+                    print(f"🔧 DEV PANEL: Set image: {image_url}")
                 else:
-                    print(f"🔧 DEV PANEL: ⚠️ No image_xlarge found for {artist_data.get('name')}")
+                    print(f"🔧 DEV PANEL: ❌ No images found for {artist_data.get('name')}")
+                    # Add a placeholder field
+                    preview_embed.add_field(
+                        name="🖼️ Image Status",
+                        value="No artist image available - will use YouTube fallback",
+                        inline=False
+                    )
                 
                 # Show top tracks
                 tracks_text = "\n".join([
