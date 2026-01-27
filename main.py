@@ -72,6 +72,13 @@ class Bot(commands.Bot):
                 print(f'⚠️ Continuing without {cog} - bot will still run')
                 # Continue loading other cogs - don't break the whole bot
         
+        await self.load_extension("cogs.admin_commands")
+        await self.load_extension("cogs.card_game")
+        await self.load_extension("cogs.economy")
+        await self.load_extension("cogs.menu_system")
+        await self.load_extension("cogs.vip")
+        await self.load_extension("cogs.dust_commands")
+        
         print("🔍 Checking loaded commands...")
         loaded_commands = []
         for cog_name in self.cogs:
