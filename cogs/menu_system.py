@@ -1023,6 +1023,15 @@ class ImageConfirmationView(discord.ui.View):
         await interaction.response.defer()
         self.stop()
     
+    @discord.ui.button(label="🔄 Try smaller image", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def try_smaller_image(self, interaction: Interaction, button: discord.ui.Button):
+        """Try using a smaller Last.fm image size"""
+        self.use_lastfm = True
+        self.use_smaller_image = True
+        self.interaction_response = interaction
+        await interaction.response.defer()
+        self.stop()
+    
     @discord.ui.button(label="❌ No, search YouTube", style=discord.ButtonStyle.secondary, emoji="🔍")
     async def reject_image(self, interaction: Interaction, button: discord.ui.Button):
         self.use_lastfm = False
@@ -1139,7 +1148,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 await confirm_view.wait()
                 
                 if confirm_view.use_lastfm:
-                    # User accepted Last.fm images
+                    # User accepted Last.fm images - check if they want smaller size
+                    use_smaller = getattr(confirm_view, 'use_smaller_image', False)
+                    print(f"🔧 DEV PANEL: User chose Last.fm image, smaller={use_smaller}")
+                    
                     await show_song_selection_lastfm(
                         interaction,
                         pack_name,
@@ -1147,7 +1159,8 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                         tracks,
                         self.pack_type,
                         self.db,
-                        finalize_pack_creation_lastfm
+                        finalize_pack_creation_lastfm,
+                        use_smaller_image=use_smaller
                     )
                 else:
                     # User wants YouTube images instead

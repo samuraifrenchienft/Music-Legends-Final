@@ -20,7 +20,8 @@ async def show_song_selection_lastfm(
     tracks: list,
     pack_type: str,
     db,
-    finalize_callback
+    finalize_callback,
+    use_smaller_image: bool = False
 ):
     """Show song selection UI using Last.fm data"""
     
@@ -63,10 +64,24 @@ async def show_song_selection_lastfm(
     # Format tracks for selection view
     formatted_tracks = []
     for track in tracks:
+        # Choose image size based on user preference
+        if use_smaller_image:
+            # Try smaller image sizes in order of preference
+            thumbnail = (track.get('image_medium') or 
+                        track.get('image_large') or 
+                        artist_data.get('image_medium') or 
+                        artist_data.get('image_large') or 
+                        track.get('image_xlarge') or 
+                        artist_data.get('image_xlarge', ''))
+            print(f"🔧 Using smaller image: {thumbnail[:50] if thumbnail else 'NO IMAGE'}")
+        else:
+            # Use largest available image
+            thumbnail = track.get('youtube_thumbnail') or track.get('image_xlarge') or artist_data.get('image_xlarge', '')
+        
         formatted_tracks.append({
             'title': f"{track['name']} ({track['playcount']:,} plays)",
             'track_data': track,
-            'thumbnail_url': track.get('image_xlarge') or artist_data.get('image_xlarge', '')
+            'thumbnail_url': thumbnail
         })
     
     # Create callback for when songs are selected
