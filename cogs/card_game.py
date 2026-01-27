@@ -334,7 +334,89 @@ class CardGameCog(Cog):
         # Clean up match
         del self.active_matches[match.match_id]
 
-    # Pack Creation Commands
+    # Pack Commands
+    @app_commands.command(name="open_pack", description="Open a pack and receive cards")
+    @app_commands.describe(pack_id="Pack ID to open")
+    async def open_pack(self, interaction: Interaction, pack_id: str):
+        """Open a pack and show the cards received"""
+        await interaction.response.defer(ephemeral=False)
+        
+        try:
+            # Get pack details
+            with sqlite3.connect(self.db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pack_id, name, creator_id, pack_size, cards_data
+                    FROM creator_packs 
+                    WHERE pack_id = ? AND status = 'LIVE'
+                """, (pack_id,))
+                pack = cursor.fetchone()
+            
+            if not pack:
+                await interaction.followup.send("❌ Pack not found or not available", ephemeral=True)
+                return
+            
+            pack_id, pack_name, creator_id, pack_size, cards_data_json = pack
+            
+            # Parse cards data
+            import json
+            cards_data = json.loads(cards_data_json) if cards_data_json else []
+            
+            if not cards_data:
+                await interaction.followup.send("❌ This pack has no cards", ephemeral=True)
+                return
+            
+            # Add cards to user's collection
+            received_cards = []
+            for card_data in cards_data:
+                # Add to master cards table
+                card_id = self.db.add_card_to_master(card_data)
+                # Add to user's collection
+                self.db.add_card_to_collection(
+                    user_id=interaction.user.id,
+                    card_id=card_id,
+                    acquired_from='pack_opening'
+                )
+                received_cards.append(card_data)
+            
+            # Create visual display
+            embed = discord.Embed(
+                title=f"🎉 Pack Opened: {pack_name}",
+                description=f"You received {len(received_cards)} cards!",
+                color=discord.Color.purple()
+            )
+            
+            # Show all cards
+            card_list = ""
+            for i, card in enumerate(received_cards, 1):
+                rarity = card.get('rarity', 'common')
+                rarity_emoji = {"legendary": "🌟", "epic": "💜", "rare": "💙", "common": "⚪"}.get(rarity, "⚪")
+                card_name = card.get('name', 'Unknown')
+                card_title = card.get('title', '')
+                display = f"{card_name} - {card_title}" if card_title else card_name
+                card_list += f"{rarity_emoji} **{display}** ({rarity.title()})\n"
+            
+            embed.add_field(name="🎴 Cards Received", value=card_list or "No cards", inline=False)
+            
+            # Add stats
+            rarity_counts = {}
+            for card in received_cards:
+                rarity = card.get('rarity', 'common')
+                rarity_counts[rarity] = rarity_counts.get(rarity, 0) + 1
+            
+            rarity_text = " | ".join([f"{r.title()}: {c}" for r, c in rarity_counts.items()])
+            embed.add_field(name="📊 Rarity Breakdown", value=rarity_text, inline=False)
+            
+            embed.set_footer(text=f"Use /collection to view all your cards")
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Error opening pack: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ Error opening pack: {e}", ephemeral=True)
+
     @app_commands.command(name="create_pack", description="Create a new pack with artist cards")
     @app_commands.describe(pack_name="Name for your pack", artist_name="Main artist for the pack")
     async def create_pack(self, interaction: Interaction, pack_name: str, artist_name: str):
@@ -546,122 +628,9 @@ class CardGameCog(Cog):
             traceback.print_exc()
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
-    # Creator Dashboard Commands
-    @app_commands.command(name="creator_earnings", description="View your creator earnings and balance")
-    async def creator_earnings(self, interaction: Interaction):
-        """Show creator earnings dashboard"""
-        # Check if user is a creator
-        creator_packs = self.db.get_live_packs(limit=100)
-        user_packs = [p for p in creator_packs if p['creator_id'] == interaction.user.id]
-        
-        if not user_packs:
-            await interaction.response.send_message("You don't have any published creator packs!", ephemeral=True)
-            return
-        
-        # Get balance and earnings
-        balance = self.db.get_creator_balance(interaction.user.id)
-        earnings = self.db.get_creator_earnings(interaction.user.id)
-        
-        embed = discord.Embed(
-            title="💰 Creator Earnings Dashboard",
-            description=f"Earnings from your {len(user_packs)} published packs",
-            color=discord.Color.gold()
-        )
-        
-        # Balance information
-        available = balance['available_balance_cents'] / 100
-        pending = balance['pending_balance_cents'] / 100
-        lifetime = balance['lifetime_earned_cents'] / 100
-        
-        embed.add_field(
-            name="💳 Current Balance",
-            value=f"• Available: ${available:.2f}\n"
-                  f"• Pending: ${pending:.2f}\n"
-                  f"• Lifetime: ${lifetime:.2f}",
-            inline=False
-        )
-        
-        # Earnings summary
-        total = earnings['total_earnings']
-        embed.add_field(
-            name="📊 Earnings Summary",
-            value=f"• Total Sales: ${total['total_gross']/100:.2f}\n"
-                  f"• Your Share: ${total['total_creator']/100:.2f}\n"
-                  f"• Platform Share: ${total['total_platform']/100:.2f}\n"
-                  f"• Transactions: {total['transaction_count']}",
-            inline=False
-        )
-        
-        # Recent transactions
-        if earnings['recent_transactions']:
-            recent_text = ""
-            for i, trans in enumerate(earnings['recent_transactions'][:5], 1):
-                amount = trans['creator_amount_cents'] / 100
-                recent_text += f"{i}. Pack sale: ${amount:.2f}\n"
-            
-            embed.add_field(
-                name="📈 Recent Sales",
-                value=recent_text,
-                inline=False
-            )
-        
-        embed.set_footer(text="Pending funds become available after 7-day refund window")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="creator_connect", description="Connect your Stripe account for automatic payouts")
-    async def creator_connect(self, interaction: Interaction):
-        """Start Stripe Connect onboarding"""
-        # Check if user is a creator
-        creator_packs = self.db.get_live_packs(limit=100)
-        user_packs = [p for p in creator_packs if p['creator_id'] == interaction.user.id]
-        
-        if not user_packs:
-            await interaction.response.send_message("You don't have any published creator packs!", ephemeral=True)
-            return
-        
-        # Check if already connected
-        existing = self.db.get_creator_stripe_account(interaction.user.id)
-        if existing and existing['stripe_account_status'] == 'verified':
-            await interaction.response.send_message("You already have a connected Stripe account!", ephemeral=True)
-            return
-        
-        # TODO: Create Stripe Connect account and return onboarding link
-        embed = discord.Embed(
-            title="🔗 Stripe Connect Setup",
-            description="Connect your Stripe account to receive automatic payouts",
-            color=discord.Color.blue()
-        )
-        
-        embed.add_field(
-            name="📋 What you'll need:",
-            value="• Bank account or debit card\n"
-                  "• Business information (or use personal)\n"
-                  "• 5-10 minutes to complete",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💡 Benefits:",
-            value="• Automatic weekly payouts\n"
-                  "• No manual payment requests\n"
-                  "• Professional payment processing",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="⚠️ Note:",
-            value="Stripe Connect setup coming soon! For now, payouts will be processed manually.",
-            inline=False
-        )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    
     async def setup_hook(self):
         """Register the bot when it joins servers"""
         # Register this cog's commands
-        self.bot.tree.add_command(self.creator_earnings)
-        self.bot.tree.add_command(self.creator_connect)
         self.bot.tree.add_command(self.browse_packs)
         self.bot.tree.add_command(self.premium_subscribe)
         self.bot.tree.add_command(self.server_info)
