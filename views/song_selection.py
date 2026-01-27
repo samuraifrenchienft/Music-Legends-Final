@@ -30,13 +30,13 @@ class SongSelectMenu(ui.Select):
         # Create options from tracks
         options = []
         for i, track in enumerate(tracks[:25]):  # Discord limit is 25 options
-            # Truncate long names
-            track_name = track['name'][:90] if len(track['name']) > 90 else track['name']
+            # YouTube videos use 'title', not 'name'
+            track_name = track.get('title', track.get('name', 'Unknown Song'))[:90]
             
             options.append(
                 discord.SelectOption(
                     label=track_name,
-                    description=f"{track.get('artist_name', 'Unknown')} - {track.get('album_name', 'Single')}"[:100],
+                    description=f"{track.get('channel_title', track.get('artist_name', 'Unknown'))}"[:100],
                     value=str(i),
                     emoji="🎵"
                 )
