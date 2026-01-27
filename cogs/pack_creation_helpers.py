@@ -10,6 +10,7 @@ import random
 import sqlite3
 from music_api_manager import music_api
 from views.song_selection import SongSelectionView
+from cogs.pack_preview_integration import show_pack_preview_lastfm
 
 
 async def show_song_selection_lastfm(
@@ -71,14 +72,29 @@ async def show_song_selection_lastfm(
     # Create callback for when songs are selected
     async def on_songs_selected(confirm_interaction: Interaction, selected_indices: list):
         selected_tracks = [formatted_tracks[i]['track_data'] for i in selected_indices]
-        await finalize_pack_creation_lastfm(
+        
+        # Generate preview cards
+        preview_cards = []
+        for track in selected_tracks:
+            card_data = music_api.format_track_for_card(
+                track=track,
+                artist_name=artist_data['name'],
+                pack_type=pack_type,
+                image_url=track.get('image_xlarge') or artist_data.get('image_xlarge'),
+                video_url=track.get('url', '')
+            )
+            preview_cards.append(card_data)
+        
+        # Show pack preview
+        await show_pack_preview_lastfm(
             confirm_interaction,
             pack_name,
             artist_data,
             selected_tracks,
-            interaction.user.id,
+            preview_cards,
             pack_type,
-            db
+            db,
+            interaction
         )
     
     # Show selection view
