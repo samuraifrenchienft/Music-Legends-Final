@@ -56,6 +56,9 @@ class Bot(commands.Bot):
         from db_manager import db_manager
         db_manager.init_engine()
         
+        # Create marketplace table
+        await db_manager.create_marketplace_table()
+        
         # Check for database restore on Railway
         if os.getenv("RAILWAY_ENVIRONMENT"):
             restored = await db_manager.restore_database_if_needed()
@@ -76,9 +79,10 @@ class Bot(commands.Bot):
         # Load essential cogs without duplicates
         cogs = [
             'cogs.start_game',                # Start game command
-            'cogs.gameplay',                  # Drop and battle commands
+            'cogs.gameplay',                  # Drop, collection, viewing commands
             'cogs.card_game',                 # Collection and pack creation commands
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
+            'cogs.marketplace',               # Marketplace commands
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")

@@ -197,7 +197,11 @@ class GameplayCommands(commands.Cog):
                 
                 # Add click handler
                 async def button_callback(interaction: Interaction, card_id=card_id):
-                    await self.view_command(interaction, card_id)
+                    try:
+                        await self.view_command(interaction, card_id)
+                    except Exception as e:
+                        print(f"❌ Button callback error: {e}")
+                        await interaction.response.send_message(f"Error viewing card: {e}", ephemeral=True)
                 
                 button.callback = button_callback
                 view.add_item(button)

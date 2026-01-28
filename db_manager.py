@@ -67,8 +67,33 @@ class DatabaseManager:
             finally:
                 await session.close()
 
+    async def create_marketplace_table(self):
+        """Create marketplace table if it doesn't exist"""
+        import sqlite3
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            db_path = "/data/music_legends.db"
+        else:
+            db_path = "music_legends.db"
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_listings (
+                    card_id TEXT PRIMARY KEY,
+                    seller_id INTEGER NOT NULL,
+                    price INTEGER NOT NULL,
+                    status TEXT DEFAULT 'active',
+                    listed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    buyer_id INTEGER,
+                    sold_at DATETIME,
+                    FOREIGN KEY (seller_id) REFERENCES users(user_id),
+                    FOREIGN KEY (buyer_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.commit()
+            print("✅ Marketplace table created/verified")
+
     async def close(self):
-        """Close the engine."""
+        """Close the database engine"""
         if self._engine:
             await self._engine.dispose()
     
