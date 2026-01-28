@@ -182,14 +182,40 @@ class CardGameCog(Cog):
 
     def _convert_to_battle_card(self, card_data: Dict) -> BattleCard:
         """Convert database card data to BattleCard object"""
+        # Generate battle stats from card power/rarity if not present
+        import random
+        
+        # Base stats from card power (if available) or defaults
+        base_power = card_data.get('power', 50)
+        
+        # Distribute power across stats with some randomness
+        impact = card_data.get('impact', random.randint(10, 30))
+        skill = card_data.get('skill', random.randint(10, 30))
+        longevity = card_data.get('longevity', random.randint(10, 30))
+        culture = card_data.get('culture', random.randint(10, 30))
+        
+        # Adjust based on rarity
+        rarity = card_data.get('rarity', 'common')
+        rarity_bonus = {
+            'common': 0,
+            'rare': 5,
+            'epic': 10,
+            'legendary': 15,
+            'mythic': 20
+        }.get(rarity, 0)
+        
+        # Apply rarity bonus to random stat
+        stats = [impact, skill, longevity, culture]
+        stats[random.randint(0, 3)] += rarity_bonus
+        
         return BattleCard(
             id=card_data['card_id'],
             name=card_data['name'],
             rarity=card_data['rarity'],
-            impact=card_data.get('impact', 0),
-            skill=card_data.get('skill', 0),
-            longevity=card_data.get('longevity', 0),
-            culture=card_data.get('culture', 0)
+            impact=stats[0],
+            skill=stats[1],
+            longevity=stats[2],
+            culture=stats[3]
         )
 
     # Card viewing removed - use /view from gameplay.py
@@ -835,6 +861,16 @@ class CardGameCog(Cog):
                     # Create card from track data
                     artist_card = self._create_card_from_track(track, artist['name'], rarity)
                     
+                    # Generate battle stats for the card
+                    import random
+                    base_stat = random.randint(15, 35)
+                    battle_stats = {
+                        'impact': base_stat + random.randint(-5, 10),
+                        'skill': base_stat + random.randint(-5, 10),
+                        'longevity': base_stat + random.randint(-5, 10),
+                        'culture': base_stat + random.randint(-5, 10)
+                    }
+                    
                     # Convert to database format using your ArtistCard properties
                     card_data = {
                         'card_id': artist_card.card_id,
@@ -845,7 +881,12 @@ class CardGameCog(Cog):
                         'image_url': artist_card.thumbnail,
                         'view_count': artist_card.view_count,
                         'power': artist_card.power,  # Use your ArtistCard power calculation
-                        'tier': artist_card.tier     # Use your ArtistCard tier
+                        'tier': artist_card.tier,    # Use your ArtistCard tier
+                        # Add battle stats
+                        'impact': battle_stats['impact'],
+                        'skill': battle_stats['skill'],
+                        'longevity': battle_stats['longevity'],
+                        'culture': battle_stats['culture']
                     }
                     
                     # Add card to master list
