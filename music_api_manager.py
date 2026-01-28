@@ -28,11 +28,14 @@ class MusicAPIManager:
             Dict with artist_data and tracks, or None if not found
         """
         try:
+            print(f"🔍 Searching Last.fm for artist: {artist_name}")
             artist_data = self.lastfm.get_artist_info(artist_name)
             
             if not artist_data:
                 print(f"❌ Artist '{artist_name}' not found on Last.fm")
                 return None
+            
+            print(f"✅ Found artist: {artist_data.get('name', 'Unknown')}")
             
             tracks = self.lastfm.get_top_tracks(artist_name, limit=limit)
             
@@ -40,28 +43,29 @@ class MusicAPIManager:
                 print(f"⚠️ No tracks found for '{artist_name}' on Last.fm")
                 return None
             
-            # FILTER OUT VEVO and official content
+            print(f"✅ Found {len(tracks)} tracks for {artist_name}")
+            
+            # FILTER OUT VEVO and official content (less aggressive)
             filtered_tracks = []
             for track in tracks:
                 track_name = track.get('name', '').lower()
-                artist_name_lower = artist_name.lower()
                 
-                # Skip VEVO and official content
+                # Skip only obvious VEVO/official content
                 if ('vevo' in track_name or 
-                    'official' in track_name or 
-                    'music video' in track_name or
-                    'lyric video' in track_name or
-                    'audio' in track_name and 'official' in track_name):
+                    ('official' in track_name and 'video' in track_name) or
+                    ('lyric' in track_name and 'video' in track_name)):
                     print(f"🚫 Filtering out VEVO/official content: {track_name}")
                     continue
                 
-                # Only keep actual song names
+                # Keep the track
                 filtered_tracks.append(track)
+                print(f"✅ Keeping track: {track_name}")
             
             tracks = filtered_tracks[:limit]  # Keep the requested number
             
             if not tracks:
-                print(f"⚠️ No non-VEVO tracks found for '{artist_name}'")
+                print(f"⚠️ No tracks found after filtering for '{artist_name}'")
+                print(f"   Original tracks: {len(tracks)}")
                 return None
             
             # ENHANCE with TheAudioDB for better images

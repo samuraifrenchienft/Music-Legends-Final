@@ -607,22 +607,19 @@ class CardGameCog(Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Search for music videos on YouTube
-            videos = youtube_integration.search_music_video(artist_name, limit=10)
+            # Search for artist using music API manager (with VEVO filtering)
+            from music_api_manager import MusicAPIManager
+            api_manager = MusicAPIManager()
             
-            if not videos:
-                await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
+            # Get artist data and tracks
+            result = await api_manager.search_artist_with_tracks(artist_name, limit=10)
+            
+            if not result:
+                await interaction.followup.send(f"❌ Could not find artist '{artist_name}'", ephemeral=True)
                 return
             
-            # Create artist data from first video
-            artist = {
-                'name': artist_name,
-                'image_url': videos[0].get('thumbnail_url', '') if videos else '',
-                'popularity': 75,  # Default for pack creation
-                'followers': 1000000
-            }
-            
-            tracks = videos
+            artist = result['artist']
+            tracks = result['tracks']
             
             if not tracks:
                 await interaction.followup.send(f"❌ Could not find tracks for {artist['name']}", ephemeral=True)
