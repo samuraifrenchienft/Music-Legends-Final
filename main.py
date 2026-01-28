@@ -50,9 +50,9 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
-        print("🚀🚀🚀🚀🚀 FINAL ATTEMPT - IF YOU SEE THIS, CODE IS DEPLOYING 🚀🚀🚀🚀🚀")
+        print("🚀🚀🚀🚀🚀 BOT RESTARTING - USER REQUESTED RESTART 🚀🚀🚀🚀🚀")
         print("🔥🔥🔥 TIMESTAMP:", __import__('datetime').datetime.now())
-        print("🔥🔥🔥 IF YOU DONT SEE THIS IN LOGS, RAILWAY ISNT DEPLOYING")
+        print("🔥🔥🔥 FORCING COMPLETE RESTART - ALL SYSTEMS RELOADING")
         
         # Initialize database with persistent storage
         from db_manager import db_manager
