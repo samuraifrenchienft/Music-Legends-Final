@@ -734,12 +734,15 @@ class CardGameCog(Cog):
     @app_commands.describe(pack_name="Name for your pack", artist_name="Main artist for the pack")
     async def create_pack(self, interaction: Interaction, pack_name: str, artist_name: str):
         """Create a new pack with artist cards - Interactive workflow"""
+        print(f"🔥 DEBUG: create_pack called by {interaction.user.name} - pack: {pack_name}, artist: {artist_name}")
         await interaction.response.defer(ephemeral=True)
         
         try:
             # Search for music videos on YouTube (the working way)
             from youtube_integration import youtube_integration
+            print(f"🔥 DEBUG: Searching YouTube for {artist_name}")
             videos = youtube_integration.search_music_video(artist_name, limit=50)
+            print(f"🔥 DEBUG: Found {len(videos) if videos else 0} videos")
             
             if not videos:
                 await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
