@@ -785,8 +785,11 @@ class CardGameCog(Cog):
                 )
             
             # Show selection view
+            print(f"🔥 DEBUG: Creating SongSelectionView with {len(tracks)} tracks")
             view = SongSelectionView(tracks, max_selections=5, callback=on_songs_selected)
+            print(f"🔥 DEBUG: Sending selection embed with view")
             await interaction.followup.send(embed=selection_embed, view=view, ephemeral=True)
+            print(f"🔥 DEBUG: Selection UI sent successfully")
                 
         except Exception as e:
             print(f"❌ Error creating pack: {e}")
@@ -796,6 +799,7 @@ class CardGameCog(Cog):
     
     async def _finalize_pack_creation(self, interaction: Interaction, pack_name: str, artist: Dict, selected_tracks: List[Dict], creator_id: int):
         """Finalize pack creation after song selection"""
+        print(f"🔥 DEBUG: Finalizing pack creation - {len(selected_tracks)} tracks selected")
         try:
             # Create pack in database
             pack_id = self.db.create_creator_pack(
