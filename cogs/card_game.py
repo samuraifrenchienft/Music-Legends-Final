@@ -704,23 +704,27 @@ class CardGameCog(Cog):
                     else:
                         rarity = "common"
                     
-                    # Extract song title from video title
-                    video_title = track.get('title', '')
-                    # Remove artist name, dash, and "(Official Music Video)" text
-                    song_title = video_title.replace(artist['name'], '').replace('-', '').replace('(Official Music Video)', '').strip()
-                    if not song_title or len(song_title) < 2:
-                        song_title = video_title
+                    # Extract song title from track name
+                    track_name = track.get('name', '')
+                    song_title = track_name
+                    
+                    # Create unique card ID
+                    import uuid
+                    card_id = f"{pack_id}_{str(uuid.uuid4())[:8]}"
+                    
+                    # Get image from artist data
+                    image_url = artist.get('image_xlarge') or artist.get('image_large') or artist.get('image_medium', '')
                     
                     # Create card data
                     card_data = {
-                        'card_id': f"{pack_id}_{track['video_id']}",
+                        'card_id': card_id,
                         'name': artist['name'],
                         'title': song_title,
                         'hero_artist': artist['name'],
                         'hero_song': song_title,
                         'rarity': rarity.lower(),
-                                                'youtube_id': track['video_id'],
-                        'image_url': track.get('thumbnail_url', ''),
+                        'youtube_url': None,  # Last.fm doesn't have YouTube URLs
+                        'image_url': image_url,
                         'impact': stats['impact'],
                         'skill': stats['skill'],
                         'longevity': stats['longevity'],
@@ -729,11 +733,14 @@ class CardGameCog(Cog):
                     }
                     
                     # Add card to master list
+                    print(f"🔧 Creating card: {song_title} by {artist['name']}")
+                    print(f"   Image URL: {image_url[:50] if image_url else 'None'}...")
                     success = self.db.add_card_to_master(card_data)
                     if success:
-                        # Add card to pack
-                        self.db.add_card_to_pack(pack_id, card_data)
                         cards_created.append(card_data)
+                        print(f"✅ Created card: {card_data['card_id']}")
+                    else:
+                        print(f"❌ Failed to create card: {card_data['card_id']}")
                     
                 except Exception as e:
                     print(f"Error creating card for {track['name']}: {e}")
