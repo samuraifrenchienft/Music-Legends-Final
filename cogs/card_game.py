@@ -802,14 +802,17 @@ class CardGameCog(Cog):
         print(f"🔥 DEBUG: Finalizing pack creation - {len(selected_tracks)} tracks selected")
         try:
             # Create pack in database
+            print(f"🔥 DEBUG: Creating pack in database for {creator_id}")
             pack_id = self.db.create_creator_pack(
                 creator_id=creator_id,
                 name=pack_name,
                 description=f"Artist pack featuring {artist['name']}",
                 pack_size=len(selected_tracks)
             )
+            print(f"🔥 DEBUG: Pack created with ID: {pack_id}")
             
             if not pack_id:
+                print("❌ DEBUG: Pack creation failed - no pack_id returned")
                 await interaction.followup.send("❌ Failed to create pack in database", ephemeral=True)
                 return
             
