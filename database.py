@@ -480,6 +480,90 @@ class DatabaseManager:
                 )
             """)
             
+            # ===== ECONOMY SYSTEM =====
+            
+            # User economy - gold, tickets, daily claims
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_economy (
+                    user_id INTEGER PRIMARY KEY,
+                    gold INTEGER DEFAULT 500,
+                    tickets INTEGER DEFAULT 0,
+                    last_daily_claim TIMESTAMP,
+                    daily_streak INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Battle history - track all battles
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS battle_history (
+                    battle_id TEXT PRIMARY KEY,
+                    player1_id INTEGER,
+                    player2_id INTEGER,
+                    player1_card_id TEXT,
+                    player2_card_id TEXT,
+                    winner INTEGER, -- 0=tie, 1=player1, 2=player2
+                    player1_power INTEGER,
+                    player2_power INTEGER,
+                    player1_critical BOOLEAN DEFAULT 0,
+                    player2_critical BOOLEAN DEFAULT 0,
+                    wager_tier TEXT DEFAULT 'casual',
+                    wager_amount INTEGER DEFAULT 50,
+                    player1_gold_reward INTEGER,
+                    player2_gold_reward INTEGER,
+                    player1_xp_reward INTEGER,
+                    player2_xp_reward INTEGER,
+                    battle_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (player1_id) REFERENCES users(user_id),
+                    FOREIGN KEY (player2_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Daily quests - track quest progress
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_quests (
+                    quest_id TEXT PRIMARY KEY,
+                    user_id INTEGER,
+                    quest_type TEXT, -- 'win_3_battles', 'open_pack', etc.
+                    progress INTEGER DEFAULT 0,
+                    requirement INTEGER DEFAULT 1,
+                    completed BOOLEAN DEFAULT 0,
+                    gold_reward INTEGER DEFAULT 0,
+                    xp_reward INTEGER DEFAULT 0,
+                    quest_date DATE DEFAULT CURRENT_DATE,
+                    completed_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Battle stats - aggregate user battle statistics
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_battle_stats (
+                    user_id INTEGER PRIMARY KEY,
+                    total_battles INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
+                    ties INTEGER DEFAULT 0,
+                    total_gold_won INTEGER DEFAULT 0,
+                    total_gold_lost INTEGER DEFAULT 0,
+                    total_xp_earned INTEGER DEFAULT 0,
+                    current_win_streak INTEGER DEFAULT 0,
+                    best_win_streak INTEGER DEFAULT 0,
+                    last_battle_date TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Add indexes for economy tables
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_economy_gold ON user_economy(gold)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_players ON battle_history(player1_id, player2_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_date ON battle_history(battle_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_user ON user_quests(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_date ON user_quests(quest_date)")
+            
             conn.commit()
     
     def get_or_create_user(self, user_id: int, username: str, discord_tag: str) -> Dict:
@@ -1259,6 +1343,247 @@ class DatabaseManager:
                     })
             
             return artists
+    
+    # ===== ECONOMY METHODS =====
+    
+    def get_user_economy(self, user_id: int) -> Dict:
+        """Get user's economy data (gold, tickets, daily streak)"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT user_id, gold, tickets, last_daily_claim, daily_streak, created_at, updated_at
+                FROM user_economy 
+                WHERE user_id = ?
+            """, (user_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                # Create new economy record for user
+                cursor.execute("""
+                    INSERT INTO user_economy (user_id, gold, tickets)
+                    VALUES (?, 500, 0)
+                """, (user_id,))
+                conn.commit()
+                
+                cursor.execute("""
+                    SELECT user_id, gold, tickets, last_daily_claim, daily_streak, created_at, updated_at
+                    FROM user_economy 
+                    WHERE user_id = ?
+                """, (user_id,))
+                result = cursor.fetchone()
+            
+            columns = ['user_id', 'gold', 'tickets', 'last_daily_claim', 'daily_streak', 'created_at', 'updated_at']
+            return dict(zip(columns, result))
+    
+    def update_user_economy(self, user_id: int, gold_change: int = 0, tickets_change: int = 0) -> bool:
+        """Update user's gold and tickets"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE user_economy 
+                    SET gold = gold + ?, tickets = tickets + ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ?
+                """, (gold_change, tickets_change, user_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            print(f"Error updating user economy: {e}")
+            return False
+    
+    def claim_daily_reward(self, user_id: int) -> Dict:
+        """Process daily reward claim"""
+        from datetime import datetime, timedelta
+        
+        economy = self.get_user_economy(user_id)
+        
+        # Check if can claim
+        if economy['last_daily_claim']:
+            last_claim = datetime.fromisoformat(economy['last_daily_claim'])
+            time_since = datetime.now() - last_claim
+            if time_since < timedelta(hours=20):
+                return {
+                    "success": False,
+                    "error": "Already claimed today",
+                    "time_until": timedelta(hours=24) - time_since
+                }
+        
+        # Calculate streak
+        if economy['last_daily_claim']:
+            time_since_claim = datetime.now() - last_claim
+            if time_since_claim <= timedelta(hours=48):
+                new_streak = economy['daily_streak'] + 1
+            else:
+                new_streak = 1
+        else:
+            new_streak = 1
+        
+        # Calculate rewards
+        base_gold = 100
+        bonus_gold = 0
+        tickets = 0
+        
+        streak_bonuses = {
+            3: {"gold": 50, "tickets": 0},
+            7: {"gold": 200, "tickets": 1},
+            14: {"gold": 500, "tickets": 2},
+            30: {"gold": 1000, "tickets": 5},
+        }
+        
+        if new_streak in streak_bonuses:
+            bonus = streak_bonuses[new_streak]
+            bonus_gold = bonus["gold"]
+            tickets = bonus["tickets"]
+        
+        total_gold = base_gold + bonus_gold
+        
+        # Update economy
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE user_economy 
+                SET gold = gold + ?, tickets = tickets + ?, 
+                    last_daily_claim = CURRENT_TIMESTAMP, daily_streak = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """, (total_gold, tickets, new_streak, user_id))
+            conn.commit()
+        
+        return {
+            "success": True,
+            "gold": total_gold,
+            "base_gold": base_gold,
+            "bonus_gold": bonus_gold,
+            "tickets": tickets,
+            "streak": new_streak
+        }
+    
+    def record_battle(self, battle_data: Dict) -> bool:
+        """Record battle result and update stats"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Insert battle record
+                cursor.execute("""
+                    INSERT INTO battle_history (
+                        battle_id, player1_id, player2_id, player1_card_id, player2_card_id,
+                        winner, player1_power, player2_power, player1_critical, player2_critical,
+                        wager_tier, wager_amount, player1_gold_reward, player2_gold_reward,
+                        player1_xp_reward, player2_xp_reward
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    battle_data['battle_id'], battle_data['player1_id'], battle_data['player2_id'],
+                    battle_data['player1_card_id'], battle_data['player2_card_id'],
+                    battle_data['winner'], battle_data['player1_power'], battle_data['player2_power'],
+                    battle_data.get('player1_critical', False), battle_data.get('player2_critical', False),
+                    battle_data['wager_tier'], battle_data['wager_amount'],
+                    battle_data['player1_gold_reward'], battle_data['player2_gold_reward'],
+                    battle_data['player1_xp_reward'], battle_data['player2_xp_reward']
+                ))
+                
+                # Update player 1 stats
+                cursor.execute("""
+                    INSERT INTO user_battle_stats (user_id, total_battles, wins, losses, ties, 
+                                                   total_gold_won, total_gold_lost, total_xp_earned,
+                                                   current_win_streak, best_win_streak, last_battle_date)
+                    VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        total_battles = total_battles + 1,
+                        wins = wins + ?,
+                        losses = losses + ?,
+                        ties = ties + ?,
+                        total_gold_won = total_gold_won + ?,
+                        total_gold_lost = total_gold_lost + ?,
+                        total_xp_earned = total_xp_earned + ?,
+                        current_win_streak = CASE 
+                            WHEN ? = 1 THEN current_win_streak + 1 
+                            ELSE 0 
+                        END,
+                        best_win_streak = MAX(best_win_streak, 
+                            CASE WHEN ? = 1 THEN current_win_streak + 1 ELSE 0 END),
+                        last_battle_date = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    battle_data['player1_id'],
+                    1 if battle_data['winner'] == 1 else 0,
+                    1 if battle_data['winner'] == 2 else 0,
+                    1 if battle_data['winner'] == 0 else 0,
+                    battle_data['player1_gold_reward'],
+                    battle_data['player1_gold_reward'] if battle_data['winner'] != 1 else 0,
+                    battle_data['player1_xp_reward'],
+                    1 if battle_data['winner'] == 1 else 0,
+                    1 if battle_data['winner'] == 1 else 0
+                ))
+                
+                # Update player 2 stats (similar logic)
+                cursor.execute("""
+                    INSERT INTO user_battle_stats (user_id, total_battles, wins, losses, ties,
+                                                   total_gold_won, total_gold_lost, total_xp_earned,
+                                                   current_win_streak, best_win_streak, last_battle_date)
+                    VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        total_battles = total_battles + 1,
+                        wins = wins + ?,
+                        losses = losses + ?,
+                        ties = ties + ?,
+                        total_gold_won = total_gold_won + ?,
+                        total_gold_lost = total_gold_lost + ?,
+                        total_xp_earned = total_xp_earned + ?,
+                        current_win_streak = CASE 
+                            WHEN ? = 2 THEN current_win_streak + 1 
+                            ELSE 0 
+                        END,
+                        best_win_streak = MAX(best_win_streak,
+                            CASE WHEN ? = 2 THEN current_win_streak + 1 ELSE 0 END),
+                        last_battle_date = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    battle_data['player2_id'],
+                    1 if battle_data['winner'] == 2 else 0,
+                    1 if battle_data['winner'] == 1 else 0,
+                    1 if battle_data['winner'] == 0 else 0,
+                    battle_data['player2_gold_reward'],
+                    battle_data['player2_gold_reward'] if battle_data['winner'] != 2 else 0,
+                    battle_data['player2_xp_reward'],
+                    1 if battle_data['winner'] == 2 else 0,
+                    1 if battle_data['winner'] == 2 else 0
+                ))
+                
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            print(f"Error recording battle: {e}")
+            return False
+    
+    def get_user_battle_stats(self, user_id: int) -> Dict:
+        """Get user's battle statistics"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT total_battles, wins, losses, ties, total_gold_won, total_gold_lost,
+                       total_xp_earned, current_win_streak, best_win_streak, last_battle_date
+                FROM user_battle_stats 
+                WHERE user_id = ?
+            """, (user_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {
+                    'total_battles': 0, 'wins': 0, 'losses': 0, 'ties': 0,
+                    'total_gold_won': 0, 'total_gold_lost': 0, 'total_xp_earned': 0,
+                    'current_win_streak': 0, 'best_win_streak': 0, 'last_battle_date': None
+                }
+            
+            columns = ['total_battles', 'wins', 'losses', 'ties', 'total_gold_won', 
+                      'total_gold_lost', 'total_xp_earned', 'current_win_streak', 
+                      'best_win_streak', 'last_battle_date']
+            stats = dict(zip(columns, result))
+            
+            # Calculate win rate
+            total = stats['wins'] + stats['losses']
+            stats['win_rate'] = (stats['wins'] / total * 100) if total > 0 else 0
+            
+            return stats
     
     def close(self):
         """Close database connection"""
