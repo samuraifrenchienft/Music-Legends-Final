@@ -1,173 +1,397 @@
-# discord_cards.py
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Optional, List, Literal
+"""
+discord_cards.py - Card display classes for Music Legends
+Handles card creation, formatting, and display
+"""
+
 import discord
+from typing import Dict, Optional, List
+from datetime import datetime
 
-Rarity = Literal["Common", "Rare", "Epic", "Legendary", "Mythic"]
-
-RARITY_COLOR = {
-    "Common": discord.Color.light_grey(),
-    "Rare": discord.Color.blue(),
-    "Epic": discord.Color.purple(),
-    "Legendary": discord.Color.gold(),
-    "Mythic": discord.Color.red(),
-}
-
-RARITY_EMOJI = {
-    "Common": "🟩",
-    "Rare": "🟦",
-    "Epic": "🟪",
-    "Legendary": "⭐",
-    "Mythic": "🔴",
-}
-
-@dataclass
 class ArtistCard:
-    card_id: str
-    name: str
-    title: str
-    rarity: Rarity
-    era: str
-    variant: str
-    image_url: Optional[str] = None
-    impact: int = 0
-    skill: int = 0
-    longevity: int = 0
-    culture: int = 0
-    hype: int = 0
-    spotify_url: Optional[str] = None
-    youtube_url: Optional[str] = None
-
-@dataclass
-class SongCard:
-    card_id: str
-    title: str
-    artist_name: str
-    rarity: Rarity
-    effect_name: str
-    effect_text: str
-    image_url: Optional[str] = None
-    spotify_url: Optional[str] = None
-    youtube_url: Optional[str] = None
-
-@dataclass
-class PackDrop:
-    label: str  # e.g., "Daily Pack"
-    guaranteed: str  # e.g., "Rare+ Guaranteed"
-    items: List[str]  # preformatted lines
-
-def _stat_block(a: ArtistCard) -> str:
-    return (
-        f"**Impact:** {a.impact}\n"
-        f"**Skill:** {a.skill}\n"
-        f"**Longevity:** {a.longevity}\n"
-        f"**Culture:** {a.culture}\n"
-        f"**Hype:** {a.hype} *(tiebreaker)*"
-    )
-
-def build_artist_embed(card: ArtistCard) -> discord.Embed:
-    emoji = RARITY_EMOJI.get(card.rarity, "🎴")
-    e = discord.Embed(
-        title=f"{emoji} {card.rarity} — ARTIST CARD",
-        description=f"**{card.name} — \"{card.title}\"**\n`ID: {card.card_id} • Variant: {card.variant} • Era: {card.era}`",
-        color=RARITY_COLOR.get(card.rarity, discord.Color.dark_grey()),
-    )
-    e.add_field(name="Stats", value=_stat_block(card), inline=False)
-
-    links = []
-    if card.spotify_url:
-        links.append(f"🎧 Spotify: {card.spotify_url}")
-    if card.youtube_url:
-        links.append(f"▶️ YouTube: {card.youtube_url}")
-    if links:
-        e.add_field(name="Links", value="\n".join(links), inline=False)
-
-    if card.image_url:
-        e.set_thumbnail(url=card.image_url)
-
-    e.set_footer(text="Music Legends • Stats-based duels (Option A)")
-    return e
-
-def build_song_embed(card: SongCard) -> discord.Embed:
-    emoji = RARITY_EMOJI.get(card.rarity, "🎵")
-    e = discord.Embed(
-        title=f"{emoji} {card.rarity} — SONG CARD",
-        description=f"**\"{card.title}\" — {card.artist_name}**\n`ID: {card.card_id}`",
-        color=RARITY_COLOR.get(card.rarity, discord.Color.dark_grey()),
-    )
-    e.add_field(name=f"Ability: {card.effect_name}", value=card.effect_text, inline=False)
-
-    links = []
-    if card.spotify_url:
-        links.append(f"🎧 Spotify: {card.spotify_url}")
-    if card.youtube_url:
-        links.append(f"▶️ YouTube: {card.youtube_url}")
-    if links:
-        e.add_field(name="Links", value="\n".join(links), inline=False)
-
-    if card.image_url:
-        e.set_thumbnail(url=card.image_url)
-
-    e.set_footer(text="Song cards are optional support (1 use per match).")
-    return e
-
-class PackOpenView(discord.ui.View):
-    def __init__(self, card_ids: List[str] = None, db_manager=None, *, timeout: float = 120):
-        super().__init__(timeout=timeout)
-        self.card_ids = card_ids or []
-        self.db_manager = db_manager
-
-    @discord.ui.button(label="Save to Collection", style=discord.ButtonStyle.success)
-    async def save(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.db_manager and self.card_ids:
-            # Cards are already saved to database via record_pack_opening
-            await interaction.response.send_message("✅ Cards saved to your collection!", ephemeral=True)
+    """
+    Represents a music artist card
+    """
+    
+    def __init__(
+        self,
+        card_id: str,
+        artist: str,
+        song: str,
+        youtube_url: str,
+        youtube_id: str,
+        view_count: int,
+        thumbnail: str,
+        rarity: str = "common",
+        is_hero: bool = False,
+        pack_id: Optional[str] = None
+    ):
+        self.card_id = card_id
+        self.artist = artist
+        self.song = song
+        self.youtube_url = youtube_url
+        self.youtube_id = youtube_id
+        self.view_count = view_count
+        self.thumbnail = thumbnail
+        self.rarity = rarity.lower()
+        self.is_hero = is_hero
+        self.pack_id = pack_id
+        
+        # Calculate stats
+        self.power = self._calculate_power()
+        self.tier = self._calculate_tier()
+    
+    def _calculate_power(self) -> int:
+        """
+        Calculate card power from view count and rarity
+        
+        Base power from views (0-70):
+        - 1B+ views = 70
+        - 500M+ = 60
+        - 100M+ = 50
+        - 50M+ = 40
+        - 10M+ = 30
+        - <10M = 20
+        
+        Rarity bonus:
+        - Common: +0
+        - Rare: +10
+        - Epic: +20
+        - Legendary: +30
+        - Mythic: +40
+        """
+        # Base power from views
+        if self.view_count >= 1_000_000_000:  # 1B+
+            base = 70
+        elif self.view_count >= 500_000_000:  # 500M+
+            base = 60
+        elif self.view_count >= 100_000_000:  # 100M+
+            base = 50
+        elif self.view_count >= 50_000_000:   # 50M+
+            base = 40
+        elif self.view_count >= 10_000_000:   # 10M+
+            base = 30
         else:
-            await interaction.response.send_message("Cards automatically saved to collection!", ephemeral=True)
-
-    @discord.ui.button(label="Share Pull", style=discord.ButtonStyle.primary)
-    async def share(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.card_ids:
-            # Create share text
-            card_list = ", ".join(self.card_ids[:3])
-            if len(self.card_ids) > 3:
-                card_list += f" and {len(self.card_ids) - 3} more"
-            
-            await interaction.response.send_message(
-                f"🎴 Just pulled: {card_list}! #MusicLegends",
-                ephemeral=True
+            base = 20
+        
+        # Rarity bonus
+        rarity_bonuses = {
+            "common": 0,
+            "rare": 10,
+            "epic": 20,
+            "legendary": 30,
+            "mythic": 40,
+            "ultra_mythic": 50,
+        }
+        
+        bonus = rarity_bonuses.get(self.rarity, 0)
+        
+        return base + bonus
+    
+    def _calculate_tier(self) -> str:
+        """Calculate tier letter (S, A, B, C, D)"""
+        if self.power >= 90:
+            return "S"
+        elif self.power >= 75:
+            return "A"
+        elif self.power >= 60:
+            return "B"
+        elif self.power >= 45:
+            return "C"
+        else:
+            return "D"
+    
+    def get_rarity_color(self) -> int:
+        """Get Discord embed color for rarity"""
+        colors = {
+            "common": 0x95a5a6,      # Gray
+            "rare": 0x3498db,        # Blue
+            "epic": 0x9b59b6,        # Purple
+            "legendary": 0xf39c12,   # Gold
+            "mythic": 0xe74c3c,      # Red
+            "ultra_mythic": 0xff1493, # Deep Pink
+        }
+        return colors.get(self.rarity, 0x95a5a6)
+    
+    def get_rarity_emoji(self) -> str:
+        """Get emoji for rarity"""
+        emojis = {
+            "common": "⚪",
+            "rare": "🔵",
+            "epic": "🟣",
+            "legendary": "🟡",
+            "mythic": "🔴",
+            "ultra_mythic": "💎",
+        }
+        return emojis.get(self.rarity, "⚪")
+    
+    def to_embed(self, show_stats: bool = True) -> discord.Embed:
+        """
+        Create Discord embed for this card
+        
+        Args:
+            show_stats: Whether to show power/tier stats
+        
+        Returns:
+            discord.Embed ready to send
+        """
+        embed = discord.Embed(
+            title=f"{self.get_rarity_emoji()} {self.artist} - {self.song}",
+            description=f"**Rarity:** {self.rarity.title()}",
+            color=self.get_rarity_color(),
+            url=self.youtube_url
+        )
+        
+        # Add stats if requested
+        if show_stats:
+            embed.add_field(
+                name="⚡ Power",
+                value=f"**{self.power}** (Tier {self.tier})",
+                inline=True
             )
+        
+        # Add view count
+        embed.add_field(
+            name="👁️ Views",
+            value=f"{self.view_count:,}",
+            inline=True
+        )
+        
+        # Hero badge
+        if self.is_hero:
+            embed.add_field(
+                name="🌟 Status",
+                value="**HERO CARD**",
+                inline=True
+            )
+        
+        # Thumbnail
+        if self.thumbnail:
+            embed.set_thumbnail(url=self.thumbnail)
+        
+        # Footer
+        embed.set_footer(text=f"Card ID: {self.card_id}")
+        
+        return embed
+    
+    def to_dict(self) -> Dict:
+        """Convert card to dictionary for database storage"""
+        return {
+            "card_id": self.card_id,
+            "artist": self.artist,
+            "song": self.song,
+            "youtube_url": self.youtube_url,
+            "youtube_id": self.youtube_id,
+            "view_count": self.view_count,
+            "thumbnail": self.thumbnail,
+            "rarity": self.rarity,
+            "power": self.power,
+            "tier": self.tier,
+            "is_hero": self.is_hero,
+            "pack_id": self.pack_id,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'ArtistCard':
+        """Create card from dictionary"""
+        return cls(
+            card_id=data["card_id"],
+            artist=data["artist"],
+            song=data["song"],
+            youtube_url=data["youtube_url"],
+            youtube_id=data["youtube_id"],
+            view_count=data["view_count"],
+            thumbnail=data["thumbnail"],
+            rarity=data.get("rarity", "common"),
+            is_hero=data.get("is_hero", False),
+            pack_id=data.get("pack_id"),
+        )
+    
+    def __repr__(self):
+        return f"<ArtistCard: {self.artist} - {self.song} ({self.rarity}, {self.power} PWR)>"
+
+
+class Pack:
+    """
+    Represents a pack of cards
+    """
+    
+    def __init__(
+        self,
+        pack_id: str,
+        pack_type: str,  # "community" or "gold"
+        creator_id: str,
+        cards: List[ArtistCard],
+        buy_price: float,
+        created_at: Optional[datetime] = None
+    ):
+        self.pack_id = pack_id
+        self.pack_type = pack_type
+        self.creator_id = creator_id
+        self.cards = cards
+        self.buy_price = buy_price
+        self.created_at = created_at or datetime.now()
+        
+        # Get hero card
+        self.hero_card = next((c for c in cards if c.is_hero), cards[0] if cards else None)
+    
+    def to_embed(self) -> discord.Embed:
+        """Create Discord embed for pack preview"""
+        
+        color = 0x3498db if self.pack_type == "community" else 0xFFD700
+        
+        embed = discord.Embed(
+            title=f"{'📦' if self.pack_type == 'community' else '💎'} {self.pack_type.title()} Pack",
+            description=f"**Hero:** {self.hero_card.artist} - {self.hero_card.song}" if self.hero_card else "5 Random Cards",
+            color=color
+        )
+        
+        # Show all cards
+        for i, card in enumerate(self.cards, 1):
+            hero_tag = " 🌟" if card.is_hero else ""
+            embed.add_field(
+                name=f"Card {i}{hero_tag}",
+                value=f"{card.get_rarity_emoji()} {card.artist} - {card.song}\n"
+                      f"**{card.rarity.title()}** • {card.power} PWR",
+                inline=True
+            )
+        
+        # Pack info
+        embed.add_field(
+            name="💰 Price",
+            value=f"${self.buy_price:.2f}",
+            inline=False
+        )
+        
+        # Thumbnail from hero card
+        if self.hero_card and self.hero_card.thumbnail:
+            embed.set_thumbnail(url=self.hero_card.thumbnail)
+        
+        embed.set_footer(text=f"Pack ID: {self.pack_id} | Created: {self.created_at.strftime('%Y-%m-%d')}")
+        
+        return embed
+    
+    def to_dict(self) -> Dict:
+        """Convert pack to dictionary"""
+        return {
+            "pack_id": self.pack_id,
+            "pack_type": self.pack_type,
+            "creator_id": self.creator_id,
+            "cards": [card.to_dict() for card in self.cards],
+            "buy_price": self.buy_price,
+            "created_at": self.created_at.isoformat(),
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'Pack':
+        """Create pack from dictionary"""
+        cards = [ArtistCard.from_dict(c) for c in data["cards"]]
+        return cls(
+            pack_id=data["pack_id"],
+            pack_type=data["pack_type"],
+            creator_id=data["creator_id"],
+            cards=cards,
+            buy_price=data["buy_price"],
+            created_at=datetime.fromisoformat(data["created_at"]) if "created_at" in data else None,
+        )
+    
+    def __repr__(self):
+        return f"<Pack: {self.pack_type} ({len(self.cards)} cards, ${self.buy_price})>"
+
+
+class CardCollection:
+    """
+    Represents a user's card collection
+    """
+    
+    def __init__(self, user_id: str, cards: Optional[List[ArtistCard]] = None):
+        self.user_id = user_id
+        self.cards = cards or []
+    
+    def add_card(self, card: ArtistCard):
+        """Add card to collection"""
+        self.cards.append(card)
+    
+    def remove_card(self, card_id: str) -> Optional[ArtistCard]:
+        """Remove card from collection"""
+        for i, card in enumerate(self.cards):
+            if card.card_id == card_id:
+                return self.cards.pop(i)
+        return None
+    
+    def get_card(self, card_id: str) -> Optional[ArtistCard]:
+        """Get card by ID"""
+        return next((c for c in self.cards if c.card_id == card_id), None)
+    
+    def get_best_card(self) -> Optional[ArtistCard]:
+        """Get highest power card"""
+        if not self.cards:
+            return None
+        return max(self.cards, key=lambda c: c.power)
+    
+    def get_cards_by_rarity(self, rarity: str) -> List[ArtistCard]:
+        """Get all cards of specific rarity"""
+        return [c for c in self.cards if c.rarity == rarity.lower()]
+    
+    def get_cards_by_artist(self, artist: str) -> List[ArtistCard]:
+        """Get all cards by specific artist"""
+        return [c for c in self.cards if c.artist.lower() == artist.lower()]
+    
+    def total_cards(self) -> int:
+        """Get total card count"""
+        return len(self.cards)
+    
+    def rarity_breakdown(self) -> Dict[str, int]:
+        """Get count of each rarity"""
+        breakdown = {}
+        for card in self.cards:
+            breakdown[card.rarity] = breakdown.get(card.rarity, 0) + 1
+        return breakdown
+    
+    def to_embed(self, page: int = 1, per_page: int = 10) -> discord.Embed:
+        """Create Discord embed showing collection"""
+        
+        total_pages = (len(self.cards) - 1) // per_page + 1 if self.cards else 1
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        page_cards = self.cards[start_idx:end_idx]
+        
+        embed = discord.Embed(
+            title=f"🎴 Card Collection",
+            description=f"**Total Cards:** {len(self.cards)}\n**Page:** {page}/{total_pages}",
+            color=0x9b59b6
+        )
+        
+        # Show rarity breakdown
+        breakdown = self.rarity_breakdown()
+        breakdown_text = "\n".join([
+            f"{ArtistCard(None, None, None, None, None, 0, None, rarity=r).get_rarity_emoji()} {r.title()}: {count}"
+            for r, count in breakdown.items()
+        ])
+        
+        if breakdown_text:
+            embed.add_field(
+                name="📊 Rarity Breakdown",
+                value=breakdown_text,
+                inline=False
+            )
+        
+        # Show cards on this page
+        if page_cards:
+            for i, card in enumerate(page_cards, start=start_idx + 1):
+                embed.add_field(
+                    name=f"{i}. {card.get_rarity_emoji()} {card.artist}",
+                    value=f"{card.song}\n{card.power} PWR",
+                    inline=True
+                )
         else:
-            await interaction.response.send_message("Share feature coming soon!", ephemeral=True)
-
-    @discord.ui.button(label="Open Another Pack", style=discord.ButtonStyle.secondary)
-    async def open_more(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Use `/pack` to open more packs!", ephemeral=True)
-
-def build_pack_open_embed(drop: PackDrop) -> discord.Embed:
-    e = discord.Embed(
-        title=f"📦 Pack Opened: {drop.label}",
-        description=f"Drop Rule: **{drop.guaranteed}**",
-        color=discord.Color.blurple(),
-    )
-    e.add_field(name="You received", value="\n".join(drop.items), inline=False)
-    e.set_footer(text="Tip: PvP wins grant Victory Pack Tokens.")
-    return e
-
-def build_pvp_result_embed(
-    player_a_name: str,
-    player_b_name: str,
-    winner_name: str,
-    rounds_text: str,
-    reward_text: str = "+1 Victory Pack Token"
-) -> discord.Embed:
-    e = discord.Embed(
-        title=f"⚔️ Duel Result: {player_a_name} vs {player_b_name}",
-        description="Mode: **Best of 3** • Rule: **Option A**",
-        color=discord.Color.green(),
-    )
-    e.add_field(name="Rounds", value=rounds_text, inline=False)
-    e.add_field(name="Winner", value=f"🏆 **{winner_name}**\n🎁 Reward: **{reward_text}**", inline=False)
-    e.set_footer(text="Option A: R1 random • R2 loser chooses • R3 random")
-    return e
+            embed.add_field(
+                name="No Cards",
+                value="Buy packs from the shop to start your collection!",
+                inline=False
+            )
+        
+        return embed
+    
+    def __repr__(self):
+        return f"<CardCollection: {self.user_id} ({len(self.cards)} cards)>"

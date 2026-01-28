@@ -12,8 +12,9 @@ import uuid
 from typing import List, Dict
 
 # Import required modules
-from discord_cards import ArtistCard, build_artist_embed, PackDrop, build_pack_open_embed, PackOpenView
-from battle_engine import ArtistCard as BattleCard, MatchState, PlayerState, resolve_round, apply_momentum, pick_category_option_a, STATS
+from discord_cards import ArtistCard, Pack, CardCollection
+from battle_engine import BattleEngine, BattleHistory
+from card_economy import PlayerEconomy, EconomyDisplay
 from youtube_integration import youtube_integration
 from views.song_selection import SongSelectionView
 
@@ -21,8 +22,7 @@ class CardGameCog(Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = DatabaseManager()
-        from card_economy import get_economy_manager
-        self.economy = get_economy_manager()
+        # Economy manager will be created per user
         self.card_manager = CardDataManager(self.db)
         self.active_matches = {}  # match_id: MatchState
         
@@ -37,35 +37,43 @@ class CardGameCog(Cog):
         """Get or create user in database"""
         return self.db.get_or_create_user(user_id, username, discord_tag)
 
+    def _get_user_economy(self, user_id: int) -> PlayerEconomy:
+        """Get or create user economy"""
+        # For now, create a new economy each time
+        # TODO: Implement database storage for economy
+        return PlayerEconomy(user_id=str(user_id))
+    
     def _convert_to_artist_card(self, card_data: Dict) -> ArtistCard:
         """Convert database card data to ArtistCard object"""
         return ArtistCard(
             card_id=card_data['card_id'],
-            name=card_data['name'],
-            title=card_data.get('title', 'Artist'),
-            rarity=card_data['rarity'],
-            era=card_data.get('era', 'Unknown'),
-            variant=card_data.get('variant', 'Classic'),
-            impact=card_data.get('impact', 0),
-            skill=card_data.get('skill', 0),
-            longevity=card_data.get('longevity', 0),
-            culture=card_data.get('culture', 0),
-            hype=card_data.get('hype', 0),
-            image_url=card_data.get('image_url'),
-            youtube_url=card_data.get('youtube_url')
+            artist=card_data['name'],
+            song=card_data.get('title', 'Unknown Song'),
+            youtube_url=card_data.get('youtube_url', ''),
+            youtube_id=card_data.get('youtube_id', ''),
+            view_count=card_data.get('view_count', 1000000),  # Default 1M views
+            thumbnail=card_data.get('image_url', ''),
+            rarity=card_data['rarity']
         )
 
-    def _convert_to_battle_card(self, card_data: Dict) -> BattleCard:
-        """Convert database card data to BattleCard object"""
-        return BattleCard(
-            id=card_data['card_id'],
-            name=card_data['name'],
-            rarity=card_data['rarity'],
-            impact=card_data.get('impact', 0),
-            skill=card_data.get('skill', 0),
-            longevity=card_data.get('longevity', 0),
-            culture=card_data.get('culture', 0),
-            hype=card_data.get('hype', 0)
+    def _create_card_from_track(self, track: Dict, artist_name: str, rarity: str = "common") -> ArtistCard:
+        """Create ArtistCard from YouTube track data"""
+        import uuid
+        
+        # Extract video ID from URL
+        video_id = track.get('video_id', '')
+        if not video_id and 'youtube_url' in track:
+            video_id = track['youtube_url'].split('v=')[-1].split('&')[0] if 'v=' in track['youtube_url'] else ''
+        
+        return ArtistCard(
+            card_id=str(uuid.uuid4()),
+            artist=artist_name,
+            song=track.get('title', 'Unknown Song'),
+            youtube_url=track.get('youtube_url', ''),
+            youtube_id=video_id,
+            view_count=track.get('view_count', 1000000),  # Default 1M views
+            thumbnail=track.get('thumbnail_url', ''),
+            rarity=rarity
         )
 
     # Card viewing removed - use /view from gameplay.py
@@ -680,64 +688,39 @@ class CardGameCog(Cog):
             cards_created = []
             for track in selected_tracks:
                 try:
-                    # Generate random stats for pack cards (creator packs are 20-92 range)
+                    # Determine rarity randomly for better distribution
                     import random
-                    base_stat = random.randint(60, 85)
-                    variance = random.randint(-10, 10)
-                    
-                    stats = {
-                        'impact': min(92, max(20, base_stat + variance)),
-                        'skill': min(92, max(20, base_stat + random.randint(-10, 10))),
-                        'longevity': min(92, max(20, base_stat + random.randint(-10, 10))),
-                        'culture': min(92, max(20, base_stat + random.randint(-10, 10))),
-                        'hype': min(92, max(20, base_stat + random.randint(-10, 10)))
-                    }
-                    
-                    # Determine rarity based on average stats
-                    avg_stat = sum(stats.values()) / len(stats)
-                    if avg_stat >= 80:
+                    rarity_roll = random.random()
+                    if rarity_roll < 0.05:  # 5% legendary
                         rarity = "legendary"
-                    elif avg_stat >= 70:
+                    elif rarity_roll < 0.15:  # 10% epic
                         rarity = "epic"
-                    elif avg_stat >= 60:
+                    elif rarity_roll < 0.40:  # 25% rare
                         rarity = "rare"
-                    else:
+                    else:  # 60% common
                         rarity = "common"
                     
-                    # Extract song title from video title
-                    video_title = track.get('title', '')
-                    # Remove artist name and clean up
-                    song_title = video_title.replace(artist['name'], '').replace('-', '').replace('(Official Music Video)', '').strip()
-                    if not song_title or len(song_title) < 2:
-                        song_title = video_title
+                    # Create ArtistCard from track data
+                    artist_card = self._create_card_from_track(track, artist['name'], rarity)
                     
-                    # Create card ID from video ID
-                    video_id = track.get('video_id', '')
-                    card_id = f"{pack_id}_{video_id}" if video_id else f"{pack_id}_{str(uuid.uuid4())[:8]}"
-                    
-                    # Get image from video thumbnail
-                    image_url = track.get('thumbnail_url', '') or artist.get('image_url', '')
-                    
-                    # Create card data
+                    # Convert to database format
                     card_data = {
-                        'card_id': card_id,
-                        'name': artist['name'],
-                        'title': song_title,
-                        'hero_artist': artist['name'],
-                        'hero_song': song_title,
-                        'rarity': rarity.lower(),
-                        'youtube_url': track.get('youtube_url', ''),
-                        'image_url': image_url,
-                        'impact': stats['impact'],
-                        'skill': stats['skill'],
-                        'longevity': stats['longevity'],
-                        'culture': stats['culture'],
-                        'hype': stats['hype']
+                        'card_id': artist_card.card_id,
+                        'name': artist_card.artist,
+                        'title': artist_card.song,
+                        'rarity': artist_card.rarity,
+                        'youtube_url': artist_card.youtube_url,
+                        'image_url': artist_card.thumbnail,
+                        'view_count': artist_card.view_count,
+                        'power': artist_card.power,
+                        'tier': artist_card.tier
                     }
                     
                     # Add card to master list
-                    print(f"🔧 Creating card: {song_title} by {artist['name']}")
-                    print(f"   Image URL: {image_url[:50] if image_url else 'None'}...")
+                    print(f"🔧 Creating card: {artist_card.song} by {artist_card.artist}")
+                    print(f"   Rarity: {rarity} | Power: {artist_card.power}")
+                    print(f"   Image URL: {artist_card.thumbnail[:50] if artist_card.thumbnail else 'None'}...")
+                    
                     success = self.db.add_card_to_master(card_data)
                     if success:
                         cards_created.append(card_data)
@@ -746,7 +729,9 @@ class CardGameCog(Cog):
                         print(f"❌ Failed to create card: {card_data['card_id']}")
                     
                 except Exception as e:
-                    print(f"Error creating card for {track['name']}: {e}")
+                    print(f"Error creating card for {track.get('title', 'Unknown')}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     continue
             
             # Store cards in pack and publish to marketplace

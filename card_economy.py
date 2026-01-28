@@ -1,637 +1,439 @@
-# card_economy.py
-import sqlite3
-import json
-import random
-import time
+"""
+card_economy.py - Economy management for Music Legends
+Handles gold, tickets, daily claims, rewards
+"""
+
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
-from database import DatabaseManager
+from typing import Dict, Optional
+import discord
 
-class CardEconomyManager:
-    def __init__(self, db_manager: DatabaseManager):
-        self.db = db_manager
-        self.drop_cooldowns = {}  # server_id -> last_drop_time
-        self.active_drops = {}    # channel_id -> drop_data
+class PlayerEconomy:
+    """
+    Manages a player's economy (gold, tickets, daily claims)
+    """
+    
+    def __init__(
+        self,
+        user_id: str,
+        gold: int = 500,  # Starting gold
+        tickets: int = 0,
+        last_daily_claim: Optional[datetime] = None,
+        daily_streak: int = 0
+    ):
+        self.user_id = user_id
+        self.gold = gold
+        self.tickets = tickets
+        self.last_daily_claim = last_daily_claim
+        self.daily_streak = daily_streak
+    
+    def add_gold(self, amount: int):
+        """Add gold to player"""
+        self.gold += amount
+    
+    def remove_gold(self, amount: int) -> bool:
+        """
+        Remove gold from player
+        Returns True if successful, False if insufficient gold
+        """
+        if self.gold >= amount:
+            self.gold -= amount
+            return True
+        return False
+    
+    def add_tickets(self, amount: int):
+        """Add tickets to player"""
+        self.tickets += amount
+    
+    def remove_tickets(self, amount: int) -> bool:
+        """
+        Remove tickets from player
+        Returns True if successful, False if insufficient tickets
+        """
+        if self.tickets >= amount:
+            self.tickets -= amount
+            return True
+        return False
+    
+    def can_claim_daily(self) -> bool:
+        """Check if player can claim daily reward"""
+        if self.last_daily_claim is None:
+            return True
         
-        # Import season manager (lazy import to avoid circular import)
-        self.season_manager = None
+        time_since_claim = datetime.now() - self.last_daily_claim
+        return time_since_claim >= timedelta(hours=20)  # 20 hour cooldown (allows timezone flexibility)
+    
+    def claim_daily(self) -> Dict:
+        """
+        Claim daily reward
         
-        # Drop rates (percentages)
-        self.pack_odds = {
-            'genre_pack': {
-                'guaranteed_gold_plus': {'gold': 75, 'platinum': 22, 'legendary': 3},
-                'other_slots': {'community': 70, 'gold': 25, 'platinum': 5}
-            },
-            'hero_pack': {
-                'hero_slot': {'platinum': 80, 'legendary': 20},
-                'support_slots': {'community': 60, 'gold': 30, 'platinum': 10}
+        Returns:
+            Dictionary with gold, tickets, and streak info
+        """
+        if not self.can_claim_daily():
+            # Calculate time until next claim
+            time_since = datetime.now() - self.last_daily_claim
+            time_until = timedelta(hours=24) - time_since
+            return {
+                "success": False,
+                "error": "Already claimed today",
+                "time_until_next": time_until,
             }
-        }
         
-        # Currency values
-        self.tier_values = {
-            'community': {'dust_value': 1, 'gold_value': 0},
-            'gold': {'dust_value': 5, 'gold_value': 1},
-            'platinum': {'dust_value': 25, 'gold_value': 5},
-            'legendary': {'dust_value': 100, 'gold_value': 20}
-        }
-        
-        # Upgrade costs
-        self.upgrade_costs = {
-            'community_to_gold': 5,      # 5 community -> 1 gold
-            'gold_to_platinum': 5,       # 5 gold -> 1 platinum  
-            'platinum_to_legendary': 3    # 3 platinum + dust -> legendary chance
-        }
-
-    def initialize_economy_tables(self):
-        """Create economy-related database tables"""
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Economy metadata columns for cards table (extends database.py schema)
-            # Note: Main cards table is created in database.py
-            # We only add economy-specific columns if they don't exist
-            cursor.execute("PRAGMA table_info(cards)")
-            existing_columns = {row[1] for row in cursor.fetchall()}
-            
-            # Add economy columns to existing cards table if missing
-            if "tier" not in existing_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN tier TEXT DEFAULT 'community'")
-            if "serial_number" not in existing_columns:
-                try:
-                    # Try adding with UNIQUE constraint
-                    cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT UNIQUE")
-                except sqlite3.OperationalError:
-                    # If UNIQUE fails (table has data), add without constraint
-                    cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT")
-            if "print_number" not in existing_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN print_number INTEGER")
-            if "quality" not in existing_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN quality TEXT DEFAULT 'standard'")
-            if "artist_name" not in existing_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN artist_name TEXT")
-            if "genre" not in existing_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN genre TEXT")
-            
-            # User inventory and currency
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_inventory (
-                    user_id INTEGER PRIMARY KEY,
-                    gold INTEGER DEFAULT 0,
-                    dust INTEGER DEFAULT 0,
-                    tickets INTEGER DEFAULT 0,
-                    gems INTEGER DEFAULT 0,
-                    keys INTEGER DEFAULT 0,
-                    xp INTEGER DEFAULT 0,
-                    total_cards_obtained INTEGER DEFAULT 0,
-                    unique_artists TEXT, -- JSON array of unique artists collected
-                    collection_value INTEGER DEFAULT 0,
-                    last_daily TIMESTAMP,
-                    daily_streak INTEGER DEFAULT 0,
-                    first_win_today INTEGER DEFAULT 0,
-                    last_first_win DATE,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            # Add new columns to existing user_inventory table if missing
-            cursor.execute("PRAGMA table_info(user_inventory)")
-            existing_cols = {row[1] for row in cursor.fetchall()}
-            
-            if "daily_streak" not in existing_cols:
-                cursor.execute("ALTER TABLE user_inventory ADD COLUMN daily_streak INTEGER DEFAULT 0")
-            if "xp" not in existing_cols:
-                cursor.execute("ALTER TABLE user_inventory ADD COLUMN xp INTEGER DEFAULT 0")
-            if "first_win_today" not in existing_cols:
-                cursor.execute("ALTER TABLE user_inventory ADD COLUMN first_win_today INTEGER DEFAULT 0")
-            if "last_first_win" not in existing_cols:
-                cursor.execute("ALTER TABLE user_inventory ADD COLUMN last_first_win DATE")
-            
-            # Battle Pass progression table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS battle_pass_progress (
-                    user_id INTEGER PRIMARY KEY,
-                    season_number INTEGER DEFAULT 1,
-                    battle_pass_xp INTEGER DEFAULT 0,
-                    current_tier INTEGER DEFAULT 1,
-                    has_premium INTEGER DEFAULT 0,
-                    premium_purchased_at TIMESTAMP,
-                    claimed_free_tiers TEXT DEFAULT '[]',
-                    claimed_premium_tiers TEXT DEFAULT '[]',
-                    tiers_skipped INTEGER DEFAULT 0,
-                    last_xp_gain TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            # VIP subscription table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS vip_subscriptions (
-                    user_id INTEGER PRIMARY KEY,
-                    subscription_id TEXT,
-                    status TEXT DEFAULT 'inactive',
-                    started_at TIMESTAMP,
-                    expires_at TIMESTAMP,
-                    auto_renew INTEGER DEFAULT 1,
-                    total_months INTEGER DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            # Active drops
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS active_drops (
-                    drop_id TEXT PRIMARY KEY,
-                    channel_id INTEGER,
-                    server_id INTEGER,
-                    initiator_user_id INTEGER,
-                    cards TEXT, -- JSON array of card data
-                    drop_type TEXT DEFAULT 'standard',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP,
-                    claimed_by INTEGER,
-                    claimed_at TIMESTAMP,
-                    FOREIGN KEY (initiator_user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            # Drop cooldowns per server
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS server_drop_cooldowns (
-                    server_id INTEGER PRIMARY KEY,
-                    last_drop_time TIMESTAMP,
-                    drop_count_today INTEGER DEFAULT 0,
-                    activity_level INTEGER DEFAULT 1, -- 1-5 scale
-                    last_activity_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Market listings
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS market_listings (
-                    listing_id TEXT PRIMARY KEY,
-                    seller_user_id INTEGER,
-                    card_id TEXT,
-                    asking_gold INTEGER,
-                    asking_dust INTEGER,
-                    status TEXT DEFAULT 'active', -- active, sold, cancelled
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    buyer_user_id INTEGER,
-                    sold_at TIMESTAMP,
-                    FOREIGN KEY (seller_user_id) REFERENCES users(user_id),
-                    FOREIGN KEY (buyer_user_id) REFERENCES users(user_id),
-                    FOREIGN KEY (card_id) REFERENCES cards(card_id)
-                )
-            """)
-            
-            # Trade history
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS trade_history (
-                    trade_id TEXT PRIMARY KEY,
-                    initiator_user_id INTEGER,
-                    receiver_user_id INTEGER,
-                    initiator_cards TEXT, -- JSON array
-                    receiver_cards TEXT, -- JSON array
-                    gold_from_initiator INTEGER DEFAULT 0,
-                    gold_from_receiver INTEGER DEFAULT 0,
-                    dust_from_initiator INTEGER DEFAULT 0,
-                    dust_from_receiver INTEGER DEFAULT 0,
-                    trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (initiator_user_id) REFERENCES users(user_id),
-                    FOREIGN KEY (receiver_user_id) REFERENCES users(user_id)
-                )
-            """)
-            
-            conn.commit()
-
-    def generate_serial_number(self, artist_name: str, tier: str, print_number: int) -> str:
-        """Generate unique serial number for card"""
-        # Format: ML-ARTIST-TIER-#### (e.g., ML-TSWIFT-GOLD-0001)
-        artist_code = artist_name[:6].upper().replace(' ', '')
-        tier_code = tier.upper()[:3]
-        return f"ML-{artist_code}-{tier_code}-{print_number:04d}"
-
-    def create_card(self, artist_data: Dict, tier: str = None, acquisition_source: str = 'drop') -> Dict:
-        """Create a new card with given artist data and tier"""
-        if tier is None:
-            # Random tier based on drop rates
-            tier = self._random_tier_from_drop()
-        
-        # Map tier to rarity for existing system
-        rarity_mapping = {
-            'community': 'Common',
-            'gold': 'Rare', 
-            'platinum': 'Epic',
-            'legendary': 'Legendary'
-        }
-        rarity = rarity_mapping.get(tier, 'Common')
-        
-        # Check season caps if season manager is available
-        if self.season_manager:
-            cap_check = self.season_manager.check_card_cap(artist_data['name'], tier)
-            if not cap_check['can_print']:
-                # Fallback to lower tier if cap reached
-                if tier == 'legendary':
-                    tier = 'platinum'
-                elif tier == 'platinum':
-                    tier = 'gold'
-                elif tier == 'gold':
-                    tier = 'community'
-                
-                # Check again
-                cap_check = self.season_manager.check_card_cap(artist_data['name'], tier)
-                if not cap_check['can_print']:
-                    # If still can't print, return None
-                    return None
-        
-        # Generate card ID based on existing system
-        import uuid
-        card_id = str(uuid.uuid4())
-        
-        # Generate serial number
-        print_number = self._get_next_print_number(artist_data['name'], tier)
-        serial_number = self.generate_serial_number(artist_data['name'], tier, print_number)
-        
-        # Map to existing card structure
-        card_data = {
-            'card_id': card_id,
-            'type': 'artist',
-            'name': artist_data['name'],
-            'rarity': rarity,
-            'tier': tier,
-            'serial_number': serial_number,
-            'print_number': print_number,
-            'quality': random.choice(['standard', 'foil', 'etched'])[0] if random.random() < 0.1 else 'standard',
-            'acquisition_source': acquisition_source,
-            'spotify_artist_id': artist_data.get('spotify_id'),
-            'stats': json.dumps(artist_data.get('stats', {}))
-        }
-        
-        # Increment season print count
-        if self.season_manager:
-            self.season_manager.increment_card_print(artist_data['name'], tier)
-        
-        return card_data
-
-    def _random_tier_from_drop(self, pack_type: str = 'standard') -> str:
-        """Generate random tier based on drop rates"""
-        if pack_type == 'genre_pack':
-            # Genre pack rates
-            roll = random.random() * 100
-            if roll < 3:
-                return 'legendary'
-            elif roll < 25:
-                return 'platinum'
-            elif roll < 75:
-                return 'gold'
+        # Check if streak continues
+        if self.last_daily_claim:
+            time_since_claim = datetime.now() - self.last_daily_claim
+            if time_since_claim <= timedelta(hours=48):  # 48 hour grace period
+                self.daily_streak += 1
             else:
-                return 'community'
-        elif pack_type == 'hero_pack':
-            # Hero pack rates  
-            roll = random.random() * 100
-            if roll < 20:
-                return 'legendary'
-            elif roll < 80:
-                return 'platinum'
-            else:
-                return 'gold'
+                self.daily_streak = 1  # Streak broken
         else:
-            # Standard drop rates
-            roll = random.random() * 100
-            if roll < 2:
-                return 'legendary'
-            elif roll < 12:
-                return 'platinum'
-            elif roll < 37:
-                return 'gold'
-            else:
-                return 'community'
-
-    def _get_next_print_number(self, artist_name: str, tier: str) -> int:
-        """Get next print number for artist/tier combination"""
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT MAX(print_number) FROM cards 
-                WHERE artist_name = ? AND tier = ?
-            """, (artist_name, tier))
-            result = cursor.fetchone()
-            return (result[0] or 0) + 1
-
-    def create_drop(self, channel_id: int, server_id: int, initiator_id: int, drop_type: str = 'standard') -> Dict:
-        """Create a new card drop in a channel"""
-        # Check cooldown
-        if not self._can_drop(server_id):
-            return {'success': False, 'error': 'Drop on cooldown'}
+            self.daily_streak = 1
         
-        # Generate cards for drop
-        cards = []
-        if drop_type == 'standard':
-            # Standard 3-card drop
-            for _ in range(3):
-                # Get random artist from database
-                artists = self.db.get_all_artists(limit=100)
-                if artists:
-                    artist = random.choice(artists)
-                    card = self.create_card(artist, acquisition_source='drop')
-                    cards.append(card)
+        # Calculate rewards
+        base_gold = 100
+        bonus_gold = 0
+        tickets = 0
         
-        # Create drop record
-        drop_id = f"drop_{channel_id}_{int(time.time())}"
-        expires_at = datetime.now() + timedelta(minutes=5)  # 5 minute expiry
-        
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO active_drops 
-                (drop_id, channel_id, server_id, initiator_user_id, cards, drop_type, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (drop_id, channel_id, server_id, initiator_id, json.dumps(cards), drop_type, expires_at))
-            
-            # Update server cooldown
-            self._update_server_cooldown(server_id)
-            conn.commit()
-        
-        # Store in active drops for quick access
-        self.active_drops[channel_id] = {
-            'drop_id': drop_id,
-            'cards': cards,
-            'initiator_id': initiator_id,
-            'expires_at': expires_at
+        # Streak bonuses
+        streak_bonuses = {
+            3: {"gold": 50, "tickets": 0},
+            7: {"gold": 200, "tickets": 1},
+            14: {"gold": 500, "tickets": 2},
+            30: {"gold": 1000, "tickets": 5},
         }
+        
+        if self.daily_streak in streak_bonuses:
+            bonus = streak_bonuses[self.daily_streak]
+            bonus_gold = bonus["gold"]
+            tickets = bonus["tickets"]
+        
+        total_gold = base_gold + bonus_gold
+        
+        # Add rewards
+        self.add_gold(total_gold)
+        self.add_tickets(tickets)
+        
+        # Update claim time
+        self.last_daily_claim = datetime.now()
         
         return {
-            'success': True,
-            'drop_id': drop_id,
-            'cards': cards,
-            'expires_at': expires_at
+            "success": True,
+            "gold": total_gold,
+            "base_gold": base_gold,
+            "bonus_gold": bonus_gold,
+            "tickets": tickets,
+            "streak": self.daily_streak,
+            "streak_bonus": self.daily_streak in streak_bonuses,
         }
-
-    def _can_drop(self, server_id: int) -> bool:
-        """Check if server can drop based on cooldown and activity"""
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT last_drop_time, activity_level FROM server_drop_cooldowns 
-                WHERE server_id = ?
-            """, (server_id,))
-            result = cursor.fetchone()
-            
-            if not result:
-                return True  # First drop
-            
-            last_drop, activity_level = result
-            if not last_drop:
-                return True
-            
-            # Cooldown based on activity level (1-5)
-            cooldown_minutes = max(1, 30 - (activity_level * 6))  # 30 min to 1 min
-            cooldown_time = datetime.now() - timedelta(minutes=cooldown_minutes)
-            
-            return datetime.fromisoformat(last_drop) < cooldown_time
-
-    def _update_server_cooldown(self, server_id: int):
-        """Update server drop cooldown and activity"""
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO server_drop_cooldowns 
-                (server_id, last_drop_time, drop_count_today, last_activity_update)
-                VALUES (?, CURRENT_TIMESTAMP, 
-                    COALESCE((SELECT drop_count_today FROM server_drop_cooldowns WHERE server_id = ?), 0) + 1,
-                    CURRENT_TIMESTAMP)
-            """, (server_id, server_id))
-            conn.commit()
-
-    def claim_drop(self, channel_id: int, user_id: int, reaction_number: int) -> Dict:
-        """Claim a card from an active drop"""
-        if channel_id not in self.active_drops:
-            return {'success': False, 'error': 'No active drop'}
-        
-        drop = self.active_drops[channel_id]
-        
-        # Check if expired
-        if datetime.now() > drop['expires_at']:
-            del self.active_drops[channel_id]
-            return {'success': False, 'error': 'Drop expired'}
-        
-        # Check if valid reaction number
-        if reaction_number < 1 or reaction_number > len(drop['cards']):
-            return {'success': False, 'error': 'Invalid card number'}
-        
-        # Get the card
-        card = drop['cards'][reaction_number - 1]
-        
-        # Award card to user
-        self._award_card_to_user(user_id, card)
-        
-        # Update drop as claimed
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE active_drops 
-                SET claimed_by = ?, claimed_at = CURRENT_TIMESTAMP
-                WHERE drop_id = ?
-            """, (user_id, drop['drop_id']))
-            conn.commit()
-        
-        # Remove from active drops
-        del self.active_drops[channel_id]
-        
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for database storage"""
         return {
-            'success': True,
-            'card': card,
-            'drop_id': drop['drop_id']
+            "user_id": self.user_id,
+            "gold": self.gold,
+            "tickets": self.tickets,
+            "last_daily_claim": self.last_daily_claim.isoformat() if self.last_daily_claim else None,
+            "daily_streak": self.daily_streak,
         }
-
-    def _award_card_to_user(self, user_id: int, card_data: Dict):
-        """Award a card to a user's inventory"""
-        from config.economy import NEW_PLAYER_GOLD
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'PlayerEconomy':
+        """Create from dictionary"""
+        last_claim = None
+        if data.get("last_daily_claim"):
+            last_claim = datetime.fromisoformat(data["last_daily_claim"])
         
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Check if this is a new player (no inventory record)
-            cursor.execute("SELECT user_id FROM user_inventory WHERE user_id = ?", (user_id,))
-            is_new_player = cursor.fetchone() is None
-            
-            # Add card to existing cards table
-            cursor.execute("""
-                INSERT INTO cards 
-                (card_id, type, name, rarity, spotify_artist_id, created_by_user_id,
-                 tier, serial_number, print_number, quality, artist_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                card_data['card_id'], card_data['type'], card_data['name'], 
-                card_data['rarity'], card_data.get('spotify_artist_id'), user_id,
-                card_data.get('tier', 'community'), card_data.get('serial_number'),
-                card_data.get('print_number'), card_data.get('quality', 'standard'),
-                card_data.get('artist_name', card_data['name'])
-            ))
-            
-            # Add to user_cards table (existing ownership system)
-            cursor.execute("""
-                INSERT INTO user_cards 
-                (user_id, card_id, acquired_at, acquired_from)
-                VALUES (?, ?, CURRENT_TIMESTAMP, ?)
-            """, (user_id, card_data['card_id'], card_data['acquisition_source']))
-            
-            # Update user inventory - give starting gold to new players
-            starting_gold = NEW_PLAYER_GOLD if is_new_player else 0
-            
-            cursor.execute("""
-                INSERT INTO user_inventory 
-                (user_id, gold, total_cards_obtained, collection_value)
-                VALUES (?, ?, 1, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    total_cards_obtained = total_cards_obtained + 1,
-                    collection_value = collection_value + ?
-            """, (user_id, starting_gold, self.tier_values[card_data['tier']]['gold_value'],
-                  self.tier_values[card_data['tier']]['gold_value']))
-            
-            conn.commit()
-            
-            # Return whether this was a new player (for welcome message)
-            return is_new_player
+        return cls(
+            user_id=data["user_id"],
+            gold=data.get("gold", 500),
+            tickets=data.get("tickets", 0),
+            last_daily_claim=last_claim,
+            daily_streak=data.get("daily_streak", 0),
+        )
+
+
+class PackPricing:
+    """Pack prices and creation costs"""
+    
+    # Pack prices (buying from marketplace)
+    COMMUNITY_PACK_GOLD = 500
+    COMMUNITY_PACK_USD = 2.99
+    
+    GOLD_PACK_USD = 4.99
+    GOLD_PACK_TICKETS = 100
+    
+    # Pack creation costs
+    GOLD_PACK_CREATE_USD = 6.99
+    GOLD_PACK_CREATE_TICKETS = 150
+    
+    @classmethod
+    def can_afford_pack(cls, economy: PlayerEconomy, pack_type: str, currency: str = "gold") -> bool:
+        """
+        Check if player can afford a pack
         
-        # Update season progress
-        if self.season_manager:
-            self.season_manager.update_player_progress(user_id, 'card_collected', 1)
-            
-            # Check if this is a unique artist for the user
-            with sqlite3.connect(self.db.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT COUNT(*) FROM cards c
-                    JOIN user_cards uc ON c.card_id = uc.card_id
-                    WHERE uc.user_id = ? AND c.name = ?
-                """, (user_id, card_data['name']))
-                
-                if cursor.fetchone()[0] == 1:  # First card of this artist
-                    self.season_manager.update_player_progress(user_id, 'unique_artist', 1)
+        Args:
+            economy: PlayerEconomy instance
+            pack_type: "community" or "gold"
+            currency: "gold", "tickets", or "usd"
+        
+        Returns:
+            True if can afford, False otherwise
+        """
+        if pack_type == "community":
+            if currency == "gold":
+                return economy.gold >= cls.COMMUNITY_PACK_GOLD
+            elif currency == "usd":
+                return True  # Handled by payment processor
+        
+        elif pack_type == "gold":
+            if currency == "tickets":
+                return economy.tickets >= cls.GOLD_PACK_TICKETS
+            elif currency == "usd":
+                return True  # Handled by payment processor
+        
+        return False
+    
+    @classmethod
+    def purchase_pack(
+        cls,
+        economy: PlayerEconomy,
+        pack_type: str,
+        currency: str = "gold"
+    ) -> bool:
+        """
+        Purchase a pack (deduct currency)
+        
+        Returns:
+            True if successful, False if insufficient funds
+        """
+        if pack_type == "community":
+            if currency == "gold":
+                return economy.remove_gold(cls.COMMUNITY_PACK_GOLD)
+        
+        elif pack_type == "gold":
+            if currency == "tickets":
+                return economy.remove_tickets(cls.GOLD_PACK_TICKETS)
+        
+        return False
 
-    def get_user_collection(self, user_id: int) -> Dict:
-        """Get user's card collection and inventory"""
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Get user inventory
-            cursor.execute("SELECT * FROM user_inventory WHERE user_id = ?", (user_id,))
-            inventory = cursor.fetchone()
-            
-            # Get user's cards from user_cards table (joined with cards for details)
-            cursor.execute("""
-                SELECT c.*, uc.acquired_at, uc.acquired_from
-                FROM user_cards uc
-                JOIN cards c ON uc.card_id = c.card_id
-                WHERE uc.user_id = ?
-                ORDER BY c.rarity DESC, uc.acquired_at DESC
-            """, (user_id,))
-            cards = cursor.fetchall()
-            
-            return {
-                'inventory': inventory,
-                'cards': cards,
-                'total_cards': len(cards)
-            }
 
-    def burn_card_for_dust(self, user_id: int, card_id: str) -> Dict:
-        """Burn a card to get dust"""
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Get card details
-            cursor.execute("SELECT * FROM cards WHERE card_id = ? AND owner_user_id = ?", (card_id, user_id))
-            card = cursor.fetchone()
-            
-            if not card:
-                return {'success': False, 'error': 'Card not found'}
-            
-            # Get dust value
-            dust_value = self.tier_values[card[3]]['dust_value']  # tier is at index 3
-            
-            # Delete card
-            cursor.execute("DELETE FROM cards WHERE card_id = ?", (card_id,))
-            
-            # Add dust to user inventory
-            cursor.execute("""
-                INSERT OR REPLACE INTO user_inventory 
-                (user_id, dust)
-                VALUES (?, 
-                    COALESCE((SELECT dust FROM user_inventory WHERE user_id = ?), 0) + ?
-                )
-            """, (user_id, user_id, dust_value))
-            
-            conn.commit()
-            
-            return {
-                'success': True,
-                'dust_earned': dust_value,
-                'card_burned': card_id
-            }
+class CardSelling:
+    """Card selling/trading economy"""
+    
+    # Sell values by rarity
+    SELL_VALUES = {
+        "common": 10,
+        "rare": 25,
+        "epic": 75,
+        "legendary": 200,
+        "mythic": 500,
+        "ultra_mythic": 1000,
+    }
+    
+    # Marketplace fees
+    MARKETPLACE_FEE = 0.10  # 10% fee
+    MARKETPLACE_FEE_VIP = 0.00  # 0% for VIP
+    
+    # Trading fees
+    TRADE_FEE = 50  # 50 gold per trade
+    TRADE_FEE_VIP = 0  # Free for VIP
+    
+    @classmethod
+    def calculate_sell_value(cls, rarity: str, is_duplicate: bool = False) -> int:
+        """
+        Calculate gold value when selling a card
+        
+        Args:
+            rarity: Card rarity
+            is_duplicate: Whether player already has this card
+        
+        Returns:
+            Gold value
+        """
+        base_value = cls.SELL_VALUES.get(rarity.lower(), 10)
+        
+        # Duplicate bonus (+50%)
+        if is_duplicate:
+            base_value = int(base_value * 1.5)
+        
+        return base_value
+    
+    @classmethod
+    def calculate_marketplace_fee(cls, price: int, is_vip: bool = False) -> int:
+        """Calculate marketplace listing fee"""
+        if is_vip:
+            return 0
+        return int(price * cls.MARKETPLACE_FEE)
 
-    def upgrade_cards(self, user_id: int, upgrade_type: str, card_ids: List[str] = None) -> Dict:
-        """Upgrade cards to higher tier"""
-        if upgrade_type == 'community_to_gold':
-            required_cards = 5
-            target_tier = 'gold'
-        elif upgrade_type == 'gold_to_platinum':
-            required_cards = 5
-            target_tier = 'platinum'
-        elif upgrade_type == 'platinum_to_legendary':
-            required_cards = 3
-            target_tier = 'legendary'
+
+class DailyQuests:
+    """Daily quest system for extra rewards"""
+    
+    QUESTS = [
+        {
+            "id": "win_3_battles",
+            "name": "Battle Victor",
+            "description": "Win 3 battles",
+            "requirement": 3,
+            "reward": {"gold": 150, "xp": 50},
+        },
+        {
+            "id": "open_pack",
+            "name": "Pack Opener",
+            "description": "Open a pack",
+            "requirement": 1,
+            "reward": {"gold": 75, "xp": 25},
+        },
+        {
+            "id": "collect_daily",
+            "name": "Daily Grind",
+            "description": "Claim daily reward",
+            "requirement": 1,
+            "reward": {"gold": 50, "xp": 10},
+        },
+        {
+            "id": "trade_card",
+            "name": "Trader",
+            "description": "Trade or sell a card",
+            "requirement": 1,
+            "reward": {"gold": 100, "xp": 20},
+        },
+        {
+            "id": "battle_streak",
+            "name": "Win Streak",
+            "description": "Win 5 battles in a row",
+            "requirement": 5,
+            "reward": {"gold": 300, "xp": 100},
+        },
+    ]
+
+
+class EconomyDisplay:
+    """Helper class for creating economy-related Discord embeds"""
+    
+    @staticmethod
+    def create_balance_embed(economy: PlayerEconomy, username: str) -> discord.Embed:
+        """Create embed showing player's balance"""
+        embed = discord.Embed(
+            title=f"💰 {username}'s Balance",
+            color=0xf39c12
+        )
+        
+        embed.add_field(
+            name="💰 Gold",
+            value=f"**{economy.gold:,}**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎫 Tickets",
+            value=f"**{economy.tickets}**",
+            inline=True
+        )
+        
+        # Daily claim status
+        if economy.can_claim_daily():
+            claim_status = "✅ Available!"
         else:
-            return {'success': False, 'error': 'Invalid upgrade type'}
+            time_since = datetime.now() - economy.last_daily_claim
+            time_until = timedelta(hours=24) - time_since
+            hours = int(time_until.total_seconds() // 3600)
+            minutes = int((time_until.total_seconds() % 3600) // 60)
+            claim_status = f"⏰ {hours}h {minutes}m"
         
-        if not card_ids or len(card_ids) < required_cards:
-            return {'success': False, 'error': f'Need {required_cards} cards for upgrade'}
+        embed.add_field(
+            name="🎁 Daily Claim",
+            value=claim_status,
+            inline=True
+        )
         
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Verify user owns all cards and they're correct tier
-            source_tier = upgrade_type.split('_to_')[0]
-            cursor.execute("""
-                SELECT card_id FROM cards 
-                WHERE card_id IN ({}) AND owner_user_id = ? AND tier = ?
-            """.format(','.join(['?'] * len(card_ids))), card_ids + [user_id, source_tier])
-            
-            owned_cards = cursor.fetchall()
-            
-            if len(owned_cards) < required_cards:
-                return {'success': False, 'error': 'Not enough valid cards for upgrade'}
-            
-            # Delete source cards
-            for card_id in card_ids[:required_cards]:
-                cursor.execute("DELETE FROM cards WHERE card_id = ?", (card_id,))
-            
-            # Create new upgraded card
-            # For simplicity, create a random artist card of target tier
-            artists = self.db.get_all_artists(limit=50)
-            if artists:
-                artist = random.choice(artists)
-                new_card = self.create_card(artist, target_tier, 'upgrade')
-                self._award_card_to_user(user_id, new_card)
-                
-                conn.commit()
-                
-                return {
-                    'success': True,
-                    'new_card': new_card,
-                    'cards_used': card_ids[:required_cards]
-                }
+        # Streak info
+        if economy.daily_streak > 0:
+            embed.add_field(
+                name="🔥 Daily Streak",
+                value=f"**{economy.daily_streak} days**",
+                inline=True
+            )
         
-        return {'success': False, 'error': 'Failed to create upgraded card'}
+        return embed
+    
+    @staticmethod
+    def create_daily_claim_embed(result: Dict, username: str) -> discord.Embed:
+        """Create embed for daily claim result"""
+        if not result["success"]:
+            # Failed claim
+            time_until = result["time_until_next"]
+            hours = int(time_until.total_seconds() // 3600)
+            minutes = int((time_until.total_seconds() % 3600) // 60)
+            
+            embed = discord.Embed(
+                title="⏰ Daily Claim Not Ready",
+                description=f"Come back in **{hours}h {minutes}m**",
+                color=0xe74c3c
+            )
+            return embed
+        
+        # Successful claim
+        embed = discord.Embed(
+            title="🎁 Daily Reward Claimed!",
+            description=f"**Streak:** {result['streak']} days",
+            color=0x2ecc71
+        )
+        
+        # Rewards
+        reward_text = f"+{result['base_gold']} gold (base)"
+        
+        if result['bonus_gold'] > 0:
+            reward_text += f"\n+{result['bonus_gold']} gold (streak bonus!)"
+        
+        if result['tickets'] > 0:
+            reward_text += f"\n+{result['tickets']} tickets (streak bonus!)"
+        
+        embed.add_field(
+            name="💰 Rewards",
+            value=reward_text,
+            inline=False
+        )
+        
+        # Next milestone
+        next_milestones = {
+            3: "Day 3: +50 gold bonus",
+            7: "Day 7: +200 gold, +1 ticket",
+            14: "Day 14: +500 gold, +2 tickets",
+            30: "Day 30: +1,000 gold, +5 tickets",
+        }
+        
+        for milestone, reward in next_milestones.items():
+            if result['streak'] < milestone:
+                embed.set_footer(text=f"Next milestone: {reward}")
+                break
+        
+        return embed
 
-# Global economy manager instance
-economy_manager = None
 
-def get_economy_manager():
-    """Get or create the economy manager instance"""
-    global economy_manager
-    if economy_manager is None:
-        from database import db
-        economy_manager = CardEconomyManager(db)
-    return economy_manager
+# Example usage
+if __name__ == "__main__":
+    # Create player economy
+    player = PlayerEconomy(user_id="123456789")
+    
+    print(f"Starting gold: {player.gold}")
+    print(f"Starting tickets: {player.tickets}")
+    
+    # Claim daily
+    print("\n=== DAILY CLAIM ===")
+    result = player.claim_daily()
+    print(f"Success: {result['success']}")
+    print(f"Gold earned: {result.get('gold', 0)}")
+    print(f"Streak: {result.get('streak', 0)}")
+    
+    print(f"\nGold after claim: {player.gold}")
+    
+    # Try to buy pack
+    print("\n=== BUY PACK ===")
+    can_buy = PackPricing.can_afford_pack(player, "community", "gold")
+    print(f"Can afford community pack: {can_buy}")
+    
+    if can_buy:
+        success = PackPricing.purchase_pack(player, "community", "gold")
+        print(f"Purchase successful: {success}")
+        print(f"Gold after purchase: {player.gold}")
