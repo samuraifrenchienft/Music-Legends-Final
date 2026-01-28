@@ -115,21 +115,24 @@ class MarketplaceCommands(commands.Cog):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT pack_id, pack_name, pack_type, created_at
+                SELECT pack_id, name, status, created_at, cards_data
                 FROM creator_packs
-                WHERE creator_id = ?
+                WHERE creator_id = ? AND status = 'LIVE'
                 ORDER BY created_at DESC
                 LIMIT 10
             """, (interaction.user.id,))
-            packs = cursor.fetchone()
+            packs = cursor.fetchall()
         
         if packs:
-            pack_id, pack_name, pack_type, created_at = packs
-            embed.add_field(
-                name=f"📦 {pack_name}",
-                value=f"Type: {pack_type}\nCreated: {created_at}\nUse `/open_pack {pack_id}` to open",
-                inline=False
-            )
+            for pack in packs:
+                pack_id, pack_name, status, created_at, cards_data = pack
+                import json
+                cards = json.loads(cards_data) if cards_data else []
+                embed.add_field(
+                    name=f"📦 {pack_name}",
+                    value=f"Status: {status}\nCards: {len(cards)}\nCreated: {created_at}\nUse `/open_pack {pack_id}` to open",
+                    inline=False
+                )
         else:
             embed.add_field(
                 name="📦 No Packs",
@@ -138,6 +141,54 @@ class MarketplaceCommands(commands.Cog):
             )
         
         embed.set_footer(text="Packs • Use /create_pack to make new packs")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="packs", description="Browse marketplace packs")
+    async def packs_command(self, interaction: Interaction):
+        """Browse all available marketplace packs"""
+        
+        embed = discord.Embed(
+            title="🛍️ MARKETPLACE PACKS",
+            description="Browse available packs from creators",
+            color=discord.Color.gold()
+        )
+        
+        # Get all live packs
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pack_id, name, creator_id, description, created_at, cards_data
+                FROM creator_packs
+                WHERE status = 'LIVE'
+                ORDER BY created_at DESC
+                LIMIT 20
+            """)
+            packs = cursor.fetchall()
+        
+        if packs:
+            for pack in packs:
+                pack_id, pack_name, creator_id, description, created_at, cards_data = pack
+                import json
+                cards = json.loads(cards_data) if cards_data else []
+                
+                # Get creator name
+                cursor.execute("SELECT username FROM users WHERE user_id = ?", (creator_id,))
+                creator_result = cursor.fetchone()
+                creator_name = creator_result[0] if creator_result else f"User {creator_id}"
+                
+                embed.add_field(
+                    name=f"📦 {pack_name}",
+                    value=f"Creator: {creator_name}\nCards: {len(cards)}\n{description[:100]}...\nPack ID: `{pack_id}`",
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="📦 No Packs Available",
+                value="No packs in marketplace yet. Be the first to create one!",
+                inline=False
+            )
+        
+        embed.set_footer(text="Marketplace • Use /create_pack to add your pack")
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):

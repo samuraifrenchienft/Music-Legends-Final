@@ -609,7 +609,7 @@ class CardGameCog(Cog):
         try:
             # Search for music videos on YouTube (the working way)
             from youtube_integration import youtube_integration
-            videos = youtube_integration.search_music_video(artist_name, limit=10)
+            videos = youtube_integration.search_music_video(artist_name, limit=50)
             
             if not videos:
                 await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
@@ -749,15 +749,16 @@ class CardGameCog(Cog):
                     print(f"Error creating card for {track['name']}: {e}")
                     continue
             
-            # Publish pack to marketplace (set status to LIVE)
+            # Store cards in pack and publish to marketplace
             import sqlite3
+            import json
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE creator_packs 
-                    SET status = 'LIVE', published_at = CURRENT_TIMESTAMP
+                    SET status = 'LIVE', published_at = CURRENT_TIMESTAMP, cards_data = ?
                     WHERE pack_id = ?
-                """, (pack_id,))
+                """, (json.dumps(cards_created), pack_id))
                 conn.commit()
             
             # Give creator a free copy of the pack
