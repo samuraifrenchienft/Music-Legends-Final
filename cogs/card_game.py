@@ -609,7 +609,7 @@ class CardGameCog(Cog):
         try:
             # Search for music videos on YouTube (the working way)
             from youtube_integration import youtube_integration
-            videos = youtube_integration.search_music_video(artist_name, limit=10)
+            videos = youtube_integration.search_music_video(artist_name, limit=50)
             
             if not videos:
                 await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
