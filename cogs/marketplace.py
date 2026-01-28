@@ -9,8 +9,13 @@ class MarketplaceCommands(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        from database import DatabaseManager
-        self.db = DatabaseManager()
+        # Use correct database path for Railway persistence
+        import os
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            db_path = "/data/music_legends.db"
+        else:
+            db_path = "music_legends.db"
+        self.db_path = db_path
     
     @app_commands.command(name="market", description="View the card marketplace")
     async def market_command(self, interaction: Interaction):
@@ -23,7 +28,7 @@ class MarketplaceCommands(commands.Cog):
         )
         
         # Get marketplace listings
-        with sqlite3.connect(self.db.db_path) as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT c.card_id, c.name, c.rarity, c.image_url, 
@@ -62,7 +67,7 @@ class MarketplaceCommands(commands.Cog):
         """List a card for sale in the marketplace"""
         
         # Check if user owns the card
-        with sqlite3.connect(self.db.db_path) as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT c.name, c.rarity FROM cards c
@@ -78,7 +83,7 @@ class MarketplaceCommands(commands.Cog):
         card_name, rarity = card
         
         # List the card
-        with sqlite3.connect(self.db.db_path) as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO marketplace_listings 
@@ -99,6 +104,45 @@ class MarketplaceCommands(commands.Cog):
         embed.add_field(name="Price", value=f"{price:,} Gold", inline=True)
         embed.add_field(name="Status", value="📦 Listed", inline=True)
         
+        await interaction.response.send_message(embed=embed)
+    
+    @app_commands.command(name="pack", description="View your available packs")
+    async def pack_command(self, interaction: Interaction):
+        """View packs you own"""
+        
+        embed = discord.Embed(
+            title="🎴 YOUR PACKS",
+            description="View and open your card packs",
+            color=discord.Color.purple()
+        )
+        
+        # Get user's packs
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pack_id, pack_name, pack_type, created_at
+                FROM creator_packs
+                WHERE creator_id = ?
+                ORDER BY created_at DESC
+                LIMIT 10
+            """, (interaction.user.id,))
+            packs = cursor.fetchone()
+        
+        if packs:
+            pack_id, pack_name, pack_type, created_at = packs
+            embed.add_field(
+                name=f"📦 {pack_name}",
+                value=f"Type: {pack_type}\nCreated: {created_at}\nUse `/open_pack {pack_id}` to open",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📦 No Packs",
+                value="You don't have any packs yet. Use `/create_pack` to make one!",
+                inline=False
+            )
+        
+        embed.set_footer(text="Packs • Use /create_pack to make new packs")
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
