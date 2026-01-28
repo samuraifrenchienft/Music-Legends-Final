@@ -775,9 +775,11 @@ class CardGameCog(Cog):
                 return
             
             # Create artist data from first video
+            thumbnail_url = videos[0].get('thumbnail_url', '') if videos else ''
+            print(f"🔥 DEBUG: Artist thumbnail URL: {thumbnail_url[:50] if thumbnail_url else 'None'}...")
             artist = {
                 'name': artist_name,
-                'image_url': videos[0].get('thumbnail_url', '') if videos else '',
+                'image_url': thumbnail_url,
                 'popularity': 75,  # Default for pack creation
                 'followers': 1000000
             }
@@ -907,9 +909,8 @@ class CardGameCog(Cog):
                     traceback.print_exc()
                     continue
             
-            # Store cards in pack and publish to marketplace
-            import sqlite3
-            import json
+            # Update pack status to LIVE and add cards data
+            print(f"🔥 DEBUG: Updating pack {pack_id} status to LIVE with {len(cards_created)} cards")
             with sqlite3.connect(self.db.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -918,6 +919,7 @@ class CardGameCog(Cog):
                     WHERE pack_id = ?
                 """, (json.dumps(cards_created), pack_id))
                 conn.commit()
+                print(f"🔥 DEBUG: Pack status updated to LIVE successfully")
             
             # Give creator a free copy of the pack
             for card in cards_created:
