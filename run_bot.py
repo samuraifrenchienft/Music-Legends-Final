@@ -26,22 +26,32 @@ logger = logging.getLogger(__name__)
 def main():
     """Main bot entry point"""
     try:
+        print("🐳 DOCKER DEBUG: Starting bot in Docker container")
+        print(f"🐳 Working directory: {os.getcwd()}")
+        print(f"🐳 Python path: {sys.path}")
+        print(f"🐳 Files in current dir: {os.listdir('.')}")
+        
         # Load environment variables from .env.txt
         from dotenv import load_dotenv
         load_dotenv('.env.txt')
+        print("🐳 Environment variables loaded")
         
         # Check environment
         logger.info("Starting Music Legends Bot...")
-        
-        # Verify critical environment variables
         bot_token = os.getenv("BOT_TOKEN")
+        print(f"🐳 BOT_TOKEN present: {bool(bot_token)}")
+        print(f"🐳 BOT_TOKEN starts with: {bot_token[:10] if bot_token else 'None'}...")
+        
         if not bot_token:
             logger.error("BOT_TOKEN is required but not set in .env.txt")
             sys.exit(1)
         
         # Start the bot
+        print("🐳 Importing main module...")
         import main
+        print("🐳 Creating bot instance...")
         bot = main.Bot()
+        print("🐳 Starting bot run...")
         bot.run(bot_token)
         
     except KeyboardInterrupt:
