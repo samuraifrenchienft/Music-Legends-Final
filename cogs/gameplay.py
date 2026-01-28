@@ -161,40 +161,69 @@ class GameplayCommands(commands.Cog):
             name="📊 By Rarity",
             value=f"⚪ Common: {rarity_counts['common']}\n"
                   f"� Rare: {rarity_counts['rare']}\n"
-                  f"� Epic: {rarity_counts['epic']}\n"
                   f"⭐ Legendary: {rarity_counts['legendary']}\n"
                   f"🔴 Mythic: {rarity_counts['mythic']}",
             inline=True
         )
         
-        # Show cards with IDs (up to 10)
+        # Show cards with interactive buttons (up to 12)
         if cards:
-            card_list = ""
-            for card in cards[:10]:
+            # Create view with card selection buttons
+            view = discord.ui.View(timeout=180)
+            
+            # Add buttons for first 12 cards
+            for i, card in enumerate(cards[:12]):
                 rarity = (card.get('rarity') or 'common').lower()
-                rarity_emoji = {"common": "⚪", "rare": "�", "epic": "�", "legendary": "⭐", "mythic": "🔴"}.get(rarity, "⚪")
+                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity, "⚪")
                 card_name = card.get('name', 'Unknown')
                 card_title = card.get('title', '')
                 card_id = card.get('card_id', '')
                 
+                # Truncate long names for button
                 display = f"{card_name}"
                 if card_title:
                     display += f" - {card_title}"
+                if len(display) > 25:
+                    display = display[:22] + "..."
                 
-                # Truncate long names
-                if len(display) > 30:
-                    display = display[:27] + "..."
+                button_label = f"{rarity_emoji} {display}"
                 
-                card_list += f"{rarity_emoji} **{display}**\n   └ ID: `{card_id}`\n"
+                # Create button
+                button = discord.ui.Button(
+                    label=button_label,
+                    style=discord.ButtonStyle.secondary,
+                    custom_id=f"view_card_{card_id}"
+                )
+                
+                # Add click handler
+                async def button_callback(interaction: Interaction, card_id=card_id):
+                    await self.view_command(interaction, card_id)
+                
+                button.callback = button_callback
+                view.add_item(button)
             
-            if len(cards) > 10:
-                card_list += f"\n*...and {len(cards) - 10} more cards*"
+            # Create card list text
+            card_list = ""
+            for card in cards[:12]:
+                rarity = (card.get('rarity') or 'common').lower()
+                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity, "⚪")
+                card_name = card.get('name', 'Unknown')
+                card_id = card.get('card_id', '')
+                card_list += f"{rarity_emoji} **{card_name}** - `{card_id}`\n"
+            
+            if len(cards) > 12:
+                card_list += f"\n*...and {len(cards) - 12} more cards (use `/view <card_id>` for others)*"
             
             embed.add_field(
-                name="� Your Cards",
+                name="🎴 Click a card to view:",
                 value=card_list or "No cards yet!",
                 inline=False
             )
+            
+            embed.set_footer(text="Click any card button above to see the full card design!")
+            
+            await interaction.response.send_message(embed=embed, view=view)
+            return
         else:
             embed.add_field(
                 name="🎴 Your Cards",
