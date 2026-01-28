@@ -25,7 +25,7 @@ async def show_pack_preview_lastfm(
     """Show pack preview with re-roll and confirmation options"""
     
     try:
-        await confirm_interaction.response.defer(ephemeral=True)
+        # Don't defer - interaction might already be responded to
         
         # Define callbacks for preview view
         async def on_confirm(preview_interaction: Interaction, final_cards: list):
