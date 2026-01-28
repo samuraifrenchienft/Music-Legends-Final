@@ -607,23 +607,23 @@ class CardGameCog(Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Search for artist using music API manager (with VEVO filtering)
-            from music_api_manager import MusicAPIManager
-            api_manager = MusicAPIManager()
+            # Search for music videos on YouTube (the working way)
+            from youtube_integration import youtube_integration
+            videos = youtube_integration.search_music_video(artist_name, limit=10)
             
-            # Get artist data and tracks
-            result = await api_manager.search_artist_with_tracks(artist_name, limit=10)
-            
-            if not result:
-                await interaction.followup.send(f"❌ Could not find artist '{artist_name}'", ephemeral=True)
+            if not videos:
+                await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
                 return
             
-            artist = result['artist']
-            tracks = result['tracks']
+            # Create artist data from first video
+            artist = {
+                'name': artist_name,
+                'image_url': videos[0].get('thumbnail_url', '') if videos else '',
+                'popularity': 75,  # Default for pack creation
+                'followers': 1000000
+            }
             
-            if not tracks:
-                await interaction.followup.send(f"❌ Could not find tracks for {artist['name']}", ephemeral=True)
-                return
+            tracks = videos
             
             # Show song selection UI
             selection_embed = discord.Embed(
@@ -704,16 +704,19 @@ class CardGameCog(Cog):
                     else:
                         rarity = "common"
                     
-                    # Extract song title from track name
-                    track_name = track.get('name', '')
-                    song_title = track_name
+                    # Extract song title from video title
+                    video_title = track.get('title', '')
+                    # Remove artist name and clean up
+                    song_title = video_title.replace(artist['name'], '').replace('-', '').replace('(Official Music Video)', '').strip()
+                    if not song_title or len(song_title) < 2:
+                        song_title = video_title
                     
-                    # Create unique card ID
-                    import uuid
-                    card_id = f"{pack_id}_{str(uuid.uuid4())[:8]}"
+                    # Create card ID from video ID
+                    video_id = track.get('video_id', '')
+                    card_id = f"{pack_id}_{video_id}" if video_id else f"{pack_id}_{str(uuid.uuid4())[:8]}"
                     
-                    # Get image from artist data
-                    image_url = artist.get('image_xlarge') or artist.get('image_large') or artist.get('image_medium', '')
+                    # Get image from video thumbnail
+                    image_url = track.get('thumbnail_url', '') or artist.get('image_url', '')
                     
                     # Create card data
                     card_data = {
@@ -723,7 +726,7 @@ class CardGameCog(Cog):
                         'hero_artist': artist['name'],
                         'hero_song': song_title,
                         'rarity': rarity.lower(),
-                        'youtube_url': None,  # Last.fm doesn't have YouTube URLs
+                        'youtube_url': track.get('youtube_url', ''),
                         'image_url': image_url,
                         'impact': stats['impact'],
                         'skill': stats['skill'],
