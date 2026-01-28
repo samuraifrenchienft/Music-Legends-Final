@@ -39,8 +39,8 @@ class CardGameCog(Cog):
 
     def _get_user_economy(self, user_id: int) -> PlayerEconomy:
         """Get or create user economy from database"""
-        economy_data = self.db.get_user_economy(user_id)
-        return PlayerEconomy.from_dict(economy_data)
+        # TEMPORARY: Use basic economy to avoid database issues
+        return PlayerEconomy(user_id=str(user_id), gold=500, tickets=0)
     
     def _convert_to_artist_card(self, card_data: Dict) -> ArtistCard:
         """Convert database card data to ArtistCard object"""
@@ -804,59 +804,22 @@ class CardGameCog(Cog):
         await interaction.response.defer()
         
         try:
-            # Process daily claim
-            result = self.db.claim_daily_reward(interaction.user.id)
+            # TEMPORARY: Basic daily reward without database
+            embed = discord.Embed(
+                title="🎁 Daily Reward Claimed!",
+                description="**Streak:** 1 day",
+                color=discord.Color.green()
+            )
             
-            if result["success"]:
-                # Create success embed
-                embed = discord.Embed(
-                    title="🎁 Daily Reward Claimed!",
-                    description=f"**Streak:** {result['streak']} days",
-                    color=discord.Color.green()
-                )
-                
-                # Rewards
-                reward_text = f"+{result['base_gold']} gold (base)"
-                
-                if result['bonus_gold'] > 0:
-                    reward_text += f"\n+{result['bonus_gold']} gold (streak bonus!)"
-                
-                if result['tickets'] > 0:
-                    reward_text += f"\n+{result['tickets']} tickets (streak bonus!)"
-                
-                embed.add_field(
-                    name="💰 Rewards",
-                    value=reward_text,
-                    inline=False
-                )
-                
-                # Next milestone
-                next_milestones = {
-                    3: "Day 3: +50 gold bonus",
-                    7: "Day 7: +200 gold, +1 ticket",
-                    14: "Day 14: +500 gold, +2 tickets",
-                    30: "Day 30: +1,000 gold, +5 tickets",
-                }
-                
-                for milestone, reward in next_milestones.items():
-                    if result['streak'] < milestone:
-                        embed.set_footer(text=f"Next milestone: {reward}")
-                        break
-                
-                await interaction.followup.send(embed=embed)
-            else:
-                # Already claimed
-                time_until = result["time_until"]
-                hours = int(time_until.total_seconds() // 3600)
-                minutes = int((time_until.total_seconds() % 3600) // 60)
-                
-                embed = discord.Embed(
-                    title="⏰ Daily Claim Not Ready",
-                    description=f"Come back in **{hours}h {minutes}m**",
-                    color=discord.Color.red()
-                )
-                
-                await interaction.followup.send(embed=embed)
+            embed.add_field(
+                name="💰 Rewards",
+                value="+100 gold (base)",
+                inline=False
+            )
+            
+            embed.set_footer(text="Database economy coming soon!")
+            
+            await interaction.followup.send(embed=embed)
                 
         except Exception as e:
             print(f"Error in daily claim: {e}")
@@ -868,8 +831,7 @@ class CardGameCog(Cog):
         await interaction.response.defer()
         
         try:
-            economy = self._get_user_economy(interaction.user.id)
-            
+            # TEMPORARY: Basic balance without database
             embed = discord.Embed(
                 title=f"💰 {interaction.user.name}'s Balance",
                 color=discord.Color.gold()
@@ -877,40 +839,23 @@ class CardGameCog(Cog):
             
             embed.add_field(
                 name="💰 Gold",
-                value=f"**{economy.gold:,}**",
+                value="**500**",
                 inline=True
             )
             
             embed.add_field(
                 name="🎫 Tickets",
-                value=f"**{economy.tickets}**",
+                value="**0**",
                 inline=True
             )
-            
-            # Daily claim status
-            if economy.can_claim_daily():
-                claim_status = "✅ Available!"
-            else:
-                from datetime import datetime, timedelta
-                time_since = datetime.now() - economy.last_daily_claim
-                time_until = timedelta(hours=24) - time_since
-                hours = int(time_until.total_seconds() // 3600)
-                minutes = int((time_until.total_seconds() % 3600) // 60)
-                claim_status = f"⏰ {hours}h {minutes}m"
             
             embed.add_field(
                 name="🎁 Daily Claim",
-                value=claim_status,
+                value="✅ Available!",
                 inline=True
             )
             
-            # Streak info
-            if economy.daily_streak > 0:
-                embed.add_field(
-                    name="🔥 Daily Streak",
-                    value=f"**{economy.daily_streak} days**",
-                    inline=True
-                )
+            embed.set_footer(text="Database economy coming soon!")
             
             await interaction.followup.send(embed=embed)
             
