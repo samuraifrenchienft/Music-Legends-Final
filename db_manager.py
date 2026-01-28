@@ -18,12 +18,10 @@ class DatabaseManager:
         if self._engine is not None:
             return
 
-        # Use Railway persistent storage or fallback to local
+        # Use working directory on Railway (no /data permissions)
         if os.getenv("RAILWAY_ENVIRONMENT"):
-            # Railway persistent volume
-            database_url = "sqlite+aiosqlite:////data/music_legends.db"
-            # Ensure directory exists
-            os.makedirs("/data", exist_ok=True)
+            # Use working directory instead of /data
+            database_url = "sqlite+aiosqlite:///music_legends.db"
         else:
             # Local development
             database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///music_legends.db")
@@ -38,7 +36,7 @@ class DatabaseManager:
             
             print(f"🗄️ Database initialized: {database_url}")
             if os.getenv("RAILWAY_ENVIRONMENT"):
-                print("📁 Using Railway persistent storage (/data/music_legends.db)")
+                print("📁 Using working directory on Railway")
             else:
                 print("💻 Using local database")
         except Exception as e:
@@ -83,12 +81,9 @@ class DatabaseManager:
         """Create marketplace table if it doesn't exist"""
         import sqlite3
         if os.getenv("RAILWAY_ENVIRONMENT"):
-            db_path = "/data/music_legends.db"
+            db_path = "music_legends.db"  # Working directory
         else:
             db_path = "music_legends.db"
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
         try:
             with sqlite3.connect(db_path) as conn:

@@ -9,13 +9,8 @@ class MarketplaceCommands(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        # Use correct database path for Railway persistence
-        import os
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            db_path = "/data/music_legends.db"
-        else:
-            db_path = "music_legends.db"
-        self.db_path = db_path
+        # Use working directory for database
+        self.db_path = "music_legends.db"
     
     @app_commands.command(name="market", description="View the card marketplace")
     async def market_command(self, interaction: Interaction):

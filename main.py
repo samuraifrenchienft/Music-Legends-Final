@@ -55,10 +55,9 @@ class Bot(commands.Bot):
         # Initialize database with persistent storage
         from db_manager import db_manager
         
-        # Ensure /data directory exists on Railway
+        # Use working directory for database on Railway
         if os.getenv("RAILWAY_ENVIRONMENT"):
-            os.makedirs("/data", exist_ok=True)
-            print("📁 Ensured /data directory exists")
+            print("📁 Using working directory for database storage")
         
         db_manager.init_engine()
         
