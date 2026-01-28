@@ -57,7 +57,6 @@ class Bot(commands.Bot):
         
         # Ensure /data directory exists on Railway
         if os.getenv("RAILWAY_ENVIRONMENT"):
-            import os
             os.makedirs("/data", exist_ok=True)
             print("📁 Ensured /data directory exists")
         

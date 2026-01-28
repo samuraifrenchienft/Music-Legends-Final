@@ -88,7 +88,6 @@ class DatabaseManager:
             db_path = "music_legends.db"
         
         # Ensure directory exists
-        import os
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
         try:
