@@ -44,29 +44,7 @@ class YouTubeClient:
         """Check if API key is configured"""
         return bool(self.api_key)
     
-    def _mock_channel_search(self, name: str) -> Dict[str, Any]:
-        """Mock channel search when API key is not available"""
-        return {
-            "name": name,
-            "channel_id": f"mock_{name.lower().replace(' ', '_')}",
-            "image": "https://via.placeholder.com/800x800?text=Artist",
-            "description": f"Official {name} channel",
-            "published_at": "2020-01-01T00:00:00Z"
-        }
-    
-    def _mock_channel_stats(self, channel_id: str) -> Dict[str, Any]:
-        """Mock channel stats when API key is not available"""
-        import random
-        return {
-            "subs": random.randint(100000, 10000000),
-            "views": random.randint(1000000, 100000000),
-            "videos": random.randint(50, 500),
-            "topics": ["Music"],
-            "created_at": "2020-01-01T00:00:00Z",
-            "country": "US",
-            "custom_url": None
-        }
-    
+        
     async def search_channel(self, name: str) -> Optional[Dict[str, Any]]:
         """Search for a YouTube channel by name using async executor - REAL DATA ONLY"""
         if not self.youtube:
