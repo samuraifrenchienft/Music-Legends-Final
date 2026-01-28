@@ -54,6 +54,13 @@ class Bot(commands.Bot):
         
         # Initialize database with persistent storage
         from db_manager import db_manager
+        
+        # Ensure /data directory exists on Railway
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            import os
+            os.makedirs("/data", exist_ok=True)
+            print("📁 Ensured /data directory exists")
+        
         db_manager.init_engine()
         
         # Create marketplace table

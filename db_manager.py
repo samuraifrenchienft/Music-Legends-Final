@@ -22,22 +22,34 @@ class DatabaseManager:
         if os.getenv("RAILWAY_ENVIRONMENT"):
             # Railway persistent volume
             database_url = "sqlite+aiosqlite:////data/music_legends.db"
+            # Ensure directory exists
+            os.makedirs("/data", exist_ok=True)
         else:
             # Local development
             database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///music_legends.db")
         
-        # Create Async engine — nonblocking
-        self._engine = create_async_engine(
-            database_url,
-            future=True,
-            echo=False  # Set to True for SQL debugging
-        )
-        
-        print(f"🗄️ Database initialized: {database_url}")
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            print("📁 Using Railway persistent storage (/data/music_legends.db)")
-        else:
-            print("💻 Using local database")
+        try:
+            # Create Async engine — nonblocking
+            self._engine = create_async_engine(
+                database_url,
+                future=True,
+                echo=False  # Set to True for SQL debugging
+            )
+            
+            print(f"🗄️ Database initialized: {database_url}")
+            if os.getenv("RAILWAY_ENVIRONMENT"):
+                print("📁 Using Railway persistent storage (/data/music_legends.db)")
+            else:
+                print("💻 Using local database")
+        except Exception as e:
+            print(f"❌ Database initialization failed: {e}")
+            # Create a fallback in-memory database
+            self._engine = create_async_engine(
+                "sqlite+aiosqlite:///:memory:",
+                future=True,
+                echo=False
+            )
+            print("📁 Using fallback in-memory database")
 
         # Create session factory
         self._session_factory = async_sessionmaker(
@@ -74,23 +86,32 @@ class DatabaseManager:
             db_path = "/data/music_legends.db"
         else:
             db_path = "music_legends.db"
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS marketplace_listings (
-                    card_id TEXT PRIMARY KEY,
-                    seller_id INTEGER NOT NULL,
-                    price INTEGER NOT NULL,
-                    status TEXT DEFAULT 'active',
-                    listed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    buyer_id INTEGER,
-                    sold_at DATETIME,
-                    FOREIGN KEY (seller_id) REFERENCES users(user_id),
-                    FOREIGN KEY (buyer_id) REFERENCES users(user_id)
-                )
-            """)
-            conn.commit()
-            print("✅ Marketplace table created/verified")
+        
+        # Ensure directory exists
+        import os
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        
+        try:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS marketplace_listings (
+                        card_id TEXT PRIMARY KEY,
+                        seller_id INTEGER NOT NULL,
+                        price INTEGER NOT NULL,
+                        status TEXT DEFAULT 'active',
+                        listed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        buyer_id INTEGER,
+                        sold_at DATETIME,
+                        FOREIGN KEY (seller_id) REFERENCES users(user_id),
+                        FOREIGN KEY (buyer_id) REFERENCES users(user_id)
+                    )
+                """)
+                conn.commit()
+                print("✅ Marketplace table created/verified")
+        except Exception as e:
+            print(f"❌ Error creating marketplace table: {e}")
+            # Don't crash the bot - continue without marketplace
 
     async def close(self):
         """Close the database engine"""
