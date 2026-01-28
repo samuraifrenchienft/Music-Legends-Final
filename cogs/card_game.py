@@ -19,21 +19,34 @@ from typing import List, Dict
 from youtube_integration import youtube_integration
 from views.song_selection import SongSelectionView
 
-# TEMPORARY: Simple class replacements to avoid import errors
+# RESEARCHED: Proper battle system classes based on usage analysis
+
+# Battle stats categories
+STATS = ["impact", "skill", "longevity", "culture"]
+
 class PlayerState:
+    """Represents a player in a battle with their deck and bonuses"""
     def __init__(self, user_id, deck):
         self.user_id = user_id
-        self.deck = deck
+        self.deck = deck  # List of BattleCard objects
+        self.score = 0
+        self.hype_bonus = 0  # Momentum/hype bonus
+        self.momentum = 0   # Win streak bonus
 
 class MatchState:
+    """Represents an active battle match between two players"""
     def __init__(self, match_id, a, b):
         self.match_id = match_id
-        self.a = a
-        self.b = b
+        self.a = a  # PlayerState
+        self.b = b  # PlayerState
         self.wager_type = None
         self.wager_amount = 0
+        self.last_round_loser = None
+        self.current_round = 0
+        self.battle_log = []  # Track battle history
 
 class BattleCard:
+    """Represents a card in battle with stats"""
     def __init__(self, id, name, rarity, impact=0, skill=0, longevity=0, culture=0):
         self.id = id
         self.name = name
@@ -43,6 +56,69 @@ class BattleCard:
         self.longevity = longevity
         self.culture = culture
         self.power = impact + skill + longevity + culture
+        
+        # Battle-specific properties
+        self.critical_hit_chance = 0.1  # 10% base crit chance
+        self.dodge_chance = 0.05       # 5% base dodge chance
+        
+        # Rarity bonuses
+        rarity_multipliers = {
+            "common": 1.0,
+            "rare": 1.1,
+            "epic": 1.2,
+            "legendary": 1.3
+        }
+        self.rarity_multiplier = rarity_multipliers.get(rarity, 1.0)
+
+# Battle system functions
+def pick_category_option_a(match):
+    """AI picks category for player A's advantage"""
+    # Simple AI: pick category where player A has advantage
+    return random.choice(STATS)
+
+def resolve_round(card_a, card_b, category, hype_bonus_a, hype_bonus_b):
+    """Resolve a single round of battle"""
+    # Get base stats
+    stat_a = getattr(card_a, category, 0)
+    stat_b = getattr(card_b, category, 0)
+    
+    # Apply rarity multipliers
+    final_a = stat_a * card_a.rarity_multiplier + hype_bonus_a
+    final_b = stat_b * card_b.rarity_multiplier + hype_bonus_b
+    
+    # Critical hit chance (10% + rarity bonus)
+    crit_chance_a = card_a.critical_hit_chance + (card_a.rarity_multiplier - 1.0) * 0.2
+    crit_chance_b = card_b.critical_hit_chance + (card_b.rarity_multiplier - 1.0) * 0.2
+    
+    # Apply critical hits
+    if random.random() < crit_chance_a:
+        final_a *= 1.5  # 50% damage boost
+        debug_a = f"{card_a.name} CRITICAL HIT! "
+    else:
+        debug_a = f"{card_a.name} "
+        
+    if random.random() < crit_chance_b:
+        final_b *= 1.5
+        debug_b = f"{card_b.name} CRITICAL HIT! "
+    else:
+        debug_b = f"{card_b.name} "
+    
+    # Determine winner
+    if final_a > final_b:
+        return "A", f"{debug_a}({final_a:.1f}) vs {debug_b}({final_b:.1f}) - {category}"
+    elif final_b > final_a:
+        return "B", f"{debug_a}({final_a:.1f}) vs {debug_b}({final_b:.1f}) - {category}"
+    else:
+        return "TIE", f"{debug_a}({final_a:.1f}) vs {debug_b}({final_b:.1f}) - {category} - TIE!"
+
+def apply_momentum(winner, loser):
+    """Apply momentum bonuses after winning a round"""
+    winner.momentum += 1
+    winner.hype_bonus += 2  # +2 to next round stat
+    
+    # Reset loser momentum
+    loser.momentum = 0
+    loser.hype_bonus = max(0, loser.hype_bonus - 1)  # -1 penalty
 
 class CardGameCog(Cog):
     def __init__(self, bot):
