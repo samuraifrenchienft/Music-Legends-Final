@@ -20,6 +20,7 @@ from views.song_selection import SongSelectionView
 
 class CardGameCog(Cog):
     def __init__(self, bot):
+        print("🔥🔥🔥 CardGameCog INITIALIZING - COMMANDS SHOULD LOAD 🔥🔥🔥")
         self.bot = bot
         self.db = DatabaseManager()
         # Economy manager will be created per user
@@ -32,6 +33,7 @@ class CardGameCog(Cog):
         
         # Initialize database with sample cards
         self.card_manager.initialize_database_cards()
+        print("✅ CardGameCog LOADED SUCCESSFULLY - All commands should be available")
 
     def _get_user(self, user_id: int, username: str, discord_tag: str) -> Dict:
         """Get or create user in database"""

@@ -50,7 +50,7 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
-        print("🚀 Bot starting - loading cogs... [ECONOMY SYSTEM ADDED]")
+        print("🚀🚀🚀 EMERGENCY RESTART - COMMANDS NOT REFLECTING - FORCING RELOAD 🚀🚀🚀")
         
         # Initialize database with persistent storage
         from db_manager import db_manager
