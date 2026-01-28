@@ -155,6 +155,14 @@ class Bot(commands.Bot):
         print(f'Bot ID: {self.user.id}')
         print(f'Connected to {len(self.guilds)} servers')
         
+        # Sync commands globally
+        try:
+            print("🔄 Syncing commands with Discord...")
+            synced = await self.tree.sync()
+            print(f'✅ Synced {len(synced)} command(s)')
+        except Exception as e:
+            print(f'❌ Error syncing commands: {e}')
+        
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
 
     async def close(self):

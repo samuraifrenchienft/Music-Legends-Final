@@ -1272,4 +1272,7 @@ class CardGameCog(Cog):
         await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(CardGameCog(bot))
+    print("🔥🔥🔥 SETTING UP CARDCOG - REGISTERING COMMANDS 🔥🔥🔥")
+    cog = CardGameCog(bot)
+    await bot.add_cog(cog)
+    print("✅ CARDCOG ADDED SUCCESSFULLY - All commands should be registered")
