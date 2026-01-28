@@ -50,15 +50,11 @@ class YouTubeIntegration:
                     title = snippet['title'].lower()
                     channel = snippet['channelTitle'].lower()
                     
-                    # FILTER OUT VEVO and official content
-                    if ('vevo' in title or 
-                        'vevo' in channel or
-                        'official' in title or 
-                        'music video' in title or
-                        'lyric video' in title or
-                        'audio' in title and 'official' in title or
-                        'topic' in channel):
-                        print(f"🚫 Filtering out VEVO/official content: {snippet['title']}")
+                    # MINIMAL FILTERING - only filter obvious spam
+                    if ('topic' in channel or
+                        'audio library' in channel.lower() or
+                        'no copyright' in title.lower()):
+                        print(f"🚫 Filtering out spam: {snippet['title']}")
                         continue
                     
                     thumbnail_url = snippet['thumbnails']['high']['url'] if 'high' in snippet['thumbnails'] else snippet['thumbnails']['default']['url']
