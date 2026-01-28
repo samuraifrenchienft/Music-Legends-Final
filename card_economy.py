@@ -437,3 +437,26 @@ if __name__ == "__main__":
         success = PackPricing.purchase_pack(player, "community", "gold")
         print(f"Purchase successful: {success}")
         print(f"Gold after purchase: {player.gold}")
+
+# Additional classes needed by other cogs
+class CardEconomyManager:
+    """Economy manager for card operations"""
+    def __init__(self):
+        self.transactions = []
+    
+    def get_balance(self, user_id: int) -> int:
+        """Get user balance"""
+        return 500  # Default balance
+    
+    def add_transaction(self, user_id: int, amount: int, description: str):
+        """Add transaction record"""
+        self.transactions.append({
+            'user_id': user_id,
+            'amount': amount,
+            'description': description,
+            'timestamp': datetime.now()
+        })
+
+def get_economy_manager() -> CardEconomyManager:
+    """Get global economy manager instance"""
+    return CardEconomyManager()
