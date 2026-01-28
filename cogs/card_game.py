@@ -604,14 +604,13 @@ class CardGameCog(Cog):
     @app_commands.describe(pack_name="Name for your pack", artist_name="Main artist for the pack")
     async def create_pack(self, interaction: Interaction, pack_name: str, artist_name: str):
         """Create a new pack with artist cards - Interactive workflow"""
-        await interaction.response.defer(ephemeral=True)
         
         try:
             # Search for music videos on YouTube
             videos = youtube_integration.search_music_video(artist_name, limit=10)
             
             if not videos:
-                await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
+                await interaction.response.send_message(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
                 return
             
             # Create artist data from first video
@@ -656,13 +655,13 @@ class CardGameCog(Cog):
             
             # Show selection view
             view = SongSelectionView(tracks, max_selections=5, callback=on_songs_selected)
-            await interaction.followup.send(embed=selection_embed, view=view, ephemeral=True)
+            await interaction.response.send_message(embed=selection_embed, view=view, ephemeral=True)
                 
         except Exception as e:
             print(f"❌ Error creating pack: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
     
     async def _finalize_pack_creation(self, interaction: Interaction, pack_name: str, artist: Dict, selected_tracks: List[Dict], creator_id: int):
         """Finalize pack creation after song selection"""
@@ -676,7 +675,7 @@ class CardGameCog(Cog):
             )
             
             if not pack_id:
-                await interaction.followup.send("❌ Failed to create pack in database", ephemeral=True)
+                await interaction.response.send_message("❌ Failed to create pack in database", ephemeral=True)
                 return
             
             # Generate cards for each selected track
@@ -801,13 +800,13 @@ class CardGameCog(Cog):
             
             embed.set_footer(text=f"Use /packs to browse marketplace | Use /collection to see your cards")
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
                 
         except Exception as e:
             print(f"❌ Error finalizing pack: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
 
     @commands.Cog.listener()
