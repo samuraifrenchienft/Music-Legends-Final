@@ -25,7 +25,8 @@ async def show_pack_preview_lastfm(
     """Show pack preview with re-roll and confirmation options"""
     
     try:
-        # Don't defer - interaction might already be responded to
+        # Interaction is already deferred from song selection button
+        # Use followup.send directly
         
         # Define callbacks for preview view
         async def on_confirm(preview_interaction: Interaction, final_cards: list):
