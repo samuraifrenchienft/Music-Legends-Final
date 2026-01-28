@@ -1136,10 +1136,16 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     print(f"🔧 DEV PANEL: 🖼️ ALSO SET THUMBNAIL")
                 else:
                     print(f"🔧 DEV PANEL: ❌ NO IMAGES FOUND for {artist_data.get('name')}")
+                    # FORCE TEST IMAGE to verify embed works
+                    test_image = "https://i.imgur.com/3Z1A6Qx.png"  # Generic test image
+                    preview_embed.set_image(url=test_image)
+                    preview_embed.set_thumbnail(url=test_image)
+                    print(f"🔧 DEV PANEL: 🧪 FORCED TEST IMAGE: {test_image}")
+                    
                     # Add a placeholder field
                     preview_embed.add_field(
                         name="🖼️ Image Status",
-                        value="❌ No artist image found - will use YouTube fallback",
+                        value="❌ No artist image found - using TEST IMAGE to verify embed works",
                         inline=False
                     )
                 
