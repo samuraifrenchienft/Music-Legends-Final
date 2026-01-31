@@ -1,0 +1,344 @@
+{
+  "packs": [
+    {
+      "name": "Hip Hop Legends Vol. 1",
+      "description": "Classic hip hop artists that defined the genre",
+      "creator_id": 0,
+      "price_cents": 699,
+      "cards": [
+        {
+          "name": "Kendrick Lamar",
+          "title": "HUMBLE.",
+          "rarity": "legendary",
+          "youtube_url": "https://youtube.com/watch?v=tvTRZJ-4EyI",
+          "image_url": "https://i.ytimg.com/vi/tvTRZJ-4EyI/maxresdefault.jpg",
+          "impact": 90,
+          "skill": 92,
+          "longevity": 88,
+          "culture": 91,
+          "hype": 89
+        },
+        {
+          "name": "Drake",
+          "title": "God's Plan",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=xpVfcZ0ZcFM",
+          "image_url": "https://i.ytimg.com/vi/xpVfcZ0ZcFM/maxresdefault.jpg",
+          "impact": 85,
+          "skill": 82,
+          "longevity": 80,
+          "culture": 86,
+          "hype": 88
+        },
+        {
+          "name": "J. Cole",
+          "title": "Middle Child",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=WILNIXZr2oc",
+          "image_url": "https://i.ytimg.com/vi/WILNIXZr2oc/maxresdefault.jpg",
+          "impact": 82,
+          "skill": 85,
+          "longevity": 78,
+          "culture": 80,
+          "hype": 81
+        },
+        {
+          "name": "Travis Scott",
+          "title": "SICKO MODE",
+          "rarity": "rare",
+          "youtube_url": "https://youtube.com/watch?v=6ONRf7h3Mdk",
+          "image_url": "https://i.ytimg.com/vi/6ONRf7h3Mdk/maxresdefault.jpg",
+          "impact": 78,
+          "skill": 75,
+          "longevity": 72,
+          "culture": 79,
+          "hype": 85
+        },
+        {
+          "name": "Lil Baby",
+          "title": "Drip Too Hard",
+          "rarity": "common",
+          "youtube_url": "https://youtube.com/watch?v=tFrTf_-n7dE",
+          "image_url": "https://i.ytimg.com/vi/tFrTf_-n7dE/maxresdefault.jpg",
+          "impact": 65,
+          "skill": 60,
+          "longevity": 58,
+          "culture": 62,
+          "hype": 70
+        }
+      ]
+    },
+    {
+      "name": "Pop Hits 2024",
+      "description": "Chart-topping pop songs from 2024",
+      "creator_id": 0,
+      "price_cents": 699,
+      "cards": [
+        {
+          "name": "The Weeknd",
+          "title": "Blinding Lights",
+          "rarity": "legendary",
+          "youtube_url": "https://youtube.com/watch?v=4NRXx6U8ABQ",
+          "image_url": "https://i.ytimg.com/vi/4NRXx6U8ABQ/maxresdefault.jpg",
+          "impact": 88,
+          "skill": 85,
+          "longevity": 90,
+          "culture": 87,
+          "hype": 86
+        },
+        {
+          "name": "Dua Lipa",
+          "title": "Levitating",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=TUVcZfQe-Kw",
+          "image_url": "https://i.ytimg.com/vi/TUVcZfQe-Kw/maxresdefault.jpg",
+          "impact": 80,
+          "skill": 78,
+          "longevity": 75,
+          "culture": 82,
+          "hype": 84
+        },
+        {
+          "name": "Bruno Mars",
+          "title": "Leave The Door Open",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=adLGHcj_fmA",
+          "image_url": "https://i.ytimg.com/vi/adLGHcj_fmA/maxresdefault.jpg",
+          "impact": 82,
+          "skill": 88,
+          "longevity": 80,
+          "culture": 85,
+          "hype": 79
+        },
+        {
+          "name": "Olivia Rodrigo",
+          "title": "good 4 u",
+          "rarity": "rare",
+          "youtube_url": "https://youtube.com/watch?v=gNi_6U5Pm_o",
+          "image_url": "https://i.ytimg.com/vi/gNi_6U5Pm_o/maxresdefault.jpg",
+          "impact": 75,
+          "skill": 72,
+          "longevity": 70,
+          "culture": 78,
+          "hype": 82
+        },
+        {
+          "name": "Ed Sheeran",
+          "title": "Shape of You",
+          "rarity": "common",
+          "youtube_url": "https://youtube.com/watch?v=JGwWNGJdvx8",
+          "image_url": "https://i.ytimg.com/vi/JGwWNGJdvx8/maxresdefault.jpg",
+          "impact": 70,
+          "skill": 68,
+          "longevity": 72,
+          "culture": 65,
+          "hype": 68
+        }
+      ]
+    },
+    {
+      "name": "Rock Classics",
+      "description": "Timeless rock anthems",
+      "creator_id": 0,
+      "price_cents": 799,
+      "cards": [
+        {
+          "name": "Queen",
+          "title": "Bohemian Rhapsody",
+          "rarity": "legendary",
+          "youtube_url": "https://youtube.com/watch?v=fJ9rUzIMcZQ",
+          "image_url": "https://i.ytimg.com/vi/fJ9rUzIMcZQ/maxresdefault.jpg",
+          "impact": 92,
+          "skill": 90,
+          "longevity": 92,
+          "culture": 92,
+          "hype": 88
+        },
+        {
+          "name": "Led Zeppelin",
+          "title": "Stairway to Heaven",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=QkF3oxziUI4",
+          "image_url": "https://i.ytimg.com/vi/QkF3oxziUI4/maxresdefault.jpg",
+          "impact": 90,
+          "skill": 92,
+          "longevity": 90,
+          "culture": 88,
+          "hype": 82
+        },
+        {
+          "name": "Pink Floyd",
+          "title": "Comfortably Numb",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=_FrOQC-zEog",
+          "image_url": "https://i.ytimg.com/vi/_FrOQC-zEog/maxresdefault.jpg",
+          "impact": 88,
+          "skill": 90,
+          "longevity": 88,
+          "culture": 85,
+          "hype": 80
+        },
+        {
+          "name": "AC/DC",
+          "title": "Back In Black",
+          "rarity": "rare",
+          "youtube_url": "https://youtube.com/watch?v=pAgnJDJN4VA",
+          "image_url": "https://i.ytimg.com/vi/pAgnJDJN4VA/maxresdefault.jpg",
+          "impact": 85,
+          "skill": 82,
+          "longevity": 85,
+          "culture": 80,
+          "hype": 78
+        },
+        {
+          "name": "The Beatles",
+          "title": "Hey Jude",
+          "rarity": "rare",
+          "youtube_url": "https://youtube.com/watch?v=A_MjCqQoLLA",
+          "image_url": "https://i.ytimg.com/vi/A_MjCqQoLLA/maxresdefault.jpg",
+          "impact": 88,
+          "skill": 85,
+          "longevity": 90,
+          "culture": 92,
+          "hype": 75
+        }
+      ]
+    },
+    {
+      "name": "R&B Soul Pack",
+      "description": "Smooth R&B and soul vocals",
+      "creator_id": 0,
+      "price_cents": 699,
+      "cards": [
+        {
+          "name": "Beyoncé",
+          "title": "Halo",
+          "rarity": "legendary",
+          "youtube_url": "https://youtube.com/watch?v=bnVUHWCynig",
+          "image_url": "https://i.ytimg.com/vi/bnVUHWCynig/maxresdefault.jpg",
+          "impact": 90,
+          "skill": 88,
+          "longevity": 85,
+          "culture": 92,
+          "hype": 87
+        },
+        {
+          "name": "Frank Ocean",
+          "title": "Thinkin Bout You",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=XXb8WgpXdU8",
+          "image_url": "https://i.ytimg.com/vi/XXb8WgpXdU8/maxresdefault.jpg",
+          "impact": 82,
+          "skill": 85,
+          "longevity": 80,
+          "culture": 88,
+          "hype": 78
+        },
+        {
+          "name": "SZA",
+          "title": "Kill Bill",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=b8akHnYq-6g",
+          "image_url": "https://i.ytimg.com/vi/b8akHnYq-6g/maxresdefault.jpg",
+          "impact": 78,
+          "skill": 80,
+          "longevity": 75,
+          "culture": 82,
+          "hype": 85
+        },
+        {
+          "name": "H.E.R.",
+          "title": "Best Part",
+          "rarity": "rare",
+          "youtube_url": "https://youtube.com/watch?v=6pnTg5qBcw8",
+          "image_url": "https://i.ytimg.com/vi/6pnTg5qBcw8/maxresdefault.jpg",
+          "impact": 72,
+          "skill": 78,
+          "longevity": 70,
+          "culture": 75,
+          "hype": 73
+        },
+        {
+          "name": "Daniel Caesar",
+          "title": "Get You",
+          "rarity": "common",
+          "youtube_url": "https://youtube.com/watch?v=uQFVqltOXRg",
+          "image_url": "https://i.ytimg.com/vi/uQFVqltOXRg/maxresdefault.jpg",
+          "impact": 68,
+          "skill": 72,
+          "longevity": 65,
+          "culture": 70,
+          "hype": 70
+        }
+      ]
+    },
+    {
+      "name": "EDM Bangers",
+      "description": "Electronic dance music hits",
+      "creator_id": 0,
+      "price_cents": 699,
+      "cards": [
+        {
+          "name": "Calvin Harris",
+          "title": "Summer",
+          "rarity": "legendary",
+          "youtube_url": "https://youtube.com/watch?v=ebXbLfLACGM",
+          "image_url": "https://i.ytimg.com/vi/ebXbLfLACGM/maxresdefault.jpg",
+          "impact": 85,
+          "skill": 82,
+          "longevity": 80,
+          "culture": 78,
+          "hype": 90
+        },
+        {
+          "name": "Marshmello",
+          "title": "Happier",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=m7Bc3pLyij0",
+          "image_url": "https://i.ytimg.com/vi/m7Bc3pLyij0/maxresdefault.jpg",
+          "impact": 78,
+          "skill": 75,
+          "longevity": 72,
+          "culture": 75,
+          "hype": 85
+        },
+        {
+          "name": "The Chainsmokers",
+          "title": "Closer",
+          "rarity": "epic",
+          "youtube_url": "https://youtube.com/watch?v=PT2_F-1esPk",
+          "image_url": "https://i.ytimg.com/vi/PT2_F-1esPk/maxresdefault.jpg",
+          "impact": 80,
+          "skill": 76,
+          "longevity": 75,
+          "culture": 77,
+          "hype": 82
+        },
+        {
+          "name": "Kygo",
+          "title": "Firestone",
+          "rarity": "rare",
+          "youtube_url": "https://youtube.com/watch?v=9Sc-ir2UwGU",
+          "image_url": "https://i.ytimg.com/vi/9Sc-ir2UwGU/maxresdefault.jpg",
+          "impact": 72,
+          "skill": 70,
+          "longevity": 68,
+          "culture": 70,
+          "hype": 78
+        },
+        {
+          "name": "Alan Walker",
+          "title": "Faded",
+          "rarity": "common",
+          "youtube_url": "https://youtube.com/watch?v=60ItHLz5WEA",
+          "image_url": "https://i.ytimg.com/vi/60ItHLz5WEA/maxresdefault.jpg",
+          "impact": 70,
+          "skill": 68,
+          "longevity": 65,
+          "culture": 68,
+          "hype": 75
+        }
+      ]
+    }
+  ]
+}

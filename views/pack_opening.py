@@ -8,6 +8,7 @@ import discord
 from discord import Interaction
 import asyncio
 from typing import List, Dict
+from services.image_cache import safe_image
 
 
 class SkipView(discord.ui.View):
@@ -135,9 +136,10 @@ class PackOpeningAnimator:
         power_text = f"💪 **{power}** Power"
         embed.add_field(name="⚡ Overall", value=power_text, inline=True)
         
-        # Image if available
+        # Image if available - use safe_image to validate and get fallback
         if card.get('image_url'):
-            embed.set_thumbnail(url=card['image_url'])
+            safe_url = safe_image(card['image_url'])
+            embed.set_image(url=safe_url)  # Use set_image for full-size instead of thumbnail
         
         # Progress footer
         embed.set_footer(text=f"Opening pack... {card_number}/{total_cards} cards revealed")

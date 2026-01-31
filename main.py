@@ -97,6 +97,7 @@ class Bot(commands.Bot):
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
             'cogs.marketplace',               # Marketplace commands
             'cogs.cosmetic_shop',             # Cosmetic shop and customization
+            'cogs.admin_bulk_import',         # Admin bulk pack import commands
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")

@@ -1,0 +1,422 @@
+# -*- coding: utf-8 -*-
+"""
+Admin Bulk Pack Import Cog
+Provides commands for importing packs in bulk from JSON files
+"""
+
+import discord
+from discord.ext import commands
+from discord import Interaction, app_commands
+from database import DatabaseManager
+import json
+import uuid
+from typing import List, Dict, Optional
+import asyncio
+
+class AdminBulkImportCog(commands.Cog):
+    """Admin commands for bulk pack creation"""
+    
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.db = DatabaseManager()
+    
+    @app_commands.command(name="import_packs", description="[ADMIN] Import packs from JSON file")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def import_packs(self, interaction: Interaction, file: discord.Attachment):
+        """Import multiple packs from a JSON file
+        
+        Args:
+            file: JSON file containing pack data
+        """
+        await interaction.response.defer(ephemeral=True)
+        
+        # Validate file type
+        if not file.filename.endswith('.json'):
+            await interaction.followup.send(
+                "❌ **Error:** File must be a JSON file (.json extension)",
+                ephemeral=True
+            )
+            return
+        
+        # Download and parse JSON
+        try:
+            file_content = await file.read()
+            data = json.loads(file_content.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            await interaction.followup.send(
+                f"❌ **JSON Parse Error:** Invalid JSON format\n```{str(e)}```",
+                ephemeral=True
+            )
+            return
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ **Error:** Failed to read file\n```{str(e)}```",
+                ephemeral=True
+            )
+            return
+        
+        # Validate JSON structure
+        validation_result = self._validate_json_structure(data)
+        if not validation_result['valid']:
+            error_msg = "\n".join([f"• {err}" for err in validation_result['errors']])
+            await interaction.followup.send(
+                f"❌ **Validation Failed:**\n{error_msg}",
+                ephemeral=True
+            )
+            return
+        
+        # Import packs
+        packs_data = data.get('packs', [])
+        results = {
+            'success': [],
+            'failed': []
+        }
+        
+        for pack_data in packs_data:
+            try:
+                pack_id = await self._create_pack_from_data(pack_data, interaction.user.id)
+                results['success'].append({
+                    'name': pack_data['name'],
+                    'pack_id': pack_id
+                })
+            except Exception as e:
+                results['failed'].append({
+                    'name': pack_data.get('name', 'Unknown'),
+                    'error': str(e)
+                })
+        
+        # Create response embed
+        embed = discord.Embed(
+            title="📦 Bulk Pack Import Results",
+            color=discord.Color.green() if len(results['failed']) == 0 else discord.Color.orange()
+        )
+        
+        if results['success']:
+            success_text = "\n".join([f"✅ **{p['name']}** (`{p['pack_id'][:8]}...`)" for p in results['success']])
+            embed.add_field(
+                name=f"✅ Successfully Imported ({len(results['success'])})",
+                value=success_text[:1024],  # Discord field limit
+                inline=False
+            )
+        
+        if results['failed']:
+            failed_text = "\n".join([f"❌ **{p['name']}**: {p['error']}" for p in results['failed']])
+            embed.add_field(
+                name=f"❌ Failed ({len(results['failed'])})",
+                value=failed_text[:1024],  # Discord field limit
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Total: {len(packs_data)} packs processed")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    def _validate_json_structure(self, data: dict) -> Dict[str, any]:
+        """Validate the JSON structure matches expected schema"""
+        errors = []
+        
+        if not isinstance(data, dict):
+            errors.append("Root must be a JSON object")
+            return {'valid': False, 'errors': errors}
+        
+        if 'packs' not in data:
+            errors.append("Missing 'packs' array in root object")
+            return {'valid': False, 'errors': errors}
+        
+        if not isinstance(data['packs'], list):
+            errors.append("'packs' must be an array")
+            return {'valid': False, 'errors': errors}
+        
+        if len(data['packs']) == 0:
+            errors.append("'packs' array is empty")
+            return {'valid': False, 'errors': errors}
+        
+        # Validate each pack
+        for i, pack in enumerate(data['packs']):
+            pack_errors = self._validate_pack_data(pack, i)
+            errors.extend(pack_errors)
+        
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors
+        }
+    
+    def _validate_pack_data(self, pack: dict, index: int) -> List[str]:
+        """Validate a single pack's data structure"""
+        errors = []
+        prefix = f"Pack {index + 1}"
+        
+        # Required fields
+        if 'name' not in pack:
+            errors.append(f"{prefix}: Missing 'name' field")
+        elif not isinstance(pack['name'], str) or len(pack['name']) == 0:
+            errors.append(f"{prefix}: 'name' must be a non-empty string")
+        elif len(pack['name']) > 100:
+            errors.append(f"{prefix}: 'name' too long (max 100 chars)")
+        
+        if 'cards' not in pack:
+            errors.append(f"{prefix}: Missing 'cards' array")
+            return errors  # Can't validate cards if missing
+        
+        if not isinstance(pack['cards'], list):
+            errors.append(f"{prefix}: 'cards' must be an array")
+            return errors
+        
+        if len(pack['cards']) != 5:
+            errors.append(f"{prefix}: Must have exactly 5 cards (has {len(pack['cards'])})")
+        
+        # Validate each card
+        for j, card in enumerate(pack['cards']):
+            card_errors = self._validate_card_data(card, index, j)
+            errors.extend(card_errors)
+        
+        # Optional fields validation
+        if 'creator_id' in pack and not isinstance(pack['creator_id'], int):
+            errors.append(f"{prefix}: 'creator_id' must be an integer")
+        
+        if 'price_cents' in pack and not isinstance(pack['price_cents'], int):
+            errors.append(f"{prefix}: 'price_cents' must be an integer")
+        
+        if 'pack_size' in pack and pack['pack_size'] != 5:
+            errors.append(f"{prefix}: 'pack_size' must be 5 for this import")
+        
+        return errors
+    
+    def _validate_card_data(self, card: dict, pack_index: int, card_index: int) -> List[str]:
+        """Validate a single card's data structure"""
+        errors = []
+        prefix = f"Pack {pack_index + 1}, Card {card_index + 1}"
+        
+        # Required fields
+        if 'name' not in card or not card['name']:
+            errors.append(f"{prefix}: Missing 'name' field")
+        
+        if 'rarity' not in card:
+            errors.append(f"{prefix}: Missing 'rarity' field")
+        elif card['rarity'] not in ['common', 'rare', 'epic', 'legendary']:
+            errors.append(f"{prefix}: Invalid rarity '{card['rarity']}' (must be: common, rare, epic, legendary)")
+        
+        # Validate stats (if provided)
+        stats = ['impact', 'skill', 'longevity', 'culture', 'hype']
+        for stat in stats:
+            if stat in card:
+                if not isinstance(card[stat], int):
+                    errors.append(f"{prefix}: '{stat}' must be an integer")
+                elif card[stat] < 0 or card[stat] > 92:
+                    errors.append(f"{prefix}: '{stat}' must be between 0-92 (got {card[stat]})")
+        
+        return errors
+    
+    async def _create_pack_from_data(self, pack_data: dict, importer_user_id: int) -> str:
+        """Create a pack from validated JSON data
+        
+        Args:
+            pack_data: Validated pack data dictionary
+            importer_user_id: Discord user ID who is importing
+            
+        Returns:
+            pack_id: Created pack ID
+        """
+        # Generate pack ID
+        pack_id = str(uuid.uuid4())
+        
+        # Get creator ID (default to importer)
+        creator_id = pack_data.get('creator_id', importer_user_id)
+        
+        # Get pack details
+        name = pack_data['name']
+        description = pack_data.get('description', f"Imported pack - {name}")
+        pack_size = 5  # Fixed for this import
+        price_cents = pack_data.get('price_cents', 699)
+        
+        # Create pack in LIVE status (skip payment for admin import)
+        import sqlite3
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Initialize creator if not exists
+            cursor.execute("""
+                INSERT OR IGNORE INTO creator_pack_limits (creator_id)
+                VALUES (?)
+            """, (creator_id,))
+            
+            # Create pack with cards
+            cards_json = json.dumps(pack_data['cards'])
+            cursor.execute("""
+                INSERT INTO creator_packs 
+                (pack_id, creator_id, name, description, pack_size, status, cards_data, 
+                 published_at, price_cents, stripe_payment_id)
+                VALUES (?, ?, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, ?, 'ADMIN_IMPORT')
+            """, (pack_id, creator_id, name, description, pack_size, cards_json, price_cents))
+            
+            # Add cards to master card list
+            for card_data in pack_data['cards']:
+                # Generate card ID if not provided
+                if 'card_id' not in card_data:
+                    card_data['card_id'] = str(uuid.uuid4())
+                
+                # Set pack_id
+                card_data['pack_id'] = pack_id
+                
+                # Add to cards table
+                self.db.add_card_to_master(card_data)
+            
+            # Update creator limits
+            cursor.execute("""
+                UPDATE creator_pack_limits 
+                SET packs_published = packs_published + 1,
+                    last_pack_published = strftime('%s', 'now')
+                WHERE creator_id = ?
+            """, (creator_id,))
+            
+            conn.commit()
+        
+        return pack_id
+    
+    @app_commands.command(name="import_packs_help", description="[ADMIN] Show help for bulk pack import")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def import_packs_help(self, interaction: Interaction):
+        """Display help and example JSON for bulk pack import"""
+        await interaction.response.defer(ephemeral=True)
+        
+        help_embed = discord.Embed(
+            title="📦 Bulk Pack Import Guide",
+            description="Import multiple packs at once using JSON files",
+            color=discord.Color.blue()
+        )
+        
+        help_embed.add_field(
+            name="📝 JSON Format",
+            value=(
+                "```json\n"
+                '{\n'
+                '  "packs": [\n'
+                '    {\n'
+                '      "name": "Pack Name",\n'
+                '      "creator_id": 123456789,\n'
+                '      "price_cents": 699,\n'
+                '      "cards": [\n'
+                '        {\n'
+                '          "name": "Artist",\n'
+                '          "title": "Song",\n'
+                '          "rarity": "legendary",\n'
+                '          "impact": 88,\n'
+                '          "skill": 92,\n'
+                '          "longevity": 85,\n'
+                '          "culture": 95,\n'
+                '          "hype": 90\n'
+                '        }\n'
+                '      ]\n'
+                '    }\n'
+                '  ]\n'
+                '}\n'
+                "```"
+            ),
+            inline=False
+        )
+        
+        help_embed.add_field(
+            name="✅ Requirements",
+            value=(
+                "• Each pack must have exactly **5 cards**\n"
+                "• Valid rarities: `common`, `rare`, `epic`, `legendary`\n"
+                "• Stats must be 0-92 (creator pack limit)\n"
+                "• `name` and `rarity` are required for each card"
+            ),
+            inline=False
+        )
+        
+        help_embed.add_field(
+            name="📋 Optional Fields",
+            value=(
+                "• `creator_id` - defaults to your ID\n"
+                "• `description` - pack description\n"
+                "• `price_cents` - defaults to 699 ($6.99)\n"
+                "• `title`, `youtube_url`, `image_url` - for cards"
+            ),
+            inline=False
+        )
+        
+        help_embed.add_field(
+            name="🚀 Usage",
+            value=(
+                "1. Create a JSON file with your packs\n"
+                "2. Use `/import_packs file:<your_file.json>`\n"
+                "3. Packs are created in **LIVE** status immediately\n"
+                "4. View with `/packs` command"
+            ),
+            inline=False
+        )
+        
+        help_embed.set_footer(text="💡 Tip: Download the template with /create_pack_template")
+        
+        await interaction.followup.send(embed=help_embed, ephemeral=True)
+    
+    @app_commands.command(name="create_pack_template", description="[ADMIN] Generate a template JSON file for pack import")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def create_pack_template(self, interaction: Interaction, num_packs: int = 1):
+        """Generate a template JSON file
+        
+        Args:
+            num_packs: Number of pack templates to generate (1-10)
+        """
+        await interaction.response.defer(ephemeral=True)
+        
+        if num_packs < 1 or num_packs > 10:
+            await interaction.followup.send(
+                "❌ **Error:** Number of packs must be between 1-10",
+                ephemeral=True
+            )
+            return
+        
+        # Generate template
+        template = {
+            "packs": []
+        }
+        
+        for i in range(num_packs):
+            pack = {
+                "name": f"Example Pack {i + 1}",
+                "description": "Pack imported via bulk import",
+                "creator_id": interaction.user.id,
+                "price_cents": 699,
+                "cards": []
+            }
+            
+            # Add 5 example cards with different rarities
+            rarities = ['common', 'common', 'rare', 'epic', 'legendary']
+            for j, rarity in enumerate(rarities):
+                card = {
+                    "name": f"Artist {j + 1}",
+                    "title": f"Song Title {j + 1}",
+                    "rarity": rarity,
+                    "youtube_url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+                    "image_url": "https://via.placeholder.com/300",
+                    "impact": 60 + j * 7,
+                    "skill": 55 + j * 8,
+                    "longevity": 50 + j * 7,
+                    "culture": 58 + j * 8,
+                    "hype": 62 + j * 7
+                }
+                pack["cards"].append(card)
+            
+            template["packs"].append(pack)
+        
+        # Convert to pretty JSON
+        json_str = json.dumps(template, indent=2)
+        
+        # Create file
+        file = discord.File(
+            fp=discord.utils.io.BytesIO(json_str.encode('utf-8')),
+            filename='pack_template.json'
+        )
+        
+        await interaction.followup.send(
+            f"📄 **Template Generated**\n"
+            f"Created template with {num_packs} pack(s). Edit this file and import with `/import_packs`",
+            file=file,
+            ephemeral=True
+        )
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(AdminBulkImportCog(bot))

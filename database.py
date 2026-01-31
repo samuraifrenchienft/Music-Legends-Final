@@ -1056,6 +1056,82 @@ class DatabaseManager:
             columns = [desc[0] for desc in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
     
+    def bulk_create_packs(self, packs_data: List[Dict]) -> Dict[str, List]:
+        """Bulk insert multiple packs at once (optimized for admin imports)
+        
+        Args:
+            packs_data: List of pack dictionaries with structure:
+                {
+                    'pack_id': str,
+                    'creator_id': int,
+                    'name': str,
+                    'description': str,
+                    'pack_size': int,
+                    'price_cents': int,
+                    'cards': List[Dict]
+                }
+        
+        Returns:
+            Dictionary with 'success' and 'failed' pack IDs
+        """
+        results = {'success': [], 'failed': []}
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            for pack in packs_data:
+                try:
+                    pack_id = pack['pack_id']
+                    
+                    # Initialize creator if needed
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO creator_pack_limits (creator_id)
+                        VALUES (?)
+                    """, (pack['creator_id'],))
+                    
+                    # Insert pack
+                    cards_json = json.dumps(pack['cards'])
+                    cursor.execute("""
+                        INSERT INTO creator_packs 
+                        (pack_id, creator_id, name, description, pack_size, status, cards_data, 
+                         published_at, price_cents, stripe_payment_id)
+                        VALUES (?, ?, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, ?, 'ADMIN_IMPORT')
+                    """, (
+                        pack_id,
+                        pack['creator_id'],
+                        pack['name'],
+                        pack.get('description', ''),
+                        pack.get('pack_size', 5),
+                        cards_json,
+                        pack.get('price_cents', 699)
+                    ))
+                    
+                    # Insert cards
+                    for card in pack['cards']:
+                        if 'pack_id' not in card:
+                            card['pack_id'] = pack_id
+                        self.add_card_to_master(card)
+                    
+                    # Update creator stats
+                    cursor.execute("""
+                        UPDATE creator_pack_limits 
+                        SET packs_published = packs_published + 1,
+                            last_pack_published = strftime('%s', 'now')
+                        WHERE creator_id = ?
+                    """, (pack['creator_id'],))
+                    
+                    results['success'].append(pack_id)
+                    
+                except Exception as e:
+                    results['failed'].append({
+                        'pack_id': pack.get('pack_id', 'unknown'),
+                        'error': str(e)
+                    })
+            
+            conn.commit()
+        
+        return results
+    
     def purchase_pack(self, pack_id: str, buyer_id: int, payment_id: str, amount_cents: int) -> str:
         """Process pack purchase and generate cards with proper revenue tracking"""
         import uuid
