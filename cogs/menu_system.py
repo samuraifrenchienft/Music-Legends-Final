@@ -1106,9 +1106,9 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
                 )
                 
-                # Show Last.fm artist image with AGGRESSIVE fallbacks
+                # Show Last.fm artist image - SIMPLIFIED (no image preview in dev panel)
+                # Images will still work when opening packs
                 print(f"🔧 DEV PANEL: Available image keys: {[k for k in artist_data.keys() if 'image' in k.lower()]}")
-                print(f"🔧 DEV PANEL: All artist_data keys: {list(artist_data.keys())}")
                 
                 image_url = None
                 image_sizes = ['image_xlarge', 'image_large', 'image_medium', 'image']
@@ -1116,38 +1116,15 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 for size in image_sizes:
                     if artist_data.get(size):
                         image_url = artist_data[size]
-                        print(f"🔧 DEV PANEL: ✅ Found {size}: {image_url[:80]}...")
+                        print(f"🔧 DEV PANEL: ✅ Found {size}: {image_url[:80] if image_url else 'None'}...")
                         break
                 
-                # Try ANY field with 'image' in the name
-                if not image_url:
-                    for key, value in artist_data.items():
-                        if 'image' in key.lower() and value and isinstance(value, str):
-                            image_url = value
-                            print(f"🔧 DEV PANEL: ✅ Found fallback {key}: {image_url[:80]}...")
-                            break
-                
+                # Note: We don't show the image in the dev panel preview anymore
+                # Images will be properly displayed when opening packs
                 if image_url:
-                    preview_embed.set_image(url=image_url)
-                    print(f"🔧 DEV PANEL: 🖼️ SET IMAGE: {image_url}")
-                    
-                    # TEST: Also set as thumbnail to be safe
-                    preview_embed.set_thumbnail(url=image_url)
-                    print(f"🔧 DEV PANEL: 🖼️ ALSO SET THUMBNAIL")
+                    print(f"🔧 DEV PANEL: Image URL saved for cards: {image_url}")
                 else:
-                    print(f"🔧 DEV PANEL: ❌ NO IMAGES FOUND for {artist_data.get('name')}")
-                    # FORCE TEST IMAGE to verify embed works
-                    test_image = "https://i.imgur.com/3Z1A6Qx.png"  # Generic test image
-                    preview_embed.set_image(url=test_image)
-                    preview_embed.set_thumbnail(url=test_image)
-                    print(f"🔧 DEV PANEL: 🧪 FORCED TEST IMAGE: {test_image}")
-                    
-                    # Add a placeholder field
-                    preview_embed.add_field(
-                        name="🖼️ Image Status",
-                        value="❌ No artist image found - using TEST IMAGE to verify embed works",
-                        inline=False
-                    )
+                    print(f"🔧 DEV PANEL: No image found, will use YouTube fallback")
                 
                 # Show top tracks
                 tracks_text = "\n".join([

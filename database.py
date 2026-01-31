@@ -1045,9 +1045,9 @@ class DatabaseManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT p.*, u.username as creator_name
+                SELECT p.*, COALESCE(u.username, 'System') as creator_name
                 FROM creator_packs p
-                JOIN users u ON p.creator_id = u.user_id
+                LEFT JOIN users u ON p.creator_id = u.user_id
                 WHERE p.status = 'LIVE'
                 ORDER BY p.published_at DESC
                 LIMIT ?

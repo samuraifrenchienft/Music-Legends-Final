@@ -220,7 +220,7 @@ class PackOpeningAnimator:
                 inline=True
             )
         
-        embed.set_footer(text="Use /collection to view all your cards!")
+        embed.set_footer(text="Check your collection with the Collection button in the User Hub!")
         
         return embed
     
