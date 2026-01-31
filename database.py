@@ -599,10 +599,30 @@ class DatabaseManager:
                 return dict(zip(columns, user))
     
     def add_card_to_master(self, card_data: Dict) -> bool:
-        """Add a card to the master card list"""
+        """Add a card to the master card list with flexible field mapping"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                # Generate default battle stats if not provided
+                # If 'power' is provided but not individual stats, derive them
+                if 'power' in card_data and not card_data.get('impact'):
+                    base_stat = card_data['power'] // 4  # Distribute power across 4 stats
+                    card_data['impact'] = base_stat
+                    card_data['skill'] = base_stat
+                    card_data['longevity'] = base_stat
+                    card_data['culture'] = base_stat
+                
+                # Default hype to average of other stats if not provided
+                if not card_data.get('hype'):
+                    avg_stat = (
+                        card_data.get('impact', 0) + 
+                        card_data.get('skill', 0) + 
+                        card_data.get('longevity', 0) + 
+                        card_data.get('culture', 0)
+                    ) // 4
+                    card_data['hype'] = avg_stat
+                
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO cards 
@@ -611,19 +631,30 @@ class DatabaseManager:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        card_data['card_id'], card_data['name'], card_data.get('title'),
-                        card_data['rarity'], card_data.get('era'), card_data.get('variant'),
-                        card_data.get('impact', 0), card_data.get('skill', 0),
-                        card_data.get('longevity', 0), card_data.get('culture', 0),
-                        card_data.get('hype', 0), card_data.get('image_url'),
-                        card_data.get('spotify_url'), card_data.get('youtube_url'),
+                        card_data['card_id'], 
+                        card_data['name'], 
+                        card_data.get('title', ''),
+                        card_data['rarity'], 
+                        card_data.get('era'), 
+                        card_data.get('variant'),
+                        card_data.get('impact', 0), 
+                        card_data.get('skill', 0),
+                        card_data.get('longevity', 0), 
+                        card_data.get('culture', 0),
+                        card_data.get('hype', 0), 
+                        card_data.get('image_url'),
+                        card_data.get('spotify_url'), 
+                        card_data.get('youtube_url'),
                         card_data.get('type', card_data.get('card_type', 'artist'))
                     )
                 )
                 conn.commit()
                 return True
         except sqlite3.Error as e:
-            print(f"Error adding card: {e}")
+            print(f"❌ Error adding card to master: {e}")
+            print(f"   Card data: {card_data.get('card_id', 'unknown')} - {card_data.get('name', 'unknown')}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def add_card_to_collection(self, user_id: int, card_id: str, acquired_from: str = 'pack') -> bool:

@@ -1,6 +1,7 @@
 # examples/audit_usage.py
 # Usage examples for minimal audit logging system
 
+import json
 from models.audit_minimal import AuditLog
 
 def example_pack_opening():
@@ -156,7 +157,6 @@ def example_sql_queries():
     rows = cursor.fetchall()
     print(f"   Found {len(rows)} legendary creations:")
     for row in rows:
-        import json
         payload = json.loads(row[2]) if row[2] else {}
         print(f"   - {payload.get('card_name', 'Unknown')} ({payload.get('serial', 'Unknown')}) by user {row[0]}")
     

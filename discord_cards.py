@@ -6,6 +6,7 @@ Handles card creation, formatting, and display
 import discord
 from typing import Dict, Optional, List
 from datetime import datetime
+from services.image_cache import safe_image
 
 class ArtistCard:
     """
@@ -166,7 +167,10 @@ class ArtistCard:
         
         # Thumbnail
         if self.thumbnail:
-            embed.set_thumbnail(url=self.thumbnail)
+            safe_thumbnail = safe_image(self.thumbnail)
+            if safe_thumbnail != self.thumbnail:
+                print(f"🖼️ Using fallback image for card {self.card_id}: {self.thumbnail[:50]}...")
+            embed.set_thumbnail(url=safe_thumbnail)
         
         # Footer
         embed.set_footer(text=f"Card ID: {self.card_id}")

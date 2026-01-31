@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
 import uuid
+import json
 
 Base = declarative_base()
 
@@ -108,7 +109,6 @@ class DropSQLite(Base):
     @classmethod
     def create_drop(cls, session, card_ids, expires_minutes=30):
         """Create a new drop (SQLite version)"""
-        import json
         drop = cls(
             card_ids=json.dumps(card_ids),
             expires_at=datetime.utcnow() + timedelta(minutes=expires_minutes),
@@ -147,7 +147,6 @@ class DropSQLite(Base):
     
     def get_card_ids(self):
         """Get card IDs as list (SQLite version)"""
-        import json
         try:
             return json.loads(self.card_ids) if self.card_ids else []
         except:
@@ -155,7 +154,6 @@ class DropSQLite(Base):
     
     def set_card_ids(self, card_ids):
         """Set card IDs from list (SQLite version)"""
-        import json
         self.card_ids = json.dumps(card_ids)
 
 # Test function

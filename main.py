@@ -1,7 +1,13 @@
 import os
+import sys
 import discord
 from dotenv import load_dotenv
 from discord.ext import commands
+
+# Set UTF-8 encoding for Windows console
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
 # Load environment variables
 print("🔧 Loading environment variables...")

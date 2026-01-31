@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
+import json
 
 Base = declarative_base()
 
@@ -159,7 +160,6 @@ class AuditLogSQLite(Base):
     
     def get_payload(self):
         """Get payload as dictionary (SQLite version)"""
-        import json
         try:
             return json.loads(self.payload) if self.payload else {}
         except:
@@ -167,7 +167,6 @@ class AuditLogSQLite(Base):
     
     def set_payload(self, data):
         """Set payload from dictionary (SQLite version)"""
-        import json
         self.payload = json.dumps(data) if data else None
 
 # Test function

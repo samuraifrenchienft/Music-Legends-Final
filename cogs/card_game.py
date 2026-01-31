@@ -1,6 +1,7 @@
 import discord
 import os
 import sqlite3
+import json
 from discord.ext import commands
 from discord.ext.commands import Cog
 from discord import Interaction, app_commands, ui
@@ -13,61 +14,14 @@ from typing import List, Dict
 
 # Import required modules
 from discord_cards import ArtistCard, Pack, CardCollection
-from battle_engine import BattleEngine, BattleHistory
+from battle_engine import BattleEngine, BattleHistory, BattleWagerConfig, BattleCard as BattleCardWrapper, PlayerState as PlayerStateWrapper, MatchState as MatchStateWrapper, BattleManager, BattleStatus
 from card_economy import PlayerEconomy, EconomyDisplay
 from youtube_integration import youtube_integration
 from views.song_selection import SongSelectionView
+from services.image_cache import safe_image
 
-# RESEARCHED: Proper battle system classes based on usage analysis
-
-# Battle stats categories
+# Battle stats categories (for compatibility with existing code)
 STATS = ["impact", "skill", "longevity", "culture"]
-
-class PlayerState:
-    """Represents a player in a battle with their deck and bonuses"""
-    def __init__(self, user_id, deck):
-        self.user_id = user_id
-        self.deck = deck  # List of BattleCard objects
-        self.score = 0
-        self.hype_bonus = 0  # Momentum/hype bonus
-        self.momentum = 0   # Win streak bonus
-
-class MatchState:
-    """Represents an active battle match between two players"""
-    def __init__(self, match_id, a, b):
-        self.match_id = match_id
-        self.a = a  # PlayerState
-        self.b = b  # PlayerState
-        self.wager_type = None
-        self.wager_amount = 0
-        self.last_round_loser = None
-        self.current_round = 0
-        self.battle_log = []  # Track battle history
-
-class BattleCard:
-    """Represents a card in battle with stats"""
-    def __init__(self, id, name, rarity, impact=0, skill=0, longevity=0, culture=0):
-        self.id = id
-        self.name = name
-        self.rarity = rarity
-        self.impact = impact
-        self.skill = skill
-        self.longevity = longevity
-        self.culture = culture
-        self.power = impact + skill + longevity + culture
-        
-        # Battle-specific properties
-        self.critical_hit_chance = 0.1  # 10% base crit chance
-        self.dodge_chance = 0.05       # 5% base dodge chance
-        
-        # Rarity bonuses
-        rarity_multipliers = {
-            "common": 1.0,
-            "rare": 1.1,
-            "epic": 1.2,
-            "legendary": 1.3
-        }
-        self.rarity_multiplier = rarity_multipliers.get(rarity, 1.0)
 
 # Battle system functions
 def pick_category_option_a(match):
@@ -126,7 +80,7 @@ class CardGameCog(Cog):
         self.db = DatabaseManager()
         # Economy manager will be created per user
         self.card_manager = CardDataManager(self.db)
-        self.active_matches = {}  # match_id: MatchState
+        self.battle_manager = BattleManager()  # New battle management system
         
         # Dev user IDs from environment
         dev_ids = os.getenv("DEV_USER_IDS", "")
@@ -180,43 +134,13 @@ class CardGameCog(Cog):
             rarity=rarity
         )
 
-    def _convert_to_battle_card(self, card_data: Dict) -> BattleCard:
-        """Convert database card data to BattleCard object"""
-        # Generate battle stats from card power/rarity if not present
-        import random
+    def _convert_to_battle_card(self, card_data: Dict, owner_id: str, owner_name: str) -> BattleCardWrapper:
+        """Convert database card data to BattleCardWrapper object"""
+        # First create an ArtistCard
+        artist_card = self._convert_to_artist_card(card_data)
         
-        # Base stats from card power (if available) or defaults
-        base_power = card_data.get('power', 50)
-        
-        # Distribute power across stats with some randomness
-        impact = card_data.get('impact', random.randint(10, 30))
-        skill = card_data.get('skill', random.randint(10, 30))
-        longevity = card_data.get('longevity', random.randint(10, 30))
-        culture = card_data.get('culture', random.randint(10, 30))
-        
-        # Adjust based on rarity
-        rarity = card_data.get('rarity', 'common')
-        rarity_bonus = {
-            'common': 0,
-            'rare': 5,
-            'epic': 10,
-            'legendary': 15,
-            'mythic': 20
-        }.get(rarity, 0)
-        
-        # Apply rarity bonus to random stat
-        stats = [impact, skill, longevity, culture]
-        stats[random.randint(0, 3)] += rarity_bonus
-        
-        return BattleCard(
-            id=card_data['card_id'],
-            name=card_data['name'],
-            rarity=card_data['rarity'],
-            impact=stats[0],
-            skill=stats[1],
-            longevity=stats[2],
-            culture=stats[3]
-        )
+        # Then wrap it in a BattleCardWrapper
+        return BattleCardWrapper.from_artist_card(artist_card, owner_id, owner_name)
 
     # Card viewing removed - use /view from gameplay.py
 
@@ -386,21 +310,16 @@ class CardGameCog(Cog):
             await interaction.response.send_message(f"{opponent.name} doesn't have any cards to battle with!", ephemeral=True)
             return
 
-        # Create match with wager info
+        # Create match with new battle system
         match_id = str(uuid.uuid4())[:8]
-        player_a = PlayerState(
-            user_id=interaction.user.id, 
-            deck=[self._convert_to_battle_card(card) for card in challenger_deck]
+        match = self.battle_manager.create_match(
+            match_id=match_id,
+            player1_id=interaction.user.id,
+            player1_name=interaction.user.name,
+            player2_id=opponent.id,
+            player2_name=opponent.name,
+            wager_tier=wager
         )
-        player_b = PlayerState(
-            user_id=opponent.id, 
-            deck=[self._convert_to_battle_card(card) for card in challenged_deck]
-        )
-        
-        match = MatchState(match_id=match_id, a=player_a, b=player_b)
-        match.wager_type = wager
-        match.wager_amount = wager_amount
-        self.active_matches[match_id] = match
 
         embed = discord.Embed(
             title="⚔️ Battle Challenge!",
@@ -410,8 +329,9 @@ class CardGameCog(Cog):
         
         embed.add_field(
             name="💰 Wager",
-            value=f"**{wager.title()}**: {wager_amount} gold\n"
-                  f"Winner gets: {wager_amount + wager_config['win_bonus']} gold + {wager_config['win_xp']} XP",
+            value=f"**{match.wager_config['name']}**: {match.wager_config['wager_cost']} gold\n"
+                  f"Winner gets: {match.wager_config['winner_gold']} gold + {match.wager_config['winner_xp']} XP\n"
+                  f"Loser gets: {match.wager_config['loser_gold']} gold + {match.wager_config['loser_xp']} XP",
             inline=False
         )
         
@@ -432,246 +352,75 @@ class CardGameCog(Cog):
     @app_commands.command(name="battle_accept", description="Accept a battle challenge")
     @app_commands.describe(match_id="Match ID to accept")
     async def battle_accept(self, interaction: Interaction, match_id: str):
-        match = self.active_matches.get(match_id)
+        match = self.battle_manager.get_match(match_id)
         if not match:
             await interaction.response.send_message("Match not found!", ephemeral=True)
             return
 
-        if interaction.user.id not in [match.a.user_id, match.b.user_id]:
+        if interaction.user.id not in [match.player1.user_id, match.player2.user_id]:
             await interaction.response.send_message("You're not part of this match!", ephemeral=True)
             return
 
-        # Start the battle
-        await self._start_battle_round(interaction, match, 0)
-
-    async def _start_battle_round(self, interaction: Interaction, match: MatchState, round_index: int):
-        """Start a specific round of battle"""
-        if round_index >= 3:
-            await self._end_battle(interaction, match)
-            return
-
-        card_a = match.a.deck[round_index]
-        card_b = match.b.deck[round_index]
-
-        # Determine category
-        if round_index == 1 and match.last_round_loser:
-            # Round 2: loser chooses - for now, random
-            category = random.choice(STATS)
+        # Accept the battle
+        both_accepted = match.accept_battle(interaction.user.id)
+        
+        if both_accepted:
+            # Both players accepted - move to card selection
+            await self._start_card_selection(interaction, match)
         else:
-            category = pick_category_option_a(match)
+            await interaction.response.send_message(f"Battle accepted! Waiting for {match.player1.username if interaction.user.id == match.player2.user_id else match.player2.username} to accept...", ephemeral=True)
 
-        # Resolve round
-        winner, debug = resolve_round(
-            card_a, card_b, category, 
-            match.a.hype_bonus, match.b.hype_bonus
-        )
+    async def _start_card_selection(self, interaction: Interaction, match: MatchStateWrapper):
+        """Start card selection phase for both players"""
+        # Get each player's top card
+        challenger_card = self.db.get_user_deck(match.player1.user_id, 1)[0]
+        challenged_card = self.db.get_user_deck(match.player2.user_id, 1)[0]
+        
+        # Convert to battle cards
+        battle_card1 = self._convert_to_battle_card(challenger_card, match.player1.user_id, match.player1.username)
+        battle_card2 = self._convert_to_battle_card(challenged_card, match.player2.user_id, match.player2.username)
+        
+        # Set cards for both players
+        match.set_player_card(match.player1.user_id, battle_card1)
+        match.set_player_card(match.player2.user_id, battle_card2)
+        
+        # Execute the battle
+        await self._execute_battle(interaction, match)
 
-        # Apply momentum
-        if winner == "A":
-            match.a.score += 1
-            apply_momentum(match.a, match.b)
-            match.last_round_loser = match.b.user_id
-            winner_id = match.a.user_id
-            winner_name = "Player A"
+    async def _execute_battle(self, interaction: Interaction, match: MatchStateWrapper):
+        """Execute the battle between two players"""
+        # Get the battle cards
+        card1 = match.player1.card.card
+        card2 = match.player2.card.card
+        
+        # Execute battle using BattleEngine
+        result = BattleEngine.execute_battle(card1, card2, match.wager_tier)
+        
+        # Determine winner
+        if result["winner"] == 1:
+            winner_id = match.player1.user_id
+            is_tie = False
+        elif result["winner"] == 2:
+            winner_id = match.player2.user_id
+            is_tie = False
         else:
-            match.b.score += 1
-            apply_momentum(match.b, match.a)
-            match.last_round_loser = match.a.user_id
-            winner_id = match.b.user_id
-            winner_name = "Player B"
-
-        # Create result embed
-        embed = discord.Embed(
-            title=f"🎯 Round {round_index + 1} Results",
-            description=f"Category: **{category.title()}**",
-            color=discord.Color.gold()
+            winner_id = None
+            is_tie = True
+        
+        # Complete the match
+        match.complete_battle(winner_id, is_tie, result["power_difference"])
+        
+        # Create battle results embed
+        embed = BattleEngine.create_battle_embed(
+            result, 
+            match.player1.username, 
+            match.player2.username
         )
         
-        embed.add_field(
-            name=f"Card A: {card_a.name}",
-            value=f"Stat: {debug['a_stat']} + Bonus: {debug['a_hype_bonus']} = **{debug['a_power']}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name=f"Card B: {card_b.name}",
-            value=f"Stat: {debug['b_stat']} + Bonus: {debug['b_hype_bonus']} = **{debug['b_power']}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="Winner",
-            value=f"🏆 {winner_name}",
-            inline=False
-        )
-
-        embed.set_footer(text=f"Score: A={match.a.score} | B={match.b.score}")
-
         await interaction.response.send_message(embed=embed)
-
-        # Check for match end or continue
-        if match.a.score >= 2 or match.b.score >= 2:
-            await self._end_battle(interaction, match)
-        else:
-            # Auto-continue to next round for now
-            await self._start_battle_round(interaction, match, round_index + 1)
-
-    async def _end_battle(self, interaction: Interaction, match: MatchState):
-        """End the battle and distribute wager rewards"""
-        # TEMPORARY: Hardcoded battle rewards
-        from datetime import date
-        
-        is_tie = match.a.score == match.b.score
-        winner_id = None
-        loser_id = None
-        
-        if not is_tie:
-            winner_id = match.a.user_id if match.a.score > match.b.score else match.b.user_id
-            loser_id = match.b.user_id if match.a.score > match.b.score else match.a.user_id
-        
-        # Get wager info
-        wager_type = getattr(match, 'wager_type', 'casual')
-        wager_amount = getattr(match, 'wager_amount', 50)
-        wager_config = BATTLE_WAGERS.get(wager_type, BATTLE_WAGERS["casual"])
-        
-        # Calculate rewards
-        winner_gold = 0
-        winner_xp = 0
-        loser_gold = 0
-        loser_xp = 0
-        first_win_bonus = 0
-        
-        if is_tie:
-            # Tie - both get wager back + tie bonus
-            tie_gold = wager_config["tie_gold"]
-            tie_xp = wager_config["tie_xp"]
-            winner_gold = tie_gold  # Both players get this
-            winner_xp = tie_xp
-        else:
-            # Winner gets wager + bonus
-            win_rewards = calculate_battle_rewards(wager_type, "win")
-            winner_gold = win_rewards["gold"]
-            winner_xp = win_rewards["xp"]
-            
-            # Loser gets consolation
-            loss_rewards = calculate_battle_rewards(wager_type, "loss")
-            loser_gold = loss_rewards["gold"]
-            loser_xp = loss_rewards["xp"]
-        
-        # Apply rewards to database
-        import sqlite3
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            today = date.today().isoformat()
-            
-            if is_tie:
-                # Both players get tie rewards (wager returned)
-                for player_id in [match.a.user_id, match.b.user_id]:
-                    cursor.execute("""
-                        INSERT INTO user_inventory (user_id, gold, xp)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET
-                            gold = gold + ?,
-                            xp = xp + ?
-                    """, (player_id, winner_gold, winner_xp, winner_gold, winner_xp))
-            else:
-                # Check for first win bonus
-                cursor.execute("""
-                    SELECT first_win_today, last_first_win FROM user_inventory WHERE user_id = ?
-                """, (winner_id,))
-                first_win_row = cursor.fetchone()
-                
-                if first_win_row:
-                    first_win_claimed, last_first_win = first_win_row
-                    if last_first_win != today:
-                        first_win_bonus = FIRST_WIN_BONUS["gold"]
-                        winner_gold += first_win_bonus
-                        winner_xp += FIRST_WIN_BONUS["xp"]
-                else:
-                    first_win_bonus = FIRST_WIN_BONUS["gold"]
-                    winner_gold += first_win_bonus
-                    winner_xp += FIRST_WIN_BONUS["xp"]
-                
-                # Winner: add gold and XP, deduct wager already happened at accept
-                cursor.execute("""
-                    INSERT INTO user_inventory (user_id, gold, xp, first_win_today, last_first_win)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET
-                        gold = gold + ?,
-                        xp = xp + ?,
-                        first_win_today = 1,
-                        last_first_win = ?
-                """, (winner_id, winner_gold, winner_xp, today, winner_gold, winner_xp, today))
-                
-                # Loser: deduct wager, add consolation
-                net_loss = wager_amount - loser_gold
-                cursor.execute("""
-                    INSERT INTO user_inventory (user_id, gold, xp)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET
-                        gold = MAX(0, gold - ?),
-                        xp = xp + ?
-                """, (loser_id, 0, loser_xp, net_loss, loser_xp))
-            
-            conn.commit()
-        
-        # Record match in database
-        match_data = {
-            'match_id': match.match_id,
-            'player_a_id': match.a.user_id,
-            'player_b_id': match.b.user_id,
-            'winner_id': winner_id,
-            'final_score_a': match.a.score,
-            'final_score_b': match.b.score,
-            'match_type': wager_type
-        }
-        self.db.record_match(match_data)
-        
-        # Create result embed
-        if is_tie:
-            embed = discord.Embed(
-                title="🤝 Battle Tied!",
-                description=f"Both players fought to a draw!",
-                color=discord.Color.yellow()
-            )
-            embed.add_field(name="Final Score", value=f"A: {match.a.score} | B: {match.b.score}", inline=False)
-            embed.add_field(
-                name="💰 Rewards (Each)",
-                value=f"Gold: +{winner_gold} (wager returned)\nXP: +{winner_xp}",
-                inline=False
-            )
-        else:
-            winner_mention = f"<@{winner_id}>"
-            loser_mention = f"<@{loser_id}>"
-            
-            embed = discord.Embed(
-                title="🏆 Battle Complete!",
-                description=f"**Winner:** {winner_mention}",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Final Score", value=f"A: {match.a.score} | B: {match.b.score}", inline=False)
-            
-            winner_reward_text = f"💰 Gold: +{winner_gold}"
-            if first_win_bonus > 0:
-                winner_reward_text += f" (includes +{first_win_bonus} first win bonus!)"
-            winner_reward_text += f"\n⭐ XP: +{winner_xp}"
-            
-            embed.add_field(
-                name=f"🎉 Winner Rewards",
-                value=winner_reward_text,
-                inline=True
-            )
-            
-            embed.add_field(
-                name=f"😢 Loser",
-                value=f"💰 Gold: -{wager_amount - loser_gold} (lost wager)\n⭐ XP: +{loser_xp} (consolation)",
-                inline=True
-            )
-        
-        await interaction.followup.send(embed=embed)
         
         # Clean up match
-        del self.active_matches[match.match_id]
+        self.battle_manager.complete_match(match.match_id)
 
     # Pack Commands
     @app_commands.command(name="open_pack", description="Open a pack and receive cards")
@@ -698,7 +447,6 @@ class CardGameCog(Cog):
             pack_id, pack_name, creator_id, pack_size, cards_data_json = pack
             
             # Parse cards data
-            import json
             cards_data = json.loads(cards_data_json) if cards_data_json else []
             
             if not cards_data:
@@ -764,6 +512,16 @@ class CardGameCog(Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
+            # Check if YouTube API key is configured
+            youtube_api_key = os.getenv("YOUTUBE_API_KEY")
+            if not youtube_api_key:
+                await interaction.followup.send(
+                    "❌ YouTube API is not configured. Please contact an administrator.\n"
+                    "**For admins**: Set `YOUTUBE_API_KEY` in environment variables.",
+                    ephemeral=True
+                )
+                return
+            
             # Search for music videos on YouTube (the working way)
             from youtube_integration import youtube_integration
             print(f"🔥 DEBUG: Searching YouTube for {artist_name}")
@@ -771,7 +529,14 @@ class CardGameCog(Cog):
             print(f"🔥 DEBUG: Found {len(videos) if videos else 0} videos")
             
             if not videos:
-                await interaction.followup.send(f"❌ Could not find videos for '{artist_name}'", ephemeral=True)
+                await interaction.followup.send(
+                    f"❌ Could not find videos for '{artist_name}'\n"
+                    f"Please try:\n"
+                    f"• Checking the artist name spelling\n"
+                    f"• Using a different variation of the artist name\n"
+                    f"• Trying a more popular artist", 
+                    ephemeral=True
+                )
                 return
             
             # Create artist data from first video
@@ -794,7 +559,10 @@ class CardGameCog(Cog):
             )
             
             if artist.get('image_url'):
-                selection_embed.set_thumbnail(url=artist['image_url'])
+                safe_thumbnail = safe_image(artist['image_url'])
+                if safe_thumbnail != artist['image_url']:
+                    print(f"🖼️ Using fallback image for artist {artist['name']}: {artist['image_url'][:50]}...")
+                selection_embed.set_thumbnail(url=safe_thumbnail)
             
             selection_embed.add_field(
                 name="📋 Instructions",
@@ -870,10 +638,11 @@ class CardGameCog(Cog):
                         'impact': base_stat + random.randint(-5, 10),
                         'skill': base_stat + random.randint(-5, 10),
                         'longevity': base_stat + random.randint(-5, 10),
-                        'culture': base_stat + random.randint(-5, 10)
+                        'culture': base_stat + random.randint(-5, 10),
+                        'hype': base_stat + random.randint(-5, 10)  # Add hype stat
                     }
                     
-                    # Convert to database format using your ArtistCard properties
+                    # Convert to database format - only include fields that exist in DB
                     card_data = {
                         'card_id': artist_card.card_id,
                         'name': artist_card.artist,
@@ -882,13 +651,12 @@ class CardGameCog(Cog):
                         'youtube_url': artist_card.youtube_url,
                         'image_url': artist_card.thumbnail,
                         'view_count': artist_card.view_count,
-                        'power': artist_card.power,  # Use your ArtistCard power calculation
-                        'tier': artist_card.tier,    # Use your ArtistCard tier
-                        # Add battle stats
+                        # Battle stats (required by database)
                         'impact': battle_stats['impact'],
                         'skill': battle_stats['skill'],
                         'longevity': battle_stats['longevity'],
-                        'culture': battle_stats['culture']
+                        'culture': battle_stats['culture'],
+                        'hype': battle_stats['hype']
                     }
                     
                     # Add card to master list
@@ -941,7 +709,10 @@ class CardGameCog(Cog):
             embed.add_field(name="🎵 Cards Created", value=str(len(cards_created)), inline=True)
             
             if artist.get('image_url'):
-                embed.set_thumbnail(url=artist['image_url'])
+                safe_thumbnail = safe_image(artist['image_url'])
+                if safe_thumbnail != artist['image_url']:
+                    print(f"🖼️ Using fallback image for pack confirmation: {artist['image_url'][:50]}...")
+                embed.set_thumbnail(url=safe_thumbnail)
             
             # Show all selected cards
             card_list = ""

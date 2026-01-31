@@ -2,7 +2,7 @@
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 startCommand = "python run_bot.py"
-# Force rebuild - change this to trigger new deployment
+# Force rebuild - 2026-01-29-01-49-00-RAILWAY-FIX
 
 [[services]]
 name = "music-legends-bot"

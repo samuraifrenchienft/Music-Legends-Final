@@ -1,18 +1,485 @@
 """
-battle_engine.py - Battle system for Music Legends
-Handles card battles with power calculation and critical hits
+Missing Battle Classes
+PlayerState, MatchState, BattleCard, and wager configuration
 """
+
+from typing import Optional, Dict, List
+from datetime import datetime
+from enum import Enum
+from discord_cards import ArtistCard
+
+# ============================================
+# BATTLE WAGER CONFIGURATION
+# ============================================
+
+class BattleWagerConfig:
+    """
+    Battle wager configuration
+    Defines costs and rewards for each tier
+    """
+    
+    TIERS = {
+        "casual": {
+            "name": "Casual",
+            "wager_cost": 50,
+            "winner_gold": 100,      # Total gold winner gets
+            "loser_gold": 10,        # Consolation gold
+            "winner_xp": 25,
+            "loser_xp": 5,
+            "emoji": "🎮",
+        },
+        "standard": {
+            "name": "Standard",
+            "wager_cost": 100,
+            "winner_gold": 175,
+            "loser_gold": 10,
+            "winner_xp": 40,
+            "loser_xp": 8,
+            "emoji": "⚔️",
+        },
+        "high": {
+            "name": "High Stakes",
+            "wager_cost": 250,
+            "winner_gold": 350,
+            "loser_gold": 15,
+            "winner_xp": 60,
+            "loser_xp": 12,
+            "emoji": "🔥",
+        },
+        "extreme": {
+            "name": "Extreme",
+            "wager_cost": 500,
+            "winner_gold": 650,
+            "loser_gold": 20,
+            "winner_xp": 100,
+            "loser_xp": 20,
+            "emoji": "💀",
+        },
+    }
+    
+    @classmethod
+    def get_tier(cls, tier_name: str) -> Dict:
+        """Get wager tier configuration"""
+        return cls.TIERS.get(tier_name.lower(), cls.TIERS["casual"])
+    
+    @classmethod
+    def get_wager_cost(cls, tier_name: str) -> int:
+        """Get wager cost for tier"""
+        tier = cls.get_tier(tier_name)
+        return tier["wager_cost"]
+    
+    @classmethod
+    def get_winner_reward(cls, tier_name: str) -> Dict:
+        """Get winner rewards"""
+        tier = cls.get_tier(tier_name)
+        return {
+            "gold": tier["winner_gold"],
+            "xp": tier["winner_xp"],
+        }
+    
+    @classmethod
+    def get_loser_reward(cls, tier_name: str) -> Dict:
+        """Get loser consolation rewards"""
+        tier = cls.get_tier(tier_name)
+        return {
+            "gold": tier["loser_gold"],
+            "xp": tier["loser_xp"],
+        }
+
+
+# ============================================
+# BATTLE CARD (Wrapper for ArtistCard in battles)
+# ============================================
+
+class BattleCard:
+    """
+    Battle-specific card wrapper
+    Adds battle state to ArtistCard
+    """
+    
+    def __init__(
+        self,
+        artist_card: ArtistCard,
+        owner_id: str,
+        owner_name: str
+    ):
+        self.card = artist_card
+        self.owner_id = owner_id
+        self.owner_name = owner_name
+        
+        # Battle stats
+        self.base_power = artist_card.power
+        self.final_power = artist_card.power
+        self.critical_hit = False
+        self.power_modifier = 1.0
+    
+    def apply_critical_hit(self, multiplier: float = 1.5):
+        """Apply critical hit bonus"""
+        self.critical_hit = True
+        self.final_power = int(self.base_power * multiplier)
+    
+    def apply_power_modifier(self, modifier: float):
+        """Apply power modifier (buffs/debuffs)"""
+        self.power_modifier = modifier
+        self.final_power = int(self.base_power * modifier)
+    
+    def reset(self):
+        """Reset to base stats"""
+        self.final_power = self.base_power
+        self.critical_hit = False
+        self.power_modifier = 1.0
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary"""
+        return {
+            "card": self.card.to_dict(),
+            "owner_id": self.owner_id,
+            "owner_name": self.owner_name,
+            "base_power": self.base_power,
+            "final_power": self.final_power,
+            "critical_hit": self.critical_hit,
+            "power_modifier": self.power_modifier,
+        }
+    
+    @classmethod
+    def from_artist_card(
+        cls,
+        artist_card: ArtistCard,
+        owner_id: str,
+        owner_name: str
+    ) -> 'BattleCard':
+        """Create BattleCard from ArtistCard"""
+        return cls(artist_card, owner_id, owner_name)
+    
+    def __repr__(self):
+        crit_tag = " [CRIT]" if self.critical_hit else ""
+        return f"<BattleCard: {self.card.artist} - {self.card.song} ({self.final_power} PWR{crit_tag})>"
+
+
+# ============================================
+# PLAYER STATE (Battle participant state)
+# ============================================
+
+class PlayerState:
+    """
+    Represents a player's state in a battle
+    """
+    
+    def __init__(
+        self,
+        user_id: str,
+        username: str,
+        card: Optional[BattleCard] = None
+    ):
+        self.user_id = user_id
+        self.username = username
+        self.card = card
+        
+        # Battle state
+        self.is_ready = False
+        self.has_accepted = False
+        self.gold_wagered = 0
+        
+        # Results
+        self.gold_reward = 0
+        self.xp_reward = 0
+        self.won = False
+    
+    def set_card(self, card: BattleCard):
+        """Set player's battle card"""
+        self.card = card
+        self.is_ready = True
+    
+    def accept_battle(self, wager_amount: int):
+        """Accept battle invitation"""
+        self.has_accepted = True
+        self.gold_wagered = wager_amount
+    
+    def set_rewards(self, gold: int, xp: int, won: bool):
+        """Set battle rewards"""
+        self.gold_reward = gold
+        self.xp_reward = xp
+        self.won = won
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary"""
+        return {
+            "user_id": self.user_id,
+            "username": self.username,
+            "card": self.card.to_dict() if self.card else None,
+            "is_ready": self.is_ready,
+            "has_accepted": self.has_accepted,
+            "gold_wagered": self.gold_wagered,
+            "gold_reward": self.gold_reward,
+            "xp_reward": self.xp_reward,
+            "won": self.won,
+        }
+    
+    def __repr__(self):
+        ready_tag = "✓" if self.is_ready else "✗"
+        return f"<PlayerState: {self.username} [{ready_tag}]>"
+
+
+# ============================================
+# MATCH STATE (Overall battle state)
+# ============================================
+
+class BattleStatus(Enum):
+    """Battle status enum"""
+    PENDING = "pending"           # Waiting for acceptance
+    SELECTING = "selecting"       # Players selecting cards
+    IN_PROGRESS = "in_progress"   # Battle executing
+    COMPLETED = "completed"       # Battle finished
+    CANCELLED = "cancelled"       # Battle cancelled
+    EXPIRED = "expired"           # Battle timed out
+
+
+class MatchState:
+    """
+    Represents the complete state of a battle match
+    """
+    
+    def __init__(
+        self,
+        match_id: str,
+        player1: PlayerState,
+        player2: PlayerState,
+        wager_tier: str = "casual"
+    ):
+        self.match_id = match_id
+        self.player1 = player1
+        self.player2 = player2
+        self.wager_tier = wager_tier
+        
+        # Match state
+        self.status = BattleStatus.PENDING
+        self.created_at = datetime.now()
+        self.started_at: Optional[datetime] = None
+        self.completed_at: Optional[datetime] = None
+        
+        # Battle results
+        self.winner_id: Optional[str] = None
+        self.is_tie = False
+        self.power_difference = 0
+        
+        # Get wager config
+        self.wager_config = BattleWagerConfig.get_tier(wager_tier)
+    
+    def accept_battle(self, user_id: str) -> bool:
+        """
+        Player accepts battle
+        Returns True if both players have accepted
+        """
+        if user_id == self.player1.user_id:
+            self.player1.accept_battle(self.wager_config["wager_cost"])
+        elif user_id == self.player2.user_id:
+            self.player2.accept_battle(self.wager_config["wager_cost"])
+        else:
+            return False
+        
+        # Check if both accepted
+        if self.player1.has_accepted and self.player2.has_accepted:
+            self.status = BattleStatus.SELECTING
+            return True
+        
+        return False
+    
+    def set_player_card(self, user_id: str, card: BattleCard) -> bool:
+        """
+        Set player's card
+        Returns True if both players are ready
+        """
+        if user_id == self.player1.user_id:
+            self.player1.set_card(card)
+        elif user_id == self.player2.user_id:
+            self.player2.set_card(card)
+        else:
+            return False
+        
+        # Check if both ready
+        if self.player1.is_ready and self.player2.is_ready:
+            self.status = BattleStatus.IN_PROGRESS
+            self.started_at = datetime.now()
+            return True
+        
+        return False
+    
+    def complete_battle(
+        self,
+        winner_id: Optional[str],
+        is_tie: bool,
+        power_diff: int
+    ):
+        """Mark battle as completed"""
+        self.status = BattleStatus.COMPLETED
+        self.completed_at = datetime.now()
+        self.winner_id = winner_id
+        self.is_tie = is_tie
+        self.power_difference = power_diff
+        
+        # Set rewards
+        if is_tie:
+            # Tie - both get small rewards
+            tie_gold = 25
+            tie_xp = 10
+            self.player1.set_rewards(tie_gold, tie_xp, False)
+            self.player2.set_rewards(tie_gold, tie_xp, False)
+        
+        elif winner_id == self.player1.user_id:
+            # Player 1 wins
+            winner_rewards = BattleWagerConfig.get_winner_reward(self.wager_tier)
+            loser_rewards = BattleWagerConfig.get_loser_reward(self.wager_tier)
+            
+            self.player1.set_rewards(
+                winner_rewards["gold"],
+                winner_rewards["xp"],
+                True
+            )
+            self.player2.set_rewards(
+                loser_rewards["gold"],
+                loser_rewards["xp"],
+                False
+            )
+        
+        else:
+            # Player 2 wins
+            winner_rewards = BattleWagerConfig.get_winner_reward(self.wager_tier)
+            loser_rewards = BattleWagerConfig.get_loser_reward(self.wager_tier)
+            
+            self.player2.set_rewards(
+                winner_rewards["gold"],
+                winner_rewards["xp"],
+                True
+            )
+            self.player1.set_rewards(
+                loser_rewards["gold"],
+                loser_rewards["xp"],
+                False
+            )
+    
+    def cancel(self):
+        """Cancel battle"""
+        self.status = BattleStatus.CANCELLED
+    
+    def expire(self):
+        """Mark battle as expired"""
+        self.status = BattleStatus.EXPIRED
+    
+    def get_winner(self) -> Optional[PlayerState]:
+        """Get winning player"""
+        if self.winner_id == self.player1.user_id:
+            return self.player1
+        elif self.winner_id == self.player2.user_id:
+            return self.player2
+        return None
+    
+    def get_loser(self) -> Optional[PlayerState]:
+        """Get losing player"""
+        if self.winner_id == self.player1.user_id:
+            return self.player2
+        elif self.winner_id == self.player2.user_id:
+            return self.player1
+        return None
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary"""
+        return {
+            "match_id": self.match_id,
+            "player1": self.player1.to_dict(),
+            "player2": self.player2.to_dict(),
+            "wager_tier": self.wager_tier,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "winner_id": self.winner_id,
+            "is_tie": self.is_tie,
+            "power_difference": self.power_difference,
+        }
+    
+    def __repr__(self):
+        return f"<MatchState: {self.player1.username} vs {self.player2.username} ({self.status.value})>"
+
+
+# ============================================
+# BATTLE MANAGER (Helper class)
+# ============================================
+
+class BattleManager:
+    """
+    Helper class to manage active battles
+    """
+    
+    def __init__(self):
+        self.active_matches: Dict[str, MatchState] = {}
+        self.user_to_match: Dict[str, str] = {}  # user_id -> match_id
+    
+    def create_match(
+        self,
+        match_id: str,
+        player1_id: str,
+        player1_name: str,
+        player2_id: str,
+        player2_name: str,
+        wager_tier: str = "casual"
+    ) -> MatchState:
+        """Create a new battle match"""
+        
+        player1 = PlayerState(player1_id, player1_name)
+        player2 = PlayerState(player2_id, player2_name)
+        
+        match = MatchState(match_id, player1, player2, wager_tier)
+        
+        # Store match
+        self.active_matches[match_id] = match
+        self.user_to_match[player1_id] = match_id
+        self.user_to_match[player2_id] = match_id
+        
+        return match
+    
+    def get_match(self, match_id: str) -> Optional[MatchState]:
+        """Get match by ID"""
+        return self.active_matches.get(match_id)
+    
+    def get_user_match(self, user_id: str) -> Optional[MatchState]:
+        """Get user's current match"""
+        match_id = self.user_to_match.get(user_id)
+        if match_id:
+            return self.active_matches.get(match_id)
+        return None
+    
+    def is_user_in_battle(self, user_id: str) -> bool:
+        """Check if user is in a battle"""
+        return user_id in self.user_to_match
+    
+    def complete_match(self, match_id: str):
+        """Clean up completed match"""
+        match = self.active_matches.get(match_id)
+        if match:
+            # Remove user mappings
+            if match.player1.user_id in self.user_to_match:
+                del self.user_to_match[match.player1.user_id]
+            if match.player2.user_id in self.user_to_match:
+                del self.user_to_match[match.player2.user_id]
+            
+            # Remove match
+            del self.active_matches[match_id]
+    
+    def get_active_count(self) -> int:
+        """Get count of active matches"""
+        return len(self.active_matches)
+
+
+# ============================================
+# LEGACY BATTLE ENGINE (Keep for compatibility)
+# ============================================
 
 import random
 import discord
-from typing import Dict, Optional, Tuple, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from discord_cards import ArtistCard
 
 class BattleEngine:
     """
-    Battle system - power-based with RNG elements
+    Legacy BattleEngine class for backward compatibility
     """
     
     # Battle settings
@@ -20,52 +487,14 @@ class BattleEngine:
     CRITICAL_MULTIPLIER = 1.5   # Critical hit = +50% power
     MIN_POWER_ADVANTAGE = 5     # Minimum power diff to matter
     
-    # Wager tiers
-    WAGER_TIERS = {
-        "casual": {
-            "gold": 50,
-            "winner_base": 50,
-            "loser_base": 10,
-            "xp_reward": 25,
-        },
-        "standard": {
-            "gold": 100,
-            "winner_base": 75,
-            "loser_base": 10,
-            "xp_reward": 40,
-        },
-        "high": {
-            "gold": 250,
-            "winner_base": 100,
-            "loser_base": 15,
-            "xp_reward": 60,
-        },
-        "extreme": {
-            "gold": 500,
-            "winner_base": 150,
-            "loser_base": 20,
-            "xp_reward": 100,
-        },
-    }
-    
     @classmethod
     def execute_battle(
         cls,
-        card1: 'ArtistCard',
-        card2: 'ArtistCard',
+        card1: ArtistCard,
+        card2: ArtistCard,
         wager_tier: str = "casual"
     ) -> Dict:
-        """
-        Execute a battle between two cards
-        
-        Args:
-            card1: Player 1's card
-            card2: Player 2's card
-            wager_tier: Wager level (casual/standard/high/extreme)
-        
-        Returns:
-            Battle result dictionary with winner, powers, rewards
-        """
+        """Execute a battle between two cards (legacy method)"""
         
         # Get base power
         power1 = card1.power
@@ -85,36 +514,35 @@ class BattleEngine:
         power_diff = abs(power1 - power2)
         
         if power_diff < cls.MIN_POWER_ADVANTAGE:
-            # Too close - tie
-            winner = 0
+            winner = 0  # Tie
         elif power1 > power2:
             winner = 1
         else:
             winner = 2
         
         # Get wager info
-        wager_info = cls.WAGER_TIERS.get(wager_tier, cls.WAGER_TIERS["casual"])
+        wager_info = BattleWagerConfig.get_tier(wager_tier)
         
         # Calculate rewards
         if winner == 1:
-            player1_gold = wager_info["winner_base"] + wager_info["gold"]
-            player2_gold = wager_info["loser_base"]
-            player1_xp = wager_info["xp_reward"]
-            player2_xp = int(wager_info["xp_reward"] * 0.2)
+            player1_gold = wager_info["winner_gold"]
+            player2_gold = wager_info["loser_gold"]
+            player1_xp = wager_info["winner_xp"]
+            player2_xp = wager_info["loser_xp"]
         elif winner == 2:
-            player1_gold = wager_info["loser_base"]
-            player2_gold = wager_info["winner_base"] + wager_info["gold"]
-            player1_xp = int(wager_info["xp_reward"] * 0.2)
-            player2_xp = wager_info["xp_reward"]
+            player1_gold = wager_info["loser_gold"]
+            player2_gold = wager_info["winner_gold"]
+            player1_xp = wager_info["loser_xp"]
+            player2_xp = wager_info["winner_xp"]
         else:
-            # Tie - both get small rewards, wagers returned
+            # Tie - both get small rewards
             player1_gold = 25
             player2_gold = 25
             player1_xp = 10
             player2_xp = 10
         
         return {
-            "winner": winner,  # 0 = tie, 1 = player1, 2 = player2
+            "winner": winner,
             "player1": {
                 "card": card1,
                 "base_power": card1.power,
@@ -132,7 +560,7 @@ class BattleEngine:
                 "xp_reward": player2_xp,
             },
             "power_difference": power_diff,
-            "wager": wager_info["gold"],
+            "wager": wager_info["wager_cost"],
             "wager_tier": wager_tier,
         }
     
@@ -253,39 +681,6 @@ class BattleEngine:
         )
         
         return embed
-    
-    @classmethod
-    def simulate_battle(
-        cls,
-        card1: 'ArtistCard',
-        card2: 'ArtistCard',
-        num_simulations: int = 100
-    ) -> Dict:
-        """
-        Simulate multiple battles to calculate win probability
-        
-        Args:
-            card1: Player 1's card
-            card2: Player 2's card
-            num_simulations: Number of battles to simulate
-        
-        Returns:
-            Statistics dictionary with win rates
-        """
-        
-        wins = {1: 0, 2: 0, 0: 0}  # Player 1, Player 2, Tie
-        
-        for _ in range(num_simulations):
-            result = cls.execute_battle(card1, card2)
-            wins[result["winner"]] += 1
-        
-        return {
-            "player1_win_rate": wins[1] / num_simulations,
-            "player2_win_rate": wins[2] / num_simulations,
-            "tie_rate": wins[0] / num_simulations,
-            "player1_favored": wins[1] > wins[2],
-            "simulations": num_simulations,
-        }
 
 
 class BattleHistory:
@@ -353,45 +748,78 @@ class BattleHistory:
         return embed
 
 
-# Example usage
+# ============================================
+# EXAMPLE USAGE
+# ============================================
+
 if __name__ == "__main__":
-    # Create test cards
-    from discord_cards import ArtistCard
+    # Create battle manager
+    manager = BattleManager()
     
-    drake_card = ArtistCard(
+    # Create match
+    match = manager.create_match(
+        match_id="battle_123",
+        player1_id="user1",
+        player1_name="Player1",
+        player2_id="user2",
+        player2_name="Player2",
+        wager_tier="high"
+    )
+    
+    print(f"Created: {match}")
+    print(f"Wager cost: {match.wager_config['wager_cost']} gold")
+    print(f"Status: {match.status.value}")
+    
+    # Player 2 accepts
+    both_accepted = match.accept_battle("user2")
+    print(f"Player 2 accepted. Both ready: {both_accepted}")
+    
+    # Player 1 accepts
+    both_accepted = match.accept_battle("user1")
+    print(f"Player 1 accepted. Both ready: {both_accepted}")
+    print(f"Status: {match.status.value}")
+    
+    # Create battle cards
+    drake = ArtistCard(
         card_id="1",
         artist="Drake",
         song="Hotline Bling",
-        youtube_url="https://youtube.com/watch?v=xyz",
-        youtube_id="xyz",
+        youtube_url="https://youtube.com/watch?v=test",
+        youtube_id="test",
         view_count=1_200_000_000,
         thumbnail="",
         rarity="legendary"
     )
     
-    taylor_card = ArtistCard(
+    taylor = ArtistCard(
         card_id="2",
         artist="Taylor Swift",
         song="Shake It Off",
-        youtube_url="https://youtube.com/watch?v=abc",
-        youtube_id="abc",
+        youtube_url="https://youtube.com/watch?v=test2",
+        youtube_id="test2",
         view_count=800_000_000,
         thumbnail="",
         rarity="epic"
     )
     
-    # Simulate battle
-    print("=== BATTLE SIMULATION ===")
-    result = BattleEngine.execute_battle(drake_card, taylor_card, "high")
+    # Wrap in BattleCards
+    battle_card1 = BattleCard.from_artist_card(drake, "user1", "Player1")
+    battle_card2 = BattleCard.from_artist_card(taylor, "user2", "Player2")
     
-    print(f"Drake: {result['player1']['final_power']} power")
-    print(f"Taylor: {result['player2']['final_power']} power")
-    print(f"Winner: Player {result['winner']}")
-    print(f"Power diff: {result['power_difference']}")
+    # Set cards
+    match.set_player_card("user1", battle_card1)
+    both_ready = match.set_player_card("user2", battle_card2)
+    print(f"\nBoth players ready: {both_ready}")
+    print(f"Status: {match.status.value}")
     
-    # Probability analysis
-    print("\n=== WIN PROBABILITY (100 simulations) ===")
-    stats = BattleEngine.simulate_battle(drake_card, taylor_card, 100)
-    print(f"Drake win rate: {stats['player1_win_rate'] * 100:.1f}%")
-    print(f"Taylor win rate: {stats['player2_win_rate'] * 100:.1f}%")
-    print(f"Tie rate: {stats['tie_rate'] * 100:.1f}%")
+    # Complete battle
+    match.complete_battle(
+        winner_id="user1",
+        is_tie=False,
+        power_diff=20
+    )
+    
+    print(f"\nBattle completed!")
+    print(f"Winner: {match.get_winner().username}")
+    print(f"Winner rewards: {match.get_winner().gold_reward}g, {match.get_winner().xp_reward}xp")
+    print(f"Loser rewards: {match.get_loser().gold_reward}g, {match.get_loser().xp_reward}xp")

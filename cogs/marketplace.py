@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands, Interaction
 import sqlite3
+import json
 
 class MarketplaceCommands(commands.Cog):
     """Marketplace commands for buying/selling cards"""
@@ -126,7 +127,6 @@ class MarketplaceCommands(commands.Cog):
         if packs:
             for pack in packs:
                 pack_id, pack_name, status, created_at, cards_data = pack
-                import json
                 cards = json.loads(cards_data) if cards_data else []
                 embed.add_field(
                     name=f"📦 {pack_name}",
@@ -168,7 +168,6 @@ class MarketplaceCommands(commands.Cog):
         if packs:
             for pack in packs:
                 pack_id, pack_name, creator_id, description, created_at, cards_data = pack
-                import json
                 cards = json.loads(cards_data) if cards_data else []
                 
                 # Get creator name

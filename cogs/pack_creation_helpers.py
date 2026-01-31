@@ -181,22 +181,24 @@ async def finalize_pack_creation_lastfm(
                 # Create card ID
                 card_id = f"{pack_id}_{track['name'].lower().replace(' ', '_')[:20]}_{random.randint(1000, 9999)}"
                 
-                # Prepare card data for database
+                # Prepare card data for database - ensure all required fields are present
                 db_card_data = {
                     'card_id': card_id,
                     'name': artist_data['name'],
-                    'title': card_data['name'][:100],
-                    'rarity': card_data['rarity'],
-                    'image_url': card_data['image_url'],
-                    'youtube_url': card_data['video_url'],
-                    'impact': card_data['attack'],
-                    'skill': card_data['defense'],
-                    'longevity': card_data['speed'],
-                    'culture': card_data['attack'],
-                    'hype': card_data['defense'],
+                    'title': card_data.get('name', track['name'])[:100],
+                    'rarity': card_data.get('rarity', 'common'),
+                    'image_url': card_data.get('image_url', ''),
+                    'youtube_url': card_data.get('video_url', ''),
+                    'impact': card_data.get('attack', 50),
+                    'skill': card_data.get('defense', 50),
+                    'longevity': card_data.get('speed', 50),
+                    'culture': card_data.get('attack', 50),  # Fallback to attack
+                    'hype': card_data.get('defense', 50),    # Fallback to defense
                     'pack_id': pack_id,
                     'created_by_user_id': creator_id
                 }
+                
+                print(f"📦 Creating card: {db_card_data['title']} (Rarity: {db_card_data['rarity']})")
                 
                 # Add card to master list
                 success = db.add_card_to_master(db_card_data)
@@ -205,9 +207,14 @@ async def finalize_pack_creation_lastfm(
                     # Give creator a copy
                     db.add_card_to_collection(creator_id, card_id, 'pack_creation')
                     cards_created.append(db_card_data)
+                    print(f"✅ Card created successfully: {card_id}")
+                else:
+                    print(f"❌ Failed to add card to database: {card_id}")
                 
             except Exception as e:
-                print(f"Error creating card for track {track.get('name')}: {e}")
+                print(f"❌ Error creating card for track {track.get('name', 'Unknown')}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
         # Publish pack

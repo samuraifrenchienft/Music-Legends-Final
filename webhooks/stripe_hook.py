@@ -8,6 +8,7 @@ Handles Stripe-specific event types and integrates with payment services.
 import stripe
 import os
 import logging
+import json
 from typing import Dict, Any
 
 # Load environment variables from .env.txt
@@ -60,7 +61,6 @@ async def stripe_webhook(request):
             # )
             
             # For testing, parse the payload directly
-            import json
             event = json.loads(payload.decode('utf-8'))
             logger.info(f"Test mode: skipping signature verification for event {event.get('type')}")
             

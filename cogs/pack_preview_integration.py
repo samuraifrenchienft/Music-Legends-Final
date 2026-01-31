@@ -118,22 +118,24 @@ async def finalize_pack_with_cards(
                 track = selected_tracks[i]
                 card_id = f"{pack_id}_{track['name'].lower().replace(' ', '_')[:20]}_{random.randint(1000, 9999)}"
                 
-                # Prepare card data for database
+                # Prepare card data for database with defaults
                 db_card_data = {
                     'card_id': card_id,
                     'name': artist_data['name'],
-                    'title': card['name'][:100],
-                    'rarity': card['rarity'],
-                    'image_url': card['image_url'],
+                    'title': card.get('name', track['name'])[:100],
+                    'rarity': card.get('rarity', 'common'),
+                    'image_url': card.get('image_url', ''),
                     'youtube_url': card.get('video_url', ''),
-                    'impact': card['attack'],
-                    'skill': card['defense'],
-                    'longevity': card['speed'],
-                    'culture': card['attack'],
-                    'hype': card['defense'],
+                    'impact': card.get('attack', 50),
+                    'skill': card.get('defense', 50),
+                    'longevity': card.get('speed', 50),
+                    'culture': card.get('attack', 50),
+                    'hype': card.get('defense', 50),
                     'pack_id': pack_id,
                     'created_by_user_id': creator_id
                 }
+                
+                print(f"📦 Creating card: {db_card_data['title']} (Rarity: {db_card_data['rarity']})")
                 
                 # Add card to master list
                 success = db.add_card_to_master(db_card_data)
@@ -142,9 +144,14 @@ async def finalize_pack_with_cards(
                     # Give creator a copy
                     db.add_card_to_collection(creator_id, card_id, 'pack_creation')
                     cards_created.append(db_card_data)
+                    print(f"✅ Card created successfully: {card_id}")
+                else:
+                    print(f"❌ Failed to add card to database: {card_id}")
                 
             except Exception as e:
-                print(f"Error creating card: {e}")
+                print(f"❌ Error creating card: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
         # Publish pack

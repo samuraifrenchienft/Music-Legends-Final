@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
 import uuid
+import json
 
 Base = declarative_base()
 
@@ -96,7 +97,6 @@ class TradeSQLite(Base):
 
     def get_cards_a(self):
         """Get cards_a as list"""
-        import json
         try:
             return json.loads(self.cards_a) if self.cards_a else []
         except:
@@ -104,12 +104,10 @@ class TradeSQLite(Base):
     
     def set_cards_a(self, cards):
         """Set cards_a from list"""
-        import json
         self.cards_a = json.dumps(cards)
     
     def get_cards_b(self):
         """Get cards_b as list"""
-        import json
         try:
             return json.loads(self.cards_b) if self.cards_b else []
         except:
@@ -117,7 +115,6 @@ class TradeSQLite(Base):
     
     def set_cards_b(self, cards):
         """Set cards_b from list"""
-        import json
         self.cards_b = json.dumps(cards)
 
 # Test function

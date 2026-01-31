@@ -4,6 +4,7 @@ Implements professional TCG pack design with balanced stat distribution
 """
 
 import random
+import json
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from card_stats import (
@@ -311,7 +312,6 @@ class HybridPackGenerator:
         """Create pack data structure for database storage"""
         
         import uuid
-        import json
         
         pack_id = f"pack_{uuid.uuid4().hex[:8]}"
         

@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-01-28-04-15-00-DOCKER-DEBUG
+ARG CACHE_BUST=2026-01-29-01-49-00-RAILWAY-FIX
 
 # Set working directory
 WORKDIR /app
