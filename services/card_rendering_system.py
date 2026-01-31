@@ -52,7 +52,11 @@ class CardRenderingSystem:
             FrameStyle.LUX_BLACK: "#0B0B0B",
             FrameStyle.LUX_WHITE: "#FFFFFF",
             FrameStyle.CREATOR: "#FF6B6B",
-            FrameStyle.SYSTEM: "#4ECDC4"
+            FrameStyle.SYSTEM: "#4ECDC4",
+            FrameStyle.HOLOGRAPHIC: "#00F5FF",  # Cyan holographic
+            FrameStyle.VINTAGE: "#8B7355",      # Brown vintage
+            FrameStyle.NEON: "#FF10F0",          # Hot pink neon
+            FrameStyle.CRYSTAL: "#E0FFFF"       # Light cyan crystal
         }
         
         # Fonts (fallback to default if custom fonts not available)
@@ -263,6 +267,78 @@ class CardRenderingSystem:
         season_y = center_y + emblem_radius + 10
         
         draw.text((season_x, season_y), season_text, fill="#CCCCCC", font=self.font_small)
+    
+    def apply_foil_effect(self, image: Image.Image, foil_type: str) -> Image.Image:
+        """Apply foil/holographic effect overlay"""
+        try:
+            from schemas.card_canonical import FoilEffect
+            
+            if foil_type == FoilEffect.RAINBOW.value or foil_type == "rainbow":
+                # Add rainbow gradient overlay
+                overlay = self._create_rainbow_gradient(image.size)
+                return Image.blend(image, overlay, alpha=0.3)
+            elif foil_type == FoilEffect.PRISMATIC.value or foil_type == "prismatic":
+                # Add prismatic shine
+                return self._apply_prismatic_shine(image)
+            elif foil_type == FoilEffect.GALAXY.value or foil_type == "galaxy":
+                # Add galaxy effect
+                return self._apply_galaxy_effect(image)
+            else:
+                # Standard foil - just return original
+                return image
+        except Exception as e:
+            print(f"Error applying foil effect: {e}")
+            return image
+    
+    def _create_rainbow_gradient(self, size: tuple) -> Image.Image:
+        """Create a rainbow gradient overlay"""
+        width, height = size
+        gradient = Image.new('RGB', size, "white")
+        draw = ImageDraw.Draw(gradient)
+        
+        # Create rainbow stripes
+        colors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3']
+        stripe_height = height // len(colors)
+        
+        for i, color in enumerate(colors):
+            y = i * stripe_height
+            draw.rectangle([0, y, width, y + stripe_height], fill=color)
+        
+        return gradient
+    
+    def _apply_prismatic_shine(self, image: Image.Image) -> Image.Image:
+        """Apply prismatic shine effect"""
+        # Create a shine overlay
+        overlay = Image.new('RGBA', image.size, (255, 255, 255, 0))
+        draw = ImageDraw.Draw(overlay)
+        
+        # Add diagonal shine streaks
+        width, height = image.size
+        for i in range(0, width + height, 20):
+            draw.line([(i, 0), (i - height, height)], fill=(255, 255, 255, 50), width=5)
+        
+        # Blend with original
+        image_rgba = image.convert('RGBA')
+        return Image.alpha_composite(image_rgba, overlay)
+    
+    def _apply_galaxy_effect(self, image: Image.Image) -> Image.Image:
+        """Apply galaxy/space effect"""
+        # Add dark overlay with bright spots
+        overlay = Image.new('RGBA', image.size, (20, 0, 40, 50))
+        draw = ImageDraw.Draw(overlay)
+        
+        # Add some "stars"
+        import random
+        random.seed(42)  # Consistent stars
+        for _ in range(50):
+            x = random.randint(0, image.size[0])
+            y = random.randint(0, image.size[1])
+            size = random.randint(1, 3)
+            draw.ellipse([x, y, x+size, y+size], fill=(255, 255, 255, 200))
+        
+        # Blend
+        image_rgba = image.convert('RGBA')
+        return Image.alpha_composite(image_rgba, overlay)
     
     def render_card_to_bytes(self, card: CanonicalCard, front: bool = True) -> bytes:
         """Render card and return as bytes for Discord"""

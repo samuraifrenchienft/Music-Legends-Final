@@ -96,6 +96,7 @@ class Bot(commands.Bot):
             'cogs.card_game',                 # Collection and pack creation commands
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
             'cogs.marketplace',               # Marketplace commands
+            'cogs.cosmetic_shop',             # Cosmetic shop and customization
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")

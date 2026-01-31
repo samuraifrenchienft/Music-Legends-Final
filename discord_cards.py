@@ -125,18 +125,33 @@ class ArtistCard:
         }
         return emojis.get(self.rarity, "⚪")
     
-    def to_embed(self, show_stats: bool = True) -> discord.Embed:
+    def to_embed(self, show_stats: bool = True, show_variants: bool = True) -> discord.Embed:
         """
         Create Discord embed for this card
         
         Args:
             show_stats: Whether to show power/tier stats
+            show_variants: Whether to show variant information
         
         Returns:
             discord.Embed ready to send
         """
+        # Add visual indicators for special variants
+        title_prefix = ""
+        if hasattr(self, 'foil') and self.foil:
+            title_prefix = "✨ "
+        if hasattr(self, 'frame_style'):
+            if self.frame_style == "holographic":
+                title_prefix = "🌈 "
+            elif self.frame_style == "crystal":
+                title_prefix = "💎 "
+            elif self.frame_style == "neon":
+                title_prefix = "⚡ "
+            elif self.frame_style == "vintage":
+                title_prefix = "📜 "
+        
         embed = discord.Embed(
-            title=f"{self.get_rarity_emoji()} {self.artist} - {self.song}",
+            title=f"{title_prefix}{self.get_rarity_emoji()} {self.artist} - {self.song}",
             description=f"**Rarity:** {self.rarity.title()}",
             color=self.get_rarity_color(),
             url=self.youtube_url
@@ -162,6 +177,21 @@ class ArtistCard:
             embed.add_field(
                 name="🌟 Status",
                 value="**HERO CARD**",
+                inline=True
+            )
+        
+        # Show variant info
+        if show_variants and hasattr(self, 'frame_style') and self.frame_style and self.frame_style != "lux_black":
+            embed.add_field(
+                name="🎨 Variant",
+                value=f"**{self.frame_style.replace('_', ' ').title()}** Frame",
+                inline=True
+            )
+        
+        if show_variants and hasattr(self, 'foil_effect') and self.foil_effect and self.foil_effect not in ['none', 'standard']:
+            embed.add_field(
+                name="✨ Effect",
+                value=f"**{self.foil_effect.title()}** Foil",
                 inline=True
             )
         

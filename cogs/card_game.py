@@ -19,6 +19,7 @@ from card_economy import PlayerEconomy, EconomyDisplay
 from youtube_integration import youtube_integration
 from views.song_selection import SongSelectionView
 from services.image_cache import safe_image
+from views.pack_opening import PackOpeningAnimator, open_pack_with_animation
 
 # Battle stats categories (for compatibility with existing code)
 STATS = ["impact", "skill", "longevity", "culture"]
@@ -456,6 +457,16 @@ class CardGameCog(Cog):
             # Add cards to user's collection
             received_cards = []
             for card_data in cards_data:
+                # Check rarity for variant eligibility
+                if card_data.get('rarity') in ['legendary', 'epic']:
+                    # 10% chance for special variant
+                    if random.random() < 0.1:
+                        variant_frames = ['holographic', 'crystal', 'neon']
+                        card_data['frame_style'] = random.choice(variant_frames)
+                        card_data['foil'] = True
+                        card_data['foil_effect'] = 'rainbow'
+                        print(f"✨ Special variant generated: {card_data.get('name')} with {card_data['frame_style']} frame!")
+                
                 # Add to master cards table
                 card_id = self.db.add_card_to_master(card_data)
                 # Add to user's collection
@@ -466,37 +477,18 @@ class CardGameCog(Cog):
                 )
                 received_cards.append(card_data)
             
-            # Create visual display
-            embed = discord.Embed(
-                title=f"🎉 Pack Opened: {pack_name}",
-                description=f"You received {len(received_cards)} cards!",
-                color=discord.Color.purple()
+            # Determine pack type based on pack data
+            pack_type = 'gold' if any(c.get('rarity') in ['legendary', 'epic'] for c in received_cards) else 'community'
+            
+            # Use animation system for pack opening
+            await open_pack_with_animation(
+                interaction=interaction,
+                pack_name=pack_name,
+                pack_type=pack_type,
+                cards=received_cards,
+                pack_id=pack_id,
+                delay=2.0  # 2 seconds between cards
             )
-            
-            # Show all cards
-            card_list = ""
-            for i, card in enumerate(received_cards, 1):
-                rarity = card.get('rarity', 'common')
-                rarity_emoji = {"legendary": "🌟", "epic": "💜", "rare": "💙", "common": "⚪"}.get(rarity, "⚪")
-                card_name = card.get('name', 'Unknown')
-                card_title = card.get('title', '')
-                display = f"{card_name} - {card_title}" if card_title else card_name
-                card_list += f"{rarity_emoji} **{display}** ({rarity.title()})\n"
-            
-            embed.add_field(name="🎴 Cards Received", value=card_list or "No cards", inline=False)
-            
-            # Add stats
-            rarity_counts = {}
-            for card in received_cards:
-                rarity = card.get('rarity', 'common')
-                rarity_counts[rarity] = rarity_counts.get(rarity, 0) + 1
-            
-            rarity_text = " | ".join([f"{r.title()}: {c}" for r, c in rarity_counts.items()])
-            embed.add_field(name="📊 Rarity Breakdown", value=rarity_text, inline=False)
-            
-            embed.set_footer(text=f"Use /collection to view all your cards")
-            
-            await interaction.followup.send(embed=embed)
             
         except Exception as e:
             print(f"Error opening pack: {e}")

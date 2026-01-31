@@ -10,6 +10,20 @@ import asyncio
 from typing import List, Dict
 
 
+class SkipView(discord.ui.View):
+    """View with skip button for pack opening"""
+    def __init__(self):
+        super().__init__(timeout=30)
+        self.skipped = False
+    
+    @discord.ui.button(label="Skip ⏩", style=discord.ButtonStyle.secondary)
+    async def skip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Skip the animation and show all cards"""
+        self.skipped = True
+        await interaction.response.defer()
+        self.stop()
+
+
 class PackOpeningAnimator:
     """Handles animated pack opening with sequential card reveals"""
     
@@ -52,13 +66,23 @@ class PackOpeningAnimator:
         self.pack_type = pack_type
     
     def create_loading_embed(self) -> discord.Embed:
-        """Create the initial loading embed"""
+        """Create the initial loading embed with animation"""
         embed = discord.Embed(
-            title="🎁 Opening Pack...",
-            description=f"**{self.pack_name}**\n\nPreparing your cards...",
+            title="🎁 Opening Pack... 🎁",
+            description=f"**{self.pack_name}**\n\n✨ Shuffling cards...\n🔮 The universe is deciding your fate...\n⏳ Preparing your rewards...",
             color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
         )
         embed.set_footer(text="✨ Get ready for your new cards!")
+        return embed
+    
+    def create_legendary_teaser_embed(self) -> discord.Embed:
+        """Create dramatic legendary teaser embed"""
+        embed = discord.Embed(
+            title="✨ LEGENDARY PULL! ✨",
+            description="🌟 Something amazing is coming... 🌟\n\n⭐ **LEGENDARY CARD INCOMING!** ⭐",
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text="Get ready for something special!")
         return embed
     
     def create_card_reveal_embed(
@@ -218,9 +242,12 @@ class PackOpeningAnimator:
         """
         
         try:
-            # Show loading message
+            # Create skip view
+            skip_view = SkipView()
+            
+            # Show loading message with skip button
             loading_embed = self.create_loading_embed()
-            await interaction.followup.send(embed=loading_embed, ephemeral=True)
+            message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False)
             
             # Wait a moment
             await asyncio.sleep(1.5)
@@ -228,8 +255,15 @@ class PackOpeningAnimator:
             # Track new cards
             new_cards_count = 0
             
+            # Check for legendary cards upfront
+            legendary_indices = [i for i, c in enumerate(cards) if c.get('rarity') == 'legendary']
+            
             # Reveal each card sequentially
             for i, card in enumerate(cards, 1):
+                # Check if user skipped
+                if skip_view.skipped:
+                    break
+                
                 # Check if duplicate (simplified - would need DB check in real implementation)
                 is_duplicate = False
                 if not check_duplicates:
@@ -241,6 +275,15 @@ class PackOpeningAnimator:
                 if not is_duplicate:
                     new_cards_count += 1
                 
+                # Get rarity for delay adjustment
+                rarity = card.get('rarity', 'common')
+                
+                # Show legendary teaser if this is a legendary card
+                if rarity == 'legendary':
+                    legendary_teaser = self.create_legendary_teaser_embed()
+                    await interaction.edit_original_response(embed=legendary_teaser, view=skip_view)
+                    await asyncio.sleep(2.0)  # Dramatic pause
+                
                 # Create reveal embed
                 reveal_embed = self.create_card_reveal_embed(
                     card,
@@ -250,11 +293,18 @@ class PackOpeningAnimator:
                 )
                 
                 # Update message with card reveal
-                await interaction.edit_original_response(embed=reveal_embed)
+                await interaction.edit_original_response(embed=reveal_embed, view=skip_view)
                 
-                # Wait before next card (except for last card)
+                # Rarity-specific delays
                 if i < len(cards):
-                    await asyncio.sleep(delay)
+                    if rarity == 'legendary':
+                        await asyncio.sleep(3.0)  # Longer for legendary
+                    elif rarity == 'epic':
+                        await asyncio.sleep(2.5)  # Longer for epic
+                    elif rarity == 'rare':
+                        await asyncio.sleep(2.0)  # Standard for rare
+                    else:
+                        await asyncio.sleep(1.0)  # Quick for common
             
             # Wait before showing summary
             await asyncio.sleep(1.5)
@@ -265,7 +315,7 @@ class PackOpeningAnimator:
                 pack_id,
                 new_cards_count
             )
-            await interaction.edit_original_response(embed=summary_embed)
+            await interaction.edit_original_response(embed=summary_embed, view=None)
             
         except Exception as e:
             print(f"❌ Error in pack opening animation: {e}")
@@ -273,10 +323,13 @@ class PackOpeningAnimator:
             traceback.print_exc()
             
             # Fallback to simple message
-            await interaction.followup.send(
-                f"✅ Pack opened! {len(cards)} cards added to your collection.",
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send(
+                    f"✅ Pack opened! {len(cards)} cards added to your collection.",
+                    ephemeral=True
+                )
+            except:
+                pass
 
 
 # Convenience function for quick pack opening

@@ -26,6 +26,18 @@ class FrameStyle(str, Enum):
     LUX_WHITE = "lux_white"
     CREATOR = "creator"
     SYSTEM = "system"
+    HOLOGRAPHIC = "holographic"      # Rainbow holographic effect
+    VINTAGE = "vintage"              # Classic brown/sepia tones
+    NEON = "neon"                    # Bright neon colors
+    CRYSTAL = "crystal"              # Crystal/ice effect
+
+class FoilEffect(str, Enum):
+    """Foil/special effects that can be applied to cards"""
+    NONE = "none"
+    STANDARD = "standard"            # Basic foil shine
+    RAINBOW = "rainbow"              # Rainbow gradient
+    PRISMATIC = "prismatic"          # Prismatic shine effect
+    GALAXY = "galaxy"                # Galaxy/space effect
 
 class CanonicalCard:
     """
@@ -48,6 +60,7 @@ class CanonicalCard:
         opened_by: str,
         frame_style: FrameStyle = FrameStyle.LUX_BLACK,
         foil: bool = True,
+        foil_effect: FoilEffect = FoilEffect.STANDARD,
         badge_icons: Optional[List[str]] = None,
         accent_color: str = "#D4AF37"
     ):
@@ -88,6 +101,7 @@ class CanonicalCard:
         self.presentation = {
             "frame_style": frame_style.value,
             "foil": foil,
+            "foil_effect": foil_effect.value if isinstance(foil_effect, FoilEffect) else foil_effect,
             "badge_icons": badge_icons or self._default_badges(tier),
             "accent_color": accent_color
         }

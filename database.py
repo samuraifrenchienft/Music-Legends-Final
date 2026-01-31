@@ -83,6 +83,47 @@ class DatabaseManager:
                 ON server_activity(server_id, timestamp)
             """)
             
+            # User cosmetics table - track unlocked cosmetics
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_cosmetics (
+                    user_id TEXT NOT NULL,
+                    cosmetic_id TEXT NOT NULL,
+                    cosmetic_type TEXT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    source TEXT,
+                    PRIMARY KEY (user_id, cosmetic_id)
+                )
+            """)
+            
+            # Cosmetics catalog - available cosmetics
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cosmetics_catalog (
+                    cosmetic_id TEXT PRIMARY KEY,
+                    cosmetic_type TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    rarity TEXT,
+                    unlock_method TEXT,
+                    price_gold INTEGER,
+                    price_tickets INTEGER,
+                    image_url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Card cosmetic assignments - per-card customization
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_cosmetics (
+                    user_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    frame_style TEXT,
+                    foil_effect TEXT,
+                    badge_override TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, card_id)
+                )
+            """)
+            
             # User collections (card ownership)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user_cards (
@@ -1615,6 +1656,176 @@ class DatabaseManager:
             stats['win_rate'] = (stats['wins'] / total * 100) if total > 0 else 0
             
             return stats
+    
+    # Cosmetic System Methods
+    def add_cosmetic_to_catalog(self, cosmetic_data: Dict) -> bool:
+        """Add a cosmetic to the catalog"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO cosmetics_catalog
+                    (cosmetic_id, cosmetic_type, name, description, rarity, 
+                     unlock_method, price_gold, price_tickets, image_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    cosmetic_data['cosmetic_id'],
+                    cosmetic_data['cosmetic_type'],
+                    cosmetic_data['name'],
+                    cosmetic_data.get('description'),
+                    cosmetic_data.get('rarity'),
+                    cosmetic_data.get('unlock_method'),
+                    cosmetic_data.get('price_gold'),
+                    cosmetic_data.get('price_tickets'),
+                    cosmetic_data.get('image_url')
+                ))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error adding cosmetic to catalog: {e}")
+            return False
+    
+    def unlock_cosmetic_for_user(self, user_id: str, cosmetic_id: str, source: str = 'purchase') -> bool:
+        """Unlock a cosmetic for a user"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get cosmetic type from catalog
+                cursor.execute("SELECT cosmetic_type FROM cosmetics_catalog WHERE cosmetic_id = ?", (cosmetic_id,))
+                result = cursor.fetchone()
+                if not result:
+                    print(f"Cosmetic {cosmetic_id} not found in catalog")
+                    return False
+                
+                cosmetic_type = result[0]
+                
+                cursor.execute("""
+                    INSERT OR IGNORE INTO user_cosmetics
+                    (user_id, cosmetic_id, cosmetic_type, source)
+                    VALUES (?, ?, ?, ?)
+                """, (user_id, cosmetic_id, cosmetic_type, source))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error unlocking cosmetic: {e}")
+            return False
+    
+    def get_user_cosmetics(self, user_id: str, cosmetic_type: str = None) -> List[Dict]:
+        """Get all cosmetics unlocked by a user"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                if cosmetic_type:
+                    cursor.execute("""
+                        SELECT uc.*, cc.name, cc.description, cc.rarity
+                        FROM user_cosmetics uc
+                        JOIN cosmetics_catalog cc ON uc.cosmetic_id = cc.cosmetic_id
+                        WHERE uc.user_id = ? AND uc.cosmetic_type = ?
+                    """, (user_id, cosmetic_type))
+                else:
+                    cursor.execute("""
+                        SELECT uc.*, cc.name, cc.description, cc.rarity
+                        FROM user_cosmetics uc
+                        JOIN cosmetics_catalog cc ON uc.cosmetic_id = cc.cosmetic_id
+                        WHERE uc.user_id = ?
+                    """, (user_id,))
+                
+                rows = cursor.fetchall()
+                return [
+                    {
+                        'user_id': row[0],
+                        'cosmetic_id': row[1],
+                        'cosmetic_type': row[2],
+                        'unlocked_at': row[3],
+                        'source': row[4],
+                        'name': row[5],
+                        'description': row[6],
+                        'rarity': row[7]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            print(f"Error getting user cosmetics: {e}")
+            return []
+    
+    def apply_cosmetic_to_card(self, user_id: str, card_id: str, cosmetic_data: Dict) -> bool:
+        """Apply cosmetics to a specific card"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO card_cosmetics
+                    (user_id, card_id, frame_style, foil_effect, badge_override, updated_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (
+                    user_id,
+                    card_id,
+                    cosmetic_data.get('frame_style'),
+                    cosmetic_data.get('foil_effect'),
+                    cosmetic_data.get('badge_override')
+                ))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error applying cosmetic to card: {e}")
+            return False
+    
+    def get_card_cosmetics(self, user_id: str, card_id: str) -> Optional[Dict]:
+        """Get cosmetics applied to a specific card"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT frame_style, foil_effect, badge_override
+                    FROM card_cosmetics
+                    WHERE user_id = ? AND card_id = ?
+                """, (user_id, card_id))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'frame_style': row[0],
+                        'foil_effect': row[1],
+                        'badge_override': row[2]
+                    }
+                return None
+        except Exception as e:
+            print(f"Error getting card cosmetics: {e}")
+            return None
+    
+    def get_available_cosmetics(self, unlock_method: str = None) -> List[Dict]:
+        """Get cosmetics from catalog"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                if unlock_method:
+                    cursor.execute("""
+                        SELECT * FROM cosmetics_catalog
+                        WHERE unlock_method = ?
+                    """, (unlock_method,))
+                else:
+                    cursor.execute("SELECT * FROM cosmetics_catalog")
+                
+                rows = cursor.fetchall()
+                return [
+                    {
+                        'cosmetic_id': row[0],
+                        'cosmetic_type': row[1],
+                        'name': row[2],
+                        'description': row[3],
+                        'rarity': row[4],
+                        'unlock_method': row[5],
+                        'price_gold': row[6],
+                        'price_tickets': row[7],
+                        'image_url': row[8]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            print(f"Error getting available cosmetics: {e}")
+            return []
     
     def close(self):
         """Close database connection"""
