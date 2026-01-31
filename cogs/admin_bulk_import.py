@@ -2,6 +2,7 @@
 """
 Admin Bulk Pack Import Cog
 Provides commands for importing packs in bulk from JSON files
+DEV-ONLY: Only available in TEST_SERVER
 """
 
 import discord
@@ -10,18 +11,49 @@ from discord import Interaction, app_commands
 from database import DatabaseManager
 import json
 import uuid
+import os
 from typing import List, Dict, Optional
 import asyncio
 
 class AdminBulkImportCog(commands.Cog):
-    """Admin commands for bulk pack creation"""
+    """Dev-only commands for bulk pack creation (TEST_SERVER only)"""
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = DatabaseManager()
+        
+        # Get TEST_SERVER_ID from environment - commands only available in this guild
+        test_server_id = os.getenv('TEST_SERVER_ID')
+        if test_server_id:
+            try:
+                self.test_guild_id = int(test_server_id)
+                print(f"✅ Dev commands will be registered in TEST_SERVER: {self.test_guild_id}")
+            except ValueError:
+                self.test_guild_id = None
+                print("⚠️  WARNING: TEST_SERVER_ID is not a valid integer")
+        else:
+            self.test_guild_id = None
+            print("⚠️  WARNING: TEST_SERVER_ID not set - bulk import commands will not be registered")
     
-    @app_commands.command(name="import_packs", description="[ADMIN] Import packs from JSON file")
-    @app_commands.checks.has_permissions(administrator=True)
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        """Ensure commands only work in TEST_SERVER"""
+        if self.test_guild_id is None:
+            await interaction.response.send_message(
+                "❌ Dev commands are not configured on this bot.",
+                ephemeral=True
+            )
+            return False
+        
+        if interaction.guild_id != self.test_guild_id:
+            await interaction.response.send_message(
+                "❌ This command is only available in the development server.",
+                ephemeral=True
+            )
+            return False
+        
+        return True
+    
+    @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
         """Import multiple packs from a JSON file
         
@@ -273,8 +305,7 @@ class AdminBulkImportCog(commands.Cog):
         
         return pack_id
     
-    @app_commands.command(name="import_packs_help", description="[ADMIN] Show help for bulk pack import")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="import_packs_help", description="[DEV] Show help for bulk pack import")
     async def import_packs_help(self, interaction: Interaction):
         """Display help and example JSON for bulk pack import"""
         await interaction.response.defer(ephemeral=True)
@@ -352,8 +383,7 @@ class AdminBulkImportCog(commands.Cog):
         
         await interaction.followup.send(embed=help_embed, ephemeral=True)
     
-    @app_commands.command(name="create_pack_template", description="[ADMIN] Generate a template JSON file for pack import")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="create_pack_template", description="[DEV] Generate a template JSON file for pack import")
     async def create_pack_template(self, interaction: Interaction, num_packs: int = 1):
         """Generate a template JSON file
         

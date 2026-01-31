@@ -1735,36 +1735,19 @@ class MenuSystemCog(commands.Cog):
         self.bot.add_view(DevPanelView(self.db))
         print("✅ Persistent menu views registered")
     
-    @app_commands.command(name="setup_user_hub", description="Post persistent User Hub in this channel")
-    @app_commands.default_permissions(administrator=True)
-    async def setup_user_hub(self, interaction: Interaction):
-        """Post persistent user hub in current channel"""
-        view = UserHubView(self.db)
-        
-        embed = discord.Embed(
-            title="🎵 Music Legends - Main Menu",
-            description=(
-                "Welcome to Music Legends!\n\n"
-                "**Get Started:**\n"
-                "• Click 🏪 **Shop** to buy your first pack\n"
-                "• Open packs to get cards\n"
-                "• Click ⚔️ **Battle** to challenge players\n"
-                "• Click 💰 **Daily Claim** for free rewards!\n\n"
-                "**Premium Features:**\n"
-                "• 🎵 **Battle Pass** - Exclusive rewards\n"
-                "• 👑 **VIP** - Daily bonuses & perks\n\n"
-                "Use the buttons below to navigate!"
-            ),
-            color=0x3498db
-        )
-        embed.set_footer(text="Tip: Click any button to get started!")
-        
-        await interaction.response.send_message(embed=embed, view=view)
-    
-    @app_commands.command(name="setup_dev_panel", description="Post persistent Dev Panel in this channel")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.command(name="setup_dev_panel", description="[DEV] Post persistent Dev Panel in this channel")
     async def setup_dev_panel(self, interaction: Interaction):
         """Post persistent dev panel in current channel (dev-only channel)"""
+        # Check if in TEST_SERVER
+        import os
+        test_server_id = os.getenv('TEST_SERVER_ID')
+        if test_server_id and interaction.guild_id != int(test_server_id):
+            await interaction.response.send_message(
+                "❌ This command is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         # MUST defer immediately to prevent timeout
         await interaction.response.defer(ephemeral=False)
         
@@ -1805,26 +1788,6 @@ class MenuSystemCog(commands.Cog):
             pass
         
         await interaction.followup.send(embed=embed, view=view)
-    
-    @app_commands.command(name="sync_commands", description="Force sync slash commands to this server")
-    @app_commands.default_permissions(administrator=True)
-    async def sync_commands(self, interaction: Interaction):
-        """Manually sync commands to current server"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            guild = interaction.guild
-            synced = await self.bot.tree.sync(guild=guild)
-            await interaction.followup.send(
-                f"✅ Synced {len(synced)} commands to **{guild.name}**!\n\n"
-                f"Commands should appear immediately. Try typing `/setup_dev_panel`",
-                ephemeral=True
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Failed to sync commands: {e}",
-                ephemeral=True
-            )
     
     @app_commands.command(name="menu", description="Open the main menu")
     async def menu_command(self, interaction: Interaction):
