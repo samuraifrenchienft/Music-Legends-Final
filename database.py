@@ -250,6 +250,24 @@ class DatabaseManager:
                 )
             """)
             
+            # Marketplace daily stats tracking
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_daily_stats (
+                    stat_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date DATE NOT NULL UNIQUE,
+                    packs_added INTEGER DEFAULT 0,
+                    packs_sold INTEGER DEFAULT 0,
+                    total_revenue_cents INTEGER DEFAULT 0,
+                    new_creators INTEGER DEFAULT 0,
+                    top_pack_id TEXT,
+                    top_pack_sales INTEGER DEFAULT 0,
+                    top_creator_id INTEGER,
+                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (top_pack_id) REFERENCES creator_packs(pack_id),
+                    FOREIGN KEY (top_creator_id) REFERENCES users(user_id)
+                )
+            """)
+            
             # ===== NEW RELATIONAL SCHEMA =====
             
             # 1. YouTubeVideos - Stores raw metadata from YouTube

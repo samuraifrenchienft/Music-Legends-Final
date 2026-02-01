@@ -2,12 +2,15 @@
 """
 Pack Opening Animation System
 Sequential card reveals with rarity-specific effects
+Enhanced with audio feedback and visual celebrations
 """
 
 import discord
 from discord import Interaction
 import asyncio
-from typing import List, Dict
+import os
+from pathlib import Path
+from typing import List, Dict, Optional
 from services.image_cache import safe_image
 
 
@@ -27,6 +30,20 @@ class SkipView(discord.ui.View):
 
 class PackOpeningAnimator:
     """Handles animated pack opening with sequential card reveals"""
+    
+    # Animated GIF URLs for effects (using Tenor API)
+    CELEBRATION_GIFS = {
+        'legendary': 'https://media.tenor.com/Cvx2qeKmAOEAAAAC/fireworks-celebration.gif',
+        'epic': 'https://media.tenor.com/XVXk9vHkRgEAAAAC/confetti.gif',
+        'purchase': 'https://media.tenor.com/xkv5rN7gKC0AAAAC/money-cash.gif',
+    }
+    
+    # Audio file paths
+    AUDIO_DIR = Path('assets/sounds')
+    AUDIO_FILES = {
+        'legendary_pull': AUDIO_DIR / 'legendary_pull.mp3',
+        'card_pickup': AUDIO_DIR / 'card_pickup.mp3',
+    }
     
     # Rarity colors and emojis
     RARITY_CONFIG = {
@@ -77,14 +94,36 @@ class PackOpeningAnimator:
         return embed
     
     def create_legendary_teaser_embed(self) -> discord.Embed:
-        """Create dramatic legendary teaser embed"""
+        """Create dramatic legendary teaser embed with GIF"""
         embed = discord.Embed(
             title="✨ LEGENDARY PULL! ✨",
-            description="🌟 Something amazing is coming... 🌟\n\n⭐ **LEGENDARY CARD INCOMING!** ⭐",
+            description="🌟 Something amazing is coming... 🌟\n\n⭐ **LEGENDARY CARD INCOMING!** ⭐\n\n💎💎💎💎💎",
             color=discord.Color.gold()
         )
+        # Add celebration GIF
+        embed.set_image(url=self.CELEBRATION_GIFS['legendary'])
         embed.set_footer(text="Get ready for something special!")
         return embed
+    
+    async def send_emoji_fireworks(self, interaction: Interaction, message):
+        """Send emoji fireworks celebration"""
+        fireworks_emojis = "✨🎊💎🌟⭐🎉✨💫🎊🌟💎✨⭐🎉💫🎊"
+        try:
+            await message.add_reaction("💎")
+            await message.add_reaction("⭐")
+            await message.add_reaction("✨")
+        except:
+            pass  # Ignore if reactions fail
+    
+    def get_audio_file(self, audio_type: str) -> Optional[discord.File]:
+        """Get audio file for attachment if it exists"""
+        if audio_type not in self.AUDIO_FILES:
+            return None
+        
+        audio_path = self.AUDIO_FILES[audio_type]
+        if audio_path.exists():
+            return discord.File(str(audio_path), filename=audio_path.name)
+        return None
     
     def create_card_reveal_embed(
         self,
@@ -283,7 +322,20 @@ class PackOpeningAnimator:
                 # Show legendary teaser if this is a legendary card
                 if rarity == 'legendary':
                     legendary_teaser = self.create_legendary_teaser_embed()
-                    await interaction.edit_original_response(embed=legendary_teaser, view=skip_view)
+                    # Get audio file if available
+                    audio_file = self.get_audio_file('legendary_pull')
+                    if audio_file:
+                        await interaction.edit_original_response(embed=legendary_teaser, attachments=[audio_file], view=skip_view)
+                    else:
+                        await interaction.edit_original_response(embed=legendary_teaser, view=skip_view)
+                    
+                    # Add emoji reactions for celebration
+                    try:
+                        msg = await interaction.original_response()
+                        await self.send_emoji_fireworks(interaction, msg)
+                    except:
+                        pass
+                    
                     await asyncio.sleep(2.0)  # Dramatic pause
                 
                 # Create reveal embed

@@ -618,8 +618,9 @@ class GameplayCommands(commands.Cog):
 
     @app_commands.command(name="daily", description="Claim daily rewards")
     async def daily_command(self, interaction: Interaction):
-        """Claim daily rewards with streak bonuses"""
+        """Claim daily rewards with streak bonuses and audio feedback"""
         from config.economy import get_daily_reward, RANKS, get_rank
+        from pathlib import Path
         
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
@@ -677,12 +678,25 @@ class GameplayCommands(commands.Cog):
             
             conn.commit()
         
+        # Check for audio file
+        audio_path = Path('assets/sounds/daily_claim.mp3')
+        audio_file = None
+        if audio_path.exists():
+            audio_file = discord.File(str(audio_path), filename='daily_claim.mp3')
+        
         # Create reward embed
+        is_milestone = current_streak in [3, 7, 14, 30]
+        
         embed = discord.Embed(
-            title="🎁 Daily Reward Claimed!",
-            description=f"**Day {current_streak} Streak!**",
+            title="🎁 Daily Reward Claimed!" if not is_milestone else f"🎉 DAY {current_streak} MILESTONE! 🎉",
+            description=f"**Day {current_streak} Streak!** {'🔥' * min(current_streak, 10)}",
             color=discord.Color.gold()
         )
+        
+        # Add GIF for milestones
+        if is_milestone:
+            celebration_gif = 'https://media.tenor.com/Cvx2qeKmAOEAAAAC/fireworks-celebration.gif'
+            embed.set_image(url=celebration_gif)
         
         rewards_text = f"💰 Gold: +{gold_reward}"
         if ticket_reward > 0:
@@ -718,9 +732,13 @@ class GameplayCommands(commands.Cog):
                 inline=False
             )
         
-        embed.set_footer(text="🔥 Keep your streak alive! Claim daily to earn bonus rewards.")
+        embed.set_footer(text="Come back tomorrow to keep your streak!")
         
-        await interaction.response.send_message(embed=embed)
+        # Send with audio if available
+        if audio_file:
+            await interaction.response.send_message(embed=embed, file=audio_file, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
@@ -745,6 +763,13 @@ class GameplayCommands(commands.Cog):
             card = result['card']
             tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣", "legendary": "🔴"}.get(card['tier'], "⚪")
             
+            # Get audio file if available
+            from pathlib import Path
+            audio_path = Path('assets/sounds/card_pickup.mp3')
+            audio_file = None
+            if audio_path.exists():
+                audio_file = discord.File(str(audio_path), filename='card_pickup.mp3')
+            
             # Send success message
             channel = self.bot.get_channel(drop_data['channel_id'])
             if channel:
@@ -762,7 +787,11 @@ class GameplayCommands(commands.Cog):
                     inline=False
                 )
                 
-                await channel.send(embed=embed)
+                # Send with audio if available
+                if audio_file:
+                    await channel.send(embed=embed, file=audio_file)
+                else:
+                    await channel.send(embed=embed)
             
             # Remove from active drops
             del self.active_drop_messages[payload.message_id]

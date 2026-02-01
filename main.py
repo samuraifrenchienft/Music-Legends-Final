@@ -89,6 +89,15 @@ class Bot(commands.Bot):
             asyncio.create_task(backup_loop())
             print("⏰ Automatic hourly backups enabled")
         
+        # Initialize Season System
+        print("🎮 Initializing Season System...")
+        from season_system import SeasonManager
+        from database import DatabaseManager
+        season_db = DatabaseManager()
+        season_manager = SeasonManager(season_db)
+        season_manager.initialize_season_tables()
+        print("✅ Season System initialized")
+        
         # Load essential cogs without duplicates
         cogs = [
             'cogs.start_game',                # Start game command
@@ -97,6 +106,7 @@ class Bot(commands.Bot):
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
             'cogs.marketplace',               # Marketplace commands
             'cogs.cosmetic_shop',             # Cosmetic shop and customization
+            'cogs.season_commands',           # Season progression and rewards
             'cogs.admin_bulk_import',         # Dev-only bulk pack import (TEST_SERVER)
             'cogs.admin_commands',            # Admin commands (all servers)
         ]

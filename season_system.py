@@ -9,7 +9,21 @@ class SeasonManager:
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
         self.current_season = None
-        self.season_duration_days = 30  # 30 days per season
+        self.season_duration_days = 60  # 60 days per season (synced with battle pass)
+        
+        # Season 1 Configuration
+        self.SEASON_1_CONFIG = {
+            'name': 'Rhythm Rising',
+            'number': 1,
+            'theme': 'Origins - The First Legends',
+            'start_date': datetime(2026, 2, 1),  # February 1, 2026
+            'end_date': datetime(2026, 4, 1),     # April 1, 2026 (60 days)
+            'exclusive_cards': [
+                "Founder's Legend - Mythic",
+                "Season 1 Champion - Legendary",
+                "Origin Master - Epic"
+            ]
+        }
         
     def initialize_season_tables(self):
         """Create season-related database tables"""
@@ -104,6 +118,42 @@ class SeasonManager:
             """)
             
             conn.commit()
+        
+        # Initialize Season 1 if no seasons exist
+        self.ensure_season_exists()
+    
+    def ensure_season_exists(self):
+        """Ensure at least one season exists, create Season 1 if needed"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM seasons")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                print("🎮 No seasons found - Creating Season 1: Rhythm Rising")
+                cfg = self.SEASON_1_CONFIG
+                cursor.execute("""
+                    INSERT INTO seasons 
+                    (season_name, season_number, start_date, end_date, is_active, theme, special_cards)
+                    VALUES (?, ?, ?, ?, TRUE, ?, ?)
+                """, (
+                    cfg['name'],
+                    cfg['number'],
+                    cfg['start_date'],
+                    cfg['end_date'],
+                    cfg['theme'],
+                    json.dumps(cfg['exclusive_cards'])
+                ))
+                
+                season_id = cursor.lastrowid
+                conn.commit()
+                
+                print(f"✅ Season 1 created with ID {season_id}")
+                print(f"📅 Duration: {cfg['start_date'].strftime('%Y-%m-%d')} to {cfg['end_date'].strftime('%Y-%m-%d')}")
+                
+                # Generate rewards for Season 1
+                self._reset_season_caps(season_id)
+                self._generate_season_rewards(season_id)
     
     def create_new_season(self, season_name: str, theme: str = None) -> Dict:
         """Create a new season"""

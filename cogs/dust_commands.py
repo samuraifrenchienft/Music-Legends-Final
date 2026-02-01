@@ -310,25 +310,42 @@ class DustCommandsCog(commands.Cog):
         )
         
         if success:
+            # Get audio file if available
+            from pathlib import Path
+            audio_path = Path('assets/sounds/pack_purchase.mp3')
+            audio_file = None
+            if audio_path.exists():
+                audio_file = discord.File(str(audio_path), filename='pack_purchase.mp3')
+            
             embed = discord.Embed(
                 title="🎁 Pack Purchased!",
                 description=f"{message}\n\n**Pack ID:** {pack_id}",
                 color=discord.Color.green()
             )
+            
+            # Add celebration GIF
+            celebration_gif = 'https://media.tenor.com/xkv5rN7gKC0AAAAC/money-cash.gif'
+            embed.set_image(url=celebration_gif)
+            
             embed.add_field(
                 name="💎 Remaining Dust",
                 value=f"{dust_economy.get_dust_balance(interaction.user.id):,}",
                 inline=False
             )
             embed.set_footer(text="Use /open_pack to open your new pack!")
+            
+            # Send with audio if available
+            if audio_file:
+                await interaction.response.send_message(embed=embed, file=audio_file, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             embed = discord.Embed(
                 title="❌ Purchase Failed",
                 description=message,
                 color=discord.Color.red()
             )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="dust_shop", description="View the dust shop with all available purchases")
     async def dust_shop(self, interaction: Interaction):

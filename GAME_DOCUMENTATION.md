@@ -5,11 +5,12 @@
 2. [Core Gameplay Mechanics](#core-gameplay-mechanics)
 3. [Card System](#card-system)
 4. [Battle System](#battle-system)
-5. [Pack Creation & Economy](#pack-creation--economy)
-6. [Player Progression](#player-progression)
-7. [Database Architecture](#database-architecture)
-8. [API Reference](#api-reference)
-9. [Development Guide](#development-guide)
+5. [Season System](#season-system)
+6. [Pack Creation & Economy](#pack-creation--economy)
+7. [Player Progression](#player-progression)
+8. [Database Architecture](#database-architecture)
+9. [API Reference](#api-reference)
+10. [Development Guide](#development-guide)
 
 ---
 
@@ -199,6 +200,79 @@ Future achievements may include:
 - **Creator**: Publish first pack
 - **Master**: Reach 80% win rate
 - **Legend**: Collect a Mythic card
+
+---
+
+## Season System
+
+**Music Legends** features competitive seasonal events that run for 60 days. Each season offers exclusive rewards, rankings, and limited-time cards.
+
+### Season Structure
+
+```
+Season Duration: 60 days
+XP per Level: 100 XP
+Max Level: No limit
+```
+
+### Experience (XP) Earning
+
+Players earn XP through various activities:
+
+| Activity | XP Earned | Notes |
+|----------|-----------|-------|
+| **Open Pack** | +10 per card | Main XP source |
+| **Win Battle** | +25 per win | PvP reward |
+| **Complete Trade** | +15 per trade | Trading bonus |
+| **Unique Artist** | +50 bonus | First time collecting |
+| **Daily Claim** | +Bonus XP | Daily participation |
+
+### Rank System
+
+Players advance through five ranks based on total XP:
+
+| Rank | Total XP Required | Emoji |
+|------|-------------------|-------|
+| **Bronze** | 0-499 XP | 🥉 |
+| **Silver** | 500-1,999 XP | 🥈 |
+| **Gold** | 2,000-4,999 XP | 🥇 |
+| **Platinum** | 5,000-9,999 XP | 💎 |
+| **Diamond** | 10,000+ XP | 💠 |
+
+### Season Commands
+
+```
+/season_info          - View current season details
+/season_progress      - Check your level and XP
+/season_rewards       - Browse available rewards
+/season_leaderboard   - Top 25 players
+/claim_reward <id>    - Claim earned rewards
+```
+
+### Reward Types
+
+1. **Currency Rewards**: Gold, Dust, Tickets
+2. **Card Rewards**: Guaranteed rarity cards
+3. **Cosmetic Rewards**: Frames, foils, badges
+4. **Title Rewards**: Special profile titles
+5. **Season-Exclusive Cards**: Only available during that season
+
+### Season End
+
+When a season concludes:
+- Leaderboard rankings are finalized
+- Top 10 players receive bonus rewards
+- Season-exclusive cards become unavailable
+- Player collections remain intact
+- New season begins with fresh rewards
+
+### Audio & Visual Feedback
+
+Enhanced player experience with:
+- 🌟 **Sound Effects**: Legendary pulls, daily claims, purchases
+- 🎨 **Animated GIFs**: Celebrations and milestones
+- 💎 **Emoji Reactions**: Fireworks for special moments
+- 🖼️ **Full-Size Images**: Enhanced card displays
 
 ---
 

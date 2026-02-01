@@ -1,14 +1,15 @@
 # 🎵 Music Legends — Discord Card Game
 
-Music Legends is a Discord card game where players collect artist cards, create custom packs, and battle friends with a comprehensive battle system.
+Music Legends is a Discord card game where players collect artist cards, create custom packs, battle friends, and compete in seasonal events for exclusive rewards.
 
 ## 🚀 **Current Status: PRODUCTION READY** ✅
 
 - ✅ **Battle System**: Complete 4-tier wager system with critical hits
 - ✅ **Pack Creation**: Interactive YouTube/Spotify integration  
+- ✅ **Season System**: 60-day competitive seasons with exclusive rewards
+- ✅ **Audio Feedback**: Enhanced celebrations with sound effects
 - ✅ **Database**: SQLite with full schema support
 - ✅ **Railway Deployment**: Docker containerized and running
-- ✅ **JSON Issues**: All resolved and working
 
 ---
 
@@ -16,12 +17,27 @@ Music Legends is a Discord card game where players collect artist cards, create 
 
 ### **Core Commands**
 - **🎴 Open a pack:** `/open_pack <pack_id>`
-- **👀 View your cards:** `/deck` (shows battle deck)
+- **👀 View your cards:** Collection button in User Hub
 - **⚔️ Battle someone:** `/battle @user <wager>`
 - **📊 Check stats:** `/stats`
 - **🏆 Leaderboard:** `/leaderboard`
 - **💰 Check balance:** `/balance`
-- **🎁 Daily reward:** `/daily`
+- **🎁 Daily reward:** Click "Daily Claim" in User Hub
+
+### **🎮 Season System (NEW!)**
+Compete in 60-day seasons to earn exclusive rewards and climb the ranks!
+
+- **📊 View Season Info:** `/season_info` - Current season details and countdown
+- **⭐ Track Progress:** `/season_progress` - Your level, XP, and rank
+- **🎁 Browse Rewards:** `/season_rewards` - See what you can earn
+- **🏆 Leaderboard:** `/season_leaderboard` - Top 25 players
+- **💎 Claim Rewards:** `/claim_reward <id>` - Get your earned rewards
+
+**How It Works:**
+- Earn XP by opening packs, winning battles, and trading
+- Level up to unlock exclusive cards, gold, and cosmetics
+- Compete for top ranks: Bronze → Silver → Gold → Platinum → Diamond
+- Season-exclusive cards are available ONLY during their season!
 
 ### **Battle System**
 - **4 Wager Tiers**: Casual (50g), Standard (100g), High Stakes (250g), Extreme (500g)
@@ -30,10 +46,27 @@ Music Legends is a Discord card game where players collect artist cards, create 
 - **Power-based**: Card stats determine winner
 
 ### **Pack Creation**
-- **Create Pack:** `/create_pack <name> <artist>`
+- **Create Pack:** Use Dev Panel (test server) or menu system
 - **Browse Packs:** `/packs`
 - **YouTube Integration**: Automatic video search and card generation
 - **Interactive Selection**: Song selection UI for custom packs
+
+---
+
+## 🎨 **Enhanced Features**
+
+### **Audio Feedback**
+Experience premium audio effects during key moments:
+- 🌟 **Legendary Pulls** - Epic sound when you get legendary cards
+- 💰 **Daily Rewards** - Coin sounds for daily claims
+- 🎴 **Card Pickups** - Whoosh sounds when claiming drops
+- 📦 **Purchases** - Success sounds for pack purchases
+
+### **Visual Celebrations**
+- Animated GIFs for legendary pulls and milestones
+- Emoji fireworks for special achievements
+- Rarity-specific effects and colors
+- Full-size card images in reveals
 
 ---
 
@@ -42,14 +75,15 @@ Music Legends is a Discord card game where players collect artist cards, create 
 ### **Admin Commands**
 - **📈 Server Analytics:** `/server_analytics`
 - **ℹ️ Server Info:** `/server_info`
-- **🗑️ Delete Pack:** `/delete_pack <pack_id>` (DEV ONLY)
+- **🔄 Sync Commands:** `/sync_commands`
+- **📋 Setup User Hub:** `/setup_user_hub`
 - **💎 Premium:** `/premium_subscribe`
 
 ### **Setup Requirements**
 1. **Add Bot to Server**
-2. **Set Up Channel Permissions**
-3. **Configure Economy** (optional)
-4. **Enable Battle Commands**
+2. **Run `/setup_user_hub`** in your main channel
+3. **Set Up Channel Permissions**
+4. **Players start playing!**
 
 ---
 
@@ -64,8 +98,15 @@ Music Legends is a Discord card game where players collect artist cards, create 
 - `/daily` - Claim daily rewards
 - `/balance` - Check gold and economy
 
+### **🎯 Season Commands (NEW!)**
+- `/season_info` - View current season details
+- `/season_progress` - Check your level and XP
+- `/season_rewards` - Browse available rewards
+- `/season_leaderboard` - See top players
+- `/claim_reward` - Claim your earned rewards
+
 ### **📦 Pack Commands**
-- `/create_pack` - Create custom artist packs
+- `/create_pack` - Create custom artist packs (dev server)
 - `/open_pack` - Open packs and receive cards
 - `/packs` - Browse available creator packs
 
@@ -73,7 +114,17 @@ Music Legends is a Discord card game where players collect artist cards, create 
 - `/premium_subscribe` - Upgrade to premium
 - `/server_info` - View server status
 - `/server_analytics` - View usage analytics
-- `/delete_pack` - Delete packs (DEV only)
+- `/setup_user_hub` - Post persistent User Hub
+- `/sync_commands` - Force sync slash commands
+
+---
+
+## 📚 Documentation
+
+- **[Player Guide](PLAYER_GUIDE.md)** - Complete guide for players (seasons, commands, tips)
+- **[Game Documentation](GAME_DOCUMENTATION.md)** - Technical details and architecture
+- **[Pack Creation Guide](PACK_CREATION_COMPLETE.md)** - How pack creation works
+- **[Bulk Pack Creation](BULK_PACK_CREATION_GUIDE.md)** - Create multiple packs at once
 
 ---
 
