@@ -170,6 +170,33 @@ class Bot(commands.Bot):
         print("📋 Commands should auto-register with Discord")
         
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
+        
+        # Send startup notice to dev channel
+        try:
+            test_server_id = os.getenv('TEST_SERVER_ID')
+            if test_server_id:
+                test_server = self.get_guild(int(test_server_id))
+                if test_server:
+                    # Find #dev-controls channel
+                    dev_channel = discord.utils.find(lambda c: c.name == 'dev-controls', test_server.channels)
+                    if dev_channel and isinstance(dev_channel, discord.TextChannel):
+                        startup_embed = discord.Embed(
+                            title="🚀 Bot Restarted",
+                            description="The bot has been restarted and is now online.",
+                            color=discord.Color.green()
+                        )
+                        startup_embed.add_field(
+                            name="⏰ Time",
+                            value=f"<t:{int(__import__('time').time())}:F>",
+                            inline=False
+                        )
+                        startup_embed.set_footer(text="All systems operational")
+                        try:
+                            await dev_channel.send(embed=startup_embed)
+                        except Exception as e:
+                            print(f"⚠️ Could not send startup notice: {e}")
+        except Exception as e:
+            print(f"⚠️ Startup notice error: {e}")
 
     async def close(self):
         """Cleanup when bot shuts down"""

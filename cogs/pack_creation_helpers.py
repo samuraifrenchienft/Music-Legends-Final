@@ -178,6 +178,8 @@ async def finalize_pack_creation_lastfm(
                     video_url=track.get('url', '')
                 )
                 
+                print(f"🎨 DEBUG: Card data image_url: {card_data.get('image_url', 'NO IMAGE')[:80] if card_data.get('image_url') else 'MISSING'}")
+                
                 # Create card ID
                 card_id = f"{pack_id}_{track['name'].lower().replace(' ', '_')[:20]}_{random.randint(1000, 9999)}"
                 
@@ -199,6 +201,7 @@ async def finalize_pack_creation_lastfm(
                 }
                 
                 print(f"📦 Creating card: {db_card_data['title']} (Rarity: {db_card_data['rarity']})")
+                print(f"🖼️ Card image_url saved: {db_card_data.get('image_url', 'EMPTY')[:80] if db_card_data.get('image_url') else 'NO URL'}")
                 
                 # Add card to master list
                 success = db.add_card_to_master(db_card_data)
