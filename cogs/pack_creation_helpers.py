@@ -131,10 +131,10 @@ async def show_song_selection_lastfm(
     
     # Show selection view
     view = SongSelectionView(formatted_tracks, max_selections=5, callback=on_songs_selected)
-    await interaction.edit_original_response(
-        content=None,
+    await interaction.followup.send(
         embed=selection_embed,
-        view=view
+        view=view,
+        ephemeral=False
     )
 
 

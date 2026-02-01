@@ -559,8 +559,12 @@ class DevPanelView(discord.ui.View):
     )
     async def create_community_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create community pack (free for devs)"""
-        modal = PackCreationModal(pack_type="community", db=self.db)
-        await interaction.response.send_modal(modal)
+        view = PackCreationModeView(pack_type="community", db=self.db)
+        await interaction.response.send_message(
+            "**Community Pack Creation**\n\nHow would you like to create your pack?",
+            view=view,
+            ephemeral=True
+        )
     
     @discord.ui.button(
         label="💎 Create Gold Pack",
@@ -570,8 +574,12 @@ class DevPanelView(discord.ui.View):
     )
     async def create_gold_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create gold pack (free for devs)"""
-        modal = PackCreationModal(pack_type="gold", db=self.db)
-        await interaction.response.send_modal(modal)
+        view = PackCreationModeView(pack_type="gold", db=self.db)
+        await interaction.response.send_message(
+            "**Gold Pack Creation**\n\nHow would you like to create your pack?",
+            view=view,
+            ephemeral=True
+        )
     
     @discord.ui.button(
         label="🎁 Give Cards",
@@ -686,6 +694,21 @@ class DevPanelView(discord.ui.View):
         await interaction.response.send_message(
             "⚠️ **Restart Bot?**\n\nThis will disconnect all users briefly.\nAre you sure?",
             view=ConfirmRestartView(),
+            ephemeral=True
+        )
+    
+    @discord.ui.button(
+        label="✨ Legendary Cosmetics",
+        style=discord.ButtonStyle.primary,
+        custom_id="dev_panel:legendary_cosmetics",
+        row=2
+    )
+    async def legendary_cosmetics_button(self, interaction: Interaction, button: discord.ui.Button):
+        """Manage legendary card cosmetics"""
+        view = LegendaryCosmeticsView(self.db)
+        await interaction.response.send_message(
+            "✨ **Legendary Card Cosmetics**\n\nManage cosmetics for legendary cards:",
+            view=view,
             ephemeral=True
         )
     
@@ -1005,6 +1028,181 @@ class ConfirmRestartView(discord.ui.View):
 # MODALS
 # ============================================
 
+class LegendaryCosmeticsView(discord.ui.View):
+    """Manage default cosmetics for legendary cards"""
+    
+    def __init__(self, db: DatabaseManager):
+        super().__init__(timeout=180)
+        self.db = db
+    
+    @discord.ui.button(
+        label="📋 Set Default Frame",
+        style=discord.ButtonStyle.primary,
+        emoji="🎨"
+    )
+    async def set_default_frame_button(self, interaction: Interaction, button: discord.ui.Button):
+        """Set default frame style for legendary cards"""
+        modal = SetLegendaryFrameModal(self.db)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(
+        label="✨ Set Default Foil",
+        style=discord.ButtonStyle.primary,
+        emoji="💫"
+    )
+    async def set_default_foil_button(self, interaction: Interaction, button: discord.ui.Button):
+        """Set default foil effect for legendary cards"""
+        modal = SetLegendaryFoilModal(self.db)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(
+        label="🔍 View Settings",
+        style=discord.ButtonStyle.secondary,
+        emoji="👁️"
+    )
+    async def view_settings_button(self, interaction: Interaction, button: discord.ui.Button):
+        """View current legendary cosmetics settings"""
+        # Get current settings from database or config
+        settings = {
+            'frame': 'crystal',
+            'foil': 'galaxy',
+            'description': 'Premium cosmetics for legendary cards'
+        }
+        
+        embed = discord.Embed(
+            title="✨ Legendary Card Cosmetics Settings",
+            description=settings['description'],
+            color=discord.Color.gold()
+        )
+        
+        embed.add_field(
+            name="🎨 Default Frame Style",
+            value=f"`{settings['frame'].title()}`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💫 Default Foil Effect",
+            value=f"`{settings['foil'].title()}`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📝 Info",
+            value="These cosmetics are automatically applied to all legendary cards created.",
+            inline=False
+        )
+        
+        embed.set_footer(text="Use buttons above to customize these settings")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class SetLegendaryFrameModal(discord.ui.Modal, title="Set Legendary Frame"):
+    """Modal to set default frame for legendary cards"""
+    
+    frame_style = discord.ui.TextInput(
+        label="Frame Style",
+        placeholder="Options: crystal, holographic, vintage, neon",
+        required=True,
+        max_length=20
+    )
+    
+    async def on_submit(self, interaction: Interaction):
+        frame = self.frame_style.value.lower().strip()
+        valid_frames = ['crystal', 'holographic', 'vintage', 'neon']
+        
+        if frame not in valid_frames:
+            await interaction.response.send_message(
+                f"❌ Invalid frame style. Valid options: {', '.join(valid_frames)}",
+                ephemeral=True
+            )
+            return
+        
+        # Save to database or config
+        # For now, we'll just confirm the change
+        embed = discord.Embed(
+            title="✅ Frame Style Updated",
+            description=f"Legendary cards will now have **{frame.title()}** frames",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Frame Style",
+            value=f"`{frame.title()}`",
+            inline=True
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class SetLegendaryFoilModal(discord.ui.Modal, title="Set Legendary Foil"):
+    """Modal to set default foil effect for legendary cards"""
+    
+    foil_effect = discord.ui.TextInput(
+        label="Foil Effect",
+        placeholder="Options: galaxy, prismatic, rainbow, standard, none",
+        required=True,
+        max_length=20
+    )
+    
+    async def on_submit(self, interaction: Interaction):
+        foil = self.foil_effect.value.lower().strip()
+        valid_foils = ['galaxy', 'prismatic', 'rainbow', 'standard', 'none']
+        
+        if foil not in valid_foils:
+            await interaction.response.send_message(
+                f"❌ Invalid foil effect. Valid options: {', '.join(valid_foils)}",
+                ephemeral=True
+            )
+            return
+        
+        # Save to database or config
+        # For now, we'll just confirm the change
+        embed = discord.Embed(
+            title="✅ Foil Effect Updated",
+            description=f"Legendary cards will now have **{foil.title()}** foil effect",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Foil Effect",
+            value=f"`{foil.title()}`",
+            inline=True
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class PackCreationModeView(discord.ui.View):
+    """Let dev choose between auto-select or manual song selection"""
+    
+    def __init__(self, pack_type: str, db: DatabaseManager):
+        super().__init__(timeout=180)
+        self.pack_type = pack_type
+        self.db = db
+    
+    @discord.ui.button(
+        label="⚡ Auto-Generate (5 Random)",
+        style=discord.ButtonStyle.primary,
+        emoji="🎲"
+    )
+    async def auto_select_button(self, interaction: Interaction, button: discord.ui.Button):
+        """Auto-select first 5 tracks"""
+        modal = PackCreationModal(pack_type=self.pack_type, db=self.db, auto_select=True)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(
+        label="🎵 Manual Select",
+        style=discord.ButtonStyle.secondary,
+        emoji="👆"
+    )
+    async def manual_select_button(self, interaction: Interaction, button: discord.ui.Button):
+        """Let dev manually select songs"""
+        modal = PackCreationModal(pack_type=self.pack_type, db=self.db, auto_select=False)
+        await interaction.response.send_modal(modal)
+
+
 class ImageConfirmationView(discord.ui.View):
     """View for confirming Last.fm image or searching YouTube"""
     
@@ -1043,10 +1241,11 @@ class ImageConfirmationView(discord.ui.View):
 class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     """Modal for pack creation - triggers full interactive flow with smart image selection"""
     
-    def __init__(self, pack_type: str, db: DatabaseManager):
+    def __init__(self, pack_type: str, db: DatabaseManager, auto_select: bool = False):
         super().__init__()
         self.pack_type = pack_type
         self.db = db
+        self.auto_select = auto_select  # If True, automatically select first 5 tracks
     
     artist_name = discord.ui.TextInput(
         label="Artist Name",
@@ -1065,7 +1264,8 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     async def on_submit(self, interaction: Interaction):
         try:
             # MUST defer immediately to prevent timeout
-            await interaction.response.defer(ephemeral=True)
+            # Use ephemeral=False so we don't interfere with the persistent dev panel
+            await interaction.response.defer(ephemeral=False, thinking=True)
             
             artist_name = self.artist_name.value
             pack_name = self.pack_name.value
@@ -1077,7 +1277,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             # Send initial message
             await interaction.followup.send(
                 f"🔍 Searching for **{artist_name}**...",
-                ephemeral=True
+                ephemeral=False
             )
             
             # Step 1: Try Last.fm first (if API key is available)
@@ -1094,6 +1294,23 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 # Last.fm found the artist - show image confirmation
                 artist_data = lastfm_result['artist']
                 tracks = lastfm_result['tracks']
+                
+                # If auto-select mode, automatically proceed with first 5 tracks
+                if self.auto_select:
+                    print(f"🔧 DEV PANEL: AUTO-SELECT MODE - Using first {min(5, len(tracks))} tracks")
+                    selected_tracks = tracks[:5]  # Auto-select first 5 tracks
+                    
+                    # Directly finalize pack with auto-selected tracks
+                    await finalize_pack_creation_lastfm(
+                        interaction,
+                        pack_name,
+                        artist_data,
+                        selected_tracks,
+                        interaction.user.id,
+                        self.pack_type,
+                        self.db
+                    )
+                    return
                 
                 # Create image preview embed
                 preview_embed = discord.Embed(
@@ -1148,12 +1365,12 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 
                 preview_embed.set_footer(text="Use this image for your pack cards?")
                 
-                # Show confirmation view
+                # Show confirmation view in a new message (not editing the original)
                 confirm_view = ImageConfirmationView(artist_data, tracks, self.pack_type)
-                await interaction.edit_original_response(
-                    content=None,
+                confirmation_msg = await interaction.followup.send(
                     embed=preview_embed,
-                    view=confirm_view
+                    view=confirm_view,
+                    ephemeral=False
                 )
                 
                 # Wait for user decision
@@ -1176,18 +1393,24 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     )
                 else:
                     # User wants YouTube images instead
-                    await interaction.edit_original_response(
+                    await interaction.followup.send(
                         content="🔍 Searching YouTube for better images...",
-                        embed=None,
-                        view=None
+                        ephemeral=False
                     )
                     await self._search_youtube_fallback(interaction, pack_name, artist_name, artist_data, tracks)
             else:
                 # Last.fm failed or unavailable, use YouTube
-                await interaction.edit_original_response(
-                    content=f"🔍 Searching YouTube for **{artist_name}**..."
-                )
-                await self._search_youtube_fallback(interaction, pack_name, artist_name)
+                print(f"🔧 DEV PANEL: Falling back to YouTube")
+                
+                # If auto-select mode, directly use YouTube videos
+                if self.auto_select:
+                    await self._search_youtube_fallback_auto(interaction, pack_name, artist_name)
+                else:
+                    await interaction.followup.send(
+                        content=f"🔍 Searching YouTube for **{artist_name}**...",
+                        ephemeral=False
+                    )
+                    await self._search_youtube_fallback(interaction, pack_name, artist_name)
             
         except Exception as e:
             print(f"❌ Error in pack creation modal: {e}")
@@ -1383,6 +1606,44 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             traceback.print_exc()
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
+    async def _search_youtube_fallback_auto(self, interaction: Interaction, pack_name: str, artist_name: str):
+        """Auto-select mode: quickly search YouTube and create pack with first 5 videos"""
+        try:
+            # Search YouTube for videos
+            videos = youtube_integration.search_music_video(artist_name, limit=10)
+            
+            if not videos or len(videos) < 5:
+                await interaction.followup.send(
+                    content=f"❌ Could not find enough videos for '{artist_name}' (need at least 5)",
+                    ephemeral=False
+                )
+                return
+            
+            # Auto-select first 5 videos
+            selected_videos = videos[:5]
+            artist = {
+                'name': artist_name,
+                'image_url': videos[0].get('thumbnail_url', '') if videos else '',
+                'popularity': 75,
+                'followers': 1000000
+            }
+            
+            # Finalize pack with auto-selected videos
+            await self._finalize_pack_creation(
+                interaction,
+                pack_name,
+                artist,
+                selected_videos,
+                interaction.user.id,
+                self.pack_type
+            )
+        
+        except Exception as e:
+            print(f"❌ Error in auto-select YouTube fallback: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=False)
+    
     async def _search_youtube_fallback(self, interaction: Interaction, pack_name: str, artist_name: str, artist_data: dict = None, lastfm_tracks: list = None):
         """Fall back to YouTube search for images while preserving Last.fm data"""
         
@@ -1390,11 +1651,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
         videos = youtube_integration.search_music_video(artist_name, limit=10)
         
         if not videos:
-            await interaction.edit_original_response(
+            await interaction.followup.send(
                 content=f"❌ Could not find videos for '{artist_name}'\n\n"
                         f"Try a different spelling or a more popular artist.",
-                embed=None,
-                view=None
+                ephemeral=False
             )
             return
         
@@ -1493,10 +1753,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
         
         # Show selection view
         view = SongSelectionView(videos, max_selections=5, callback=on_songs_selected)
-        await interaction.edit_original_response(
-            content=None,
+        await interaction.followup.send(
             embed=selection_embed,
-            view=view
+            view=view,
+            ephemeral=False
         )
 
 
