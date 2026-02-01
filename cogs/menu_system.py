@@ -1096,8 +1096,15 @@ class LegendaryCosmeticsView(discord.ui.View):
     )
     async def set_default_frame_button(self, interaction: Interaction, button: discord.ui.Button):
         """Set default frame style for legendary cards"""
-        modal = SetLegendaryFrameModal(self.db)
-        await interaction.response.send_modal(modal)
+        try:
+            modal = SetLegendaryFrameModal(self.db)
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in set_default_frame_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="✨ Set Default Foil",
@@ -1106,8 +1113,15 @@ class LegendaryCosmeticsView(discord.ui.View):
     )
     async def set_default_foil_button(self, interaction: Interaction, button: discord.ui.Button):
         """Set default foil effect for legendary cards"""
-        modal = SetLegendaryFoilModal(self.db)
-        await interaction.response.send_modal(modal)
+        try:
+            modal = SetLegendaryFoilModal(self.db)
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in set_default_foil_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="🔍 View Settings",
@@ -1116,40 +1130,47 @@ class LegendaryCosmeticsView(discord.ui.View):
     )
     async def view_settings_button(self, interaction: Interaction, button: discord.ui.Button):
         """View current legendary cosmetics settings"""
-        # Get current settings from database or config
-        settings = {
-            'frame': 'crystal',
-            'foil': 'galaxy',
-            'description': 'Premium cosmetics for legendary cards'
-        }
-        
-        embed = discord.Embed(
-            title="✨ Legendary Card Cosmetics Settings",
-            description=settings['description'],
-            color=discord.Color.gold()
-        )
-        
-        embed.add_field(
-            name="🎨 Default Frame Style",
-            value=f"`{settings['frame'].title()}`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💫 Default Foil Effect",
-            value=f"`{settings['foil'].title()}`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📝 Info",
-            value="These cosmetics are automatically applied to all legendary cards created.",
-            inline=False
-        )
-        
-        embed.set_footer(text="Use buttons above to customize these settings")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            # Get current settings from database or config
+            settings = {
+                'frame': 'crystal',
+                'foil': 'galaxy',
+                'description': 'Premium cosmetics for legendary cards'
+            }
+            
+            embed = discord.Embed(
+                title="✨ Legendary Card Cosmetics Settings",
+                description=settings['description'],
+                color=discord.Color.gold()
+            )
+            
+            embed.add_field(
+                name="🎨 Default Frame Style",
+                value=f"`{settings['frame'].title()}`",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="💫 Default Foil Effect",
+                value=f"`{settings['foil'].title()}`",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📝 Info",
+                value="These cosmetics are automatically applied to all legendary cards created.",
+                inline=False
+            )
+            
+            embed.set_footer(text="Use buttons above to customize these settings")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in view_settings_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
 
 
 class SetLegendaryFrameModal(discord.ui.Modal, title="Set Legendary Frame"):
@@ -1257,8 +1278,15 @@ class PackCreationModeView(discord.ui.View):
     )
     async def auto_select_button(self, interaction: Interaction, button: discord.ui.Button):
         """Auto-select first 5 tracks"""
-        modal = PackCreationModal(pack_type=self.pack_type, db=self.db, auto_select=True)
-        await interaction.response.send_modal(modal)
+        try:
+            modal = PackCreationModal(pack_type=self.pack_type, db=self.db, auto_select=True)
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in auto_select_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="🎵 Manual Select",
@@ -1267,8 +1295,15 @@ class PackCreationModeView(discord.ui.View):
     )
     async def manual_select_button(self, interaction: Interaction, button: discord.ui.Button):
         """Let dev manually select songs"""
-        modal = PackCreationModal(pack_type=self.pack_type, db=self.db, auto_select=False)
-        await interaction.response.send_modal(modal)
+        try:
+            modal = PackCreationModal(pack_type=self.pack_type, db=self.db, auto_select=False)
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in manual_select_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
 
 
 class ImageConfirmationView(discord.ui.View):
