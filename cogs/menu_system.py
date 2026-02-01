@@ -1109,31 +1109,38 @@ class SetLegendaryFrameModal(discord.ui.Modal, title="Set Legendary Frame"):
     )
     
     async def on_submit(self, interaction: Interaction):
-        frame = self.frame_style.value.lower().strip()
-        valid_frames = ['crystal', 'holographic', 'vintage', 'neon']
-        
-        if frame not in valid_frames:
-            await interaction.response.send_message(
-                f"❌ Invalid frame style. Valid options: {', '.join(valid_frames)}",
-                ephemeral=True
+        try:
+            frame = self.frame_style.value.lower().strip()
+            valid_frames = ['crystal', 'holographic', 'vintage', 'neon']
+            
+            if frame not in valid_frames:
+                await interaction.response.send_message(
+                    f"❌ Invalid frame style. Valid options: {', '.join(valid_frames)}",
+                    ephemeral=True
+                )
+                return
+            
+            # Save to database or config
+            # For now, we'll just confirm the change
+            embed = discord.Embed(
+                title="✅ Frame Style Updated",
+                description=f"Legendary cards will now have **{frame.title()}** frames",
+                color=discord.Color.green()
             )
-            return
-        
-        # Save to database or config
-        # For now, we'll just confirm the change
-        embed = discord.Embed(
-            title="✅ Frame Style Updated",
-            description=f"Legendary cards will now have **{frame.title()}** frames",
-            color=discord.Color.green()
-        )
-        
-        embed.add_field(
-            name="Frame Style",
-            value=f"`{frame.title()}`",
-            inline=True
-        )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            embed.add_field(
+                name="Frame Style",
+                value=f"`{frame.title()}`",
+                inline=True
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in SetLegendaryFrameModal: {e}")
+            try:
+                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
 
 
 class SetLegendaryFoilModal(discord.ui.Modal, title="Set Legendary Foil"):
@@ -1147,31 +1154,38 @@ class SetLegendaryFoilModal(discord.ui.Modal, title="Set Legendary Foil"):
     )
     
     async def on_submit(self, interaction: Interaction):
-        foil = self.foil_effect.value.lower().strip()
-        valid_foils = ['galaxy', 'prismatic', 'rainbow', 'standard', 'none']
-        
-        if foil not in valid_foils:
-            await interaction.response.send_message(
-                f"❌ Invalid foil effect. Valid options: {', '.join(valid_foils)}",
-                ephemeral=True
+        try:
+            foil = self.foil_effect.value.lower().strip()
+            valid_foils = ['galaxy', 'prismatic', 'rainbow', 'standard', 'none']
+            
+            if foil not in valid_foils:
+                await interaction.response.send_message(
+                    f"❌ Invalid foil effect. Valid options: {', '.join(valid_foils)}",
+                    ephemeral=True
+                )
+                return
+            
+            # Save to database or config
+            # For now, we'll just confirm the change
+            embed = discord.Embed(
+                title="✅ Foil Effect Updated",
+                description=f"Legendary cards will now have **{foil.title()}** foil effect",
+                color=discord.Color.green()
             )
-            return
-        
-        # Save to database or config
-        # For now, we'll just confirm the change
-        embed = discord.Embed(
-            title="✅ Foil Effect Updated",
-            description=f"Legendary cards will now have **{foil.title()}** foil effect",
-            color=discord.Color.green()
-        )
-        
-        embed.add_field(
-            name="Foil Effect",
-            value=f"`{foil.title()}`",
-            inline=True
-        )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+            embed.add_field(
+                name="Foil Effect",
+                value=f"`{foil.title()}`",
+                inline=True
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in SetLegendaryFoilModal: {e}")
+            try:
+                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
 
 
 class PackCreationModeView(discord.ui.View):
@@ -1310,9 +1324,9 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                         self.pack_type,
                         self.db
                     )
-                    return
+                    return  # Exit immediately after finalization
                 
-                # Create image preview embed
+                # Create image preview embed (only for manual mode)
                 preview_embed = discord.Embed(
                     title=f"🎵 {artist_data['name']}",
                     description=(
