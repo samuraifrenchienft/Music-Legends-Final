@@ -643,12 +643,19 @@ class DevPanelView(discord.ui.View):
     )
     async def give_cards_button(self, interaction: Interaction, button: discord.ui.Button):
         """Give cards to users"""
-        view = GiveCardsView(self.db)
-        await interaction.response.send_message(
-            "🎁 **Give Cards to Users**\n\nSelect card rarity:",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            view = GiveCardsView(self.db)
+            await interaction.response.send_message(
+                "🎁 **Give Cards to Users**\n\nSelect card rarity:",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"❌ Error in give_cards_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="💰 Give Currency",
@@ -658,12 +665,19 @@ class DevPanelView(discord.ui.View):
     )
     async def give_currency_button(self, interaction: Interaction, button: discord.ui.Button):
         """Give gold/tickets to users"""
-        view = GiveCurrencyView(self.db)
-        await interaction.response.send_message(
-            "💰 **Give Currency to Users**\n\nSelect currency type:",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            view = GiveCurrencyView(self.db)
+            await interaction.response.send_message(
+                "💰 **Give Currency to Users**\n\nSelect currency type:",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"❌ Error in give_currency_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="📊 Bot Stats",
@@ -673,8 +687,15 @@ class DevPanelView(discord.ui.View):
     )
     async def bot_stats_button(self, interaction: Interaction, button: discord.ui.Button):
         """View bot statistics"""
-        embed = create_bot_stats_embed(self.db)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            embed = create_bot_stats_embed(self.db)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in bot_stats_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="👥 User Lookup",
@@ -684,8 +705,15 @@ class DevPanelView(discord.ui.View):
     )
     async def user_lookup_button(self, interaction: Interaction, button: discord.ui.Button):
         """Look up user data"""
-        modal = UserLookupModal(self.db)
-        await interaction.response.send_modal(modal)
+        try:
+            modal = UserLookupModal(self.db)
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in user_lookup_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="🗄️ Database",
@@ -695,9 +723,16 @@ class DevPanelView(discord.ui.View):
     )
     async def database_button(self, interaction: Interaction, button: discord.ui.Button):
         """Database management"""
-        view = DatabaseView(self.db)
-        embed = create_database_embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        try:
+            view = DatabaseView(self.db)
+            embed = create_database_embed()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in database_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="⚙️ Settings",
@@ -707,9 +742,16 @@ class DevPanelView(discord.ui.View):
     )
     async def settings_button(self, interaction: Interaction, button: discord.ui.Button):
         """Bot settings"""
-        view = SettingsView(self.db)
-        embed = create_settings_embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        try:
+            view = SettingsView(self.db)
+            embed = create_settings_embed()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in settings_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="🎉 Run Event",
@@ -719,12 +761,19 @@ class DevPanelView(discord.ui.View):
     )
     async def event_button(self, interaction: Interaction, button: discord.ui.Button):
         """Start special event"""
-        view = EventView(self.db)
-        await interaction.response.send_message(
-            "🎉 **Start Special Event**\n\nChoose event type:",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            view = EventView(self.db)
+            await interaction.response.send_message(
+                "🎉 **Start Special Event**\n\nChoose event type:",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"❌ Error in event_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="📢 Announcement",
@@ -734,8 +783,15 @@ class DevPanelView(discord.ui.View):
     )
     async def announcement_button(self, interaction: Interaction, button: discord.ui.Button):
         """Send announcement"""
-        modal = AnnouncementModal()
-        await interaction.response.send_modal(modal)
+        try:
+            modal = AnnouncementModal()
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in announcement_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="🔄 Restart Bot",
@@ -745,11 +801,18 @@ class DevPanelView(discord.ui.View):
     )
     async def restart_button(self, interaction: Interaction, button: discord.ui.Button):
         """Restart bot"""
-        await interaction.response.send_message(
-            "⚠️ **Restart Bot?**\n\nThis will disconnect all users briefly.\nAre you sure?",
-            view=ConfirmRestartView(),
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                "⚠️ **Restart Bot?**\n\nThis will disconnect all users briefly.\nAre you sure?",
+                view=ConfirmRestartView(),
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"❌ Error in restart_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
     
     @discord.ui.button(
         label="✨ Legendary Cosmetics",
@@ -774,12 +837,19 @@ class DevPanelView(discord.ui.View):
     )
     async def test_button(self, interaction: Interaction, button: discord.ui.Button):
         """Test new features"""
-        view = TestView(self.db)
-        await interaction.response.send_message(
-            "🧪 **Test Features**\n\nSelect feature to test:",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            view = TestView(self.db)
+            await interaction.response.send_message(
+                "🧪 **Test Features**\n\nSelect feature to test:",
+                view=view,
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"❌ Error in test_button: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            except:
+                pass
 
 
 # ============================================
