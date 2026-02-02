@@ -1376,14 +1376,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     
     artist_name = discord.ui.TextInput(
         label="Artist Name",
-        placeholder="Enter artist name to search (e.g. Drake, Taylor Swift)...",
-        required=True,
-        max_length=100
-    )
-    
-    pack_name = discord.ui.TextInput(
-        label="Pack Name",
-        placeholder="Name for your pack (e.g. Drake Hits Pack)...",
+        placeholder="Enter artist name (e.g. Drake, Taylor Swift)...",
         required=True,
         max_length=100
     )
@@ -1395,7 +1388,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             await interaction.response.defer(ephemeral=False, thinking=True)
             
             artist_name = self.artist_name.value
-            pack_name = self.pack_name.value
+            pack_name = artist_name  # Use artist name directly for pack name
             
             print(f"🔧 DEV PANEL: Creating {self.pack_type} pack")
             print(f"   Artist: {artist_name}")
@@ -1450,8 +1443,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
                 )
                 
-                # Show Last.fm artist image - SIMPLIFIED (no image preview in dev panel)
-                # Images will still work when opening packs
+                # Get Last.fm artist image
                 print(f"🔧 DEV PANEL: Available image keys: {[k for k in artist_data.keys() if 'image' in k.lower()]}")
                 
                 image_url = None
@@ -1463,10 +1455,10 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                         print(f"🔧 DEV PANEL: ✅ Found {size}: {image_url[:80] if image_url else 'None'}...")
                         break
                 
-                # Note: We don't show the image in the dev panel preview anymore
-                # Images will be properly displayed when opening packs
+                # Set the image on the preview embed
                 if image_url:
                     print(f"🔧 DEV PANEL: Image URL saved for cards: {image_url}")
+                    preview_embed.set_thumbnail(url=image_url)
                 else:
                     print(f"🔧 DEV PANEL: No image found, will use YouTube fallback")
                 
@@ -1627,15 +1619,23 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     if not song_title or len(song_title) < 2:
                         song_title = video_title[:50]
                     
-                    # Get image URL - try multiple possible field names
+                    # Get image URL - try multiple possible field names with comprehensive fallback
                     image_url = (
                         track.get('thumbnail_url') or 
                         track.get('youtube_thumbnail') or 
                         track.get('image_url') or 
                         track.get('image_xlarge') or
-                        artist.get('image_url', '')
+                        track.get('image_large') or
+                        track.get('image_medium') or
+                        artist.get('image_url') or
+                        artist.get('image_xlarge') or
+                        artist.get('image_large') or
+                        artist.get('image_medium') or
+                        ''
                     )
-                    print(f"   Image URL: {image_url[:50] if image_url else 'NONE'}...")
+                    print(f"   Image URL: {image_url[:80] if image_url else 'NONE'}...")
+                    if not image_url:
+                        print(f"   ⚠️ WARNING: No image URL found for track {track.get('title', track.get('name', 'Unknown'))}")
                     
                     # Get video ID
                     video_id = track.get('video_id', str(random.randint(1000, 9999)))

@@ -244,9 +244,17 @@ class MusicAPIManager:
         stats = self.calculate_card_stats(playcount, pack_type, track['name'])
         rarity = self.determine_rarity(stats, pack_type)
         
-        # Use provided image or fallback to track image
+        # Use provided image or fallback to track image with comprehensive fallback chain
         if not image_url:
-            image_url = track.get('image_xlarge') or track.get('image_large', '')
+            image_url = (
+                track.get('image_xlarge') or 
+                track.get('image_large') or 
+                track.get('image_medium') or
+                track.get('image') or
+                track.get('thumbnail_url') or
+                track.get('youtube_thumbnail') or
+                ''
+            )
         
         return {
             'name': track['name'],

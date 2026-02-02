@@ -170,11 +170,23 @@ async def finalize_pack_creation_lastfm(
         for track in selected_tracks:
             try:
                 # Calculate stats from Last.fm play count
+                # Get image URL with proper fallback chain
+                image_url = (
+                    track.get('image_xlarge') or 
+                    track.get('image_large') or 
+                    track.get('image_medium') or
+                    artist_data.get('image_xlarge') or 
+                    artist_data.get('image_large') or 
+                    artist_data.get('image_medium') or
+                    track.get('image') or
+                    artist_data.get('image', '')
+                )
+                
                 card_data = music_api.format_track_for_card(
                     track=track,
                     artist_name=artist_data['name'],
                     pack_type=pack_type,
-                    image_url=track.get('image_xlarge') or artist_data.get('image_xlarge'),
+                    image_url=image_url,
                     video_url=track.get('url', '')
                 )
                 
