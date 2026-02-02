@@ -180,8 +180,8 @@ class PackOpeningAnimator:
             safe_url = safe_image(card['image_url'])
             embed.set_image(url=safe_url)  # Use set_image for full-size instead of thumbnail
         
-        # Progress footer
-        embed.set_footer(text=f"Opening pack... {card_number}/{total_cards} cards revealed")
+        # Progress footer with logo
+        embed.set_footer(text=f"🎵 Music Legends • Opening pack... {card_number}/{total_cards} cards revealed")
         
         return embed
     
@@ -259,7 +259,7 @@ class PackOpeningAnimator:
                 inline=True
             )
         
-        embed.set_footer(text="Check your collection with the Collection button in the User Hub!")
+        embed.set_footer(text="🎵 Music Legends • Check your collection with the Collection button in the User Hub!")
         
         return embed
     

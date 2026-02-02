@@ -202,8 +202,10 @@ class ArtistCard:
                 print(f"🖼️ Using fallback image for card {self.card_id}: {self.thumbnail[:50]}...")
             embed.set_thumbnail(url=safe_thumbnail)
         
-        # Footer
-        embed.set_footer(text=f"Card ID: {self.card_id}")
+        # Footer with logo
+        # Note: Logo URL would need to be hosted online for Discord to display
+        # For now, we add a text footer with logo reference
+        embed.set_footer(text=f"🎵 Music Legends • Card ID: {self.card_id}")
         
         return embed
     

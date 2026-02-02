@@ -559,37 +559,14 @@ class DevPanelView(discord.ui.View):
     )
     async def create_community_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create community pack (free for devs)"""
-        # Show mode selection with buttons in ephemeral message
-        view = PackCreationModeView(pack_type="community", db=self.db)
-        embed = discord.Embed(
-            title="📦 Community Pack Creation",
-            description="How would you like to create your pack?",
-            color=discord.Color.blue()
-        )
-        embed.add_field(
-            name="⚡ Auto-Generate",
-            value="Automatically select first 5 songs",
-            inline=True
-        )
-        embed.add_field(
-            name="🎵 Manual Select",
-            value="Choose songs manually",
-            inline=True
-        )
         try:
-            await interaction.response.send_message(
-                embed=embed,
-                view=view,
-                ephemeral=True
-            )
+            # Directly show the pack creation modal
+            modal = PackCreationModal(pack_type="community", db=self.db, auto_select=False)
+            await interaction.response.send_modal(modal)
         except Exception as e:
-            print(f"❌ Error sending pack creation message: {e}")
+            print(f"❌ Error in create_community_button: {e}")
             try:
-                await interaction.followup.send(
-                    embed=embed,
-                    view=view,
-                    ephemeral=True
-                )
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             except:
                 pass
     
@@ -601,37 +578,14 @@ class DevPanelView(discord.ui.View):
     )
     async def create_gold_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create gold pack (free for devs)"""
-        # Show mode selection with buttons in ephemeral message
-        view = PackCreationModeView(pack_type="gold", db=self.db)
-        embed = discord.Embed(
-            title="💎 Gold Pack Creation",
-            description="How would you like to create your pack?",
-            color=discord.Color.gold()
-        )
-        embed.add_field(
-            name="⚡ Auto-Generate",
-            value="Automatically select first 5 songs",
-            inline=True
-        )
-        embed.add_field(
-            name="🎵 Manual Select",
-            value="Choose songs manually",
-            inline=True
-        )
         try:
-            await interaction.response.send_message(
-                embed=embed,
-                view=view,
-                ephemeral=True
-            )
+            # Directly show the pack creation modal
+            modal = PackCreationModal(pack_type="gold", db=self.db, auto_select=False)
+            await interaction.response.send_modal(modal)
         except Exception as e:
-            print(f"❌ Error sending pack creation message: {e}")
+            print(f"❌ Error in create_gold_button: {e}")
             try:
-                await interaction.followup.send(
-                    embed=embed,
-                    view=view,
-                    ephemeral=True
-                )
+                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             except:
                 pass
     
