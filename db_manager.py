@@ -18,13 +18,35 @@ class DatabaseManager:
         if self._engine is not None:
             return
 
-        # Use working directory on Railway (no /data permissions)
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            # Use working directory instead of /data
-            database_url = "sqlite+aiosqlite:///music_legends.db"
+        # Check for DATABASE_URL from Railway or environment
+        database_url = os.getenv("DATABASE_URL")
+        
+        if database_url:
+            # PostgreSQL connection detected
+            # Convert postgresql:// to postgresql+asyncpg:// for async SQLAlchemy
+            if database_url.startswith("postgresql://"):
+                database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif database_url.startswith("postgres://"):
+                database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            # If already in asyncpg format, use as-is
+            elif "postgresql+asyncpg://" not in database_url:
+                # Assume it's PostgreSQL and add asyncpg driver
+                if "://" in database_url:
+                    parts = database_url.split("://", 1)
+                    database_url = f"postgresql+asyncpg://{parts[1]}"
+            
+            print(f"🗄️ Database initialized: PostgreSQL (Railway)")
+            print(f"📡 Connection: {database_url.split('@')[-1] if '@' in database_url else 'configured'}")
         else:
-            # Local development
-            database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///music_legends.db")
+            # Fallback to SQLite
+            if os.getenv("RAILWAY_ENVIRONMENT"):
+                # Use working directory instead of /data
+                database_url = "sqlite+aiosqlite:///music_legends.db"
+                print(f"🗄️ Database initialized: SQLite (Railway working directory)")
+            else:
+                # Local development
+                database_url = "sqlite+aiosqlite:///music_legends.db"
+                print(f"🗄️ Database initialized: SQLite (local)")
         
         try:
             # Create Async engine — nonblocking
@@ -33,21 +55,11 @@ class DatabaseManager:
                 future=True,
                 echo=False  # Set to True for SQL debugging
             )
-            
-            print(f"🗄️ Database initialized: {database_url}")
-            if os.getenv("RAILWAY_ENVIRONMENT"):
-                print("📁 Using working directory on Railway")
-            else:
-                print("💻 Using local database")
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")
-            # Create a fallback in-memory database
-            self._engine = create_async_engine(
-                "sqlite+aiosqlite:///:memory:",
-                future=True,
-                echo=False
-            )
-            print("📁 Using fallback in-memory database")
+            # Don't use in-memory database - it would lose all data on restart
+            # Instead, raise the error so it can be fixed
+            raise RuntimeError(f"Database initialization failed: {e}. Cannot use in-memory database as it would lose all user data.")
 
         # Create session factory
         self._session_factory = async_sessionmaker(
@@ -112,41 +124,100 @@ class DatabaseManager:
         if self._engine:
             await self._engine.dispose()
     
-    async def backup_database(self):
-        """Create a backup of the database to persistent storage"""
-        if os.getenv("RAILWAY_ENVIRONMENT"):
+    async def backup_database(self, backup_type: str = "periodic"):
+        """Create a backup of the database using BackupService"""
+        try:
+            from services.backup_service import backup_service
+            
+            # Use working directory for database path
+            db_path = "music_legends.db"
+            if not os.path.exists(db_path):
+                print(f"⚠️ Database file not found: {db_path}")
+                return False
+            
+            # Update backup service with correct path
+            backup_service.db_path = db_path
+            
+            # Create backup
+            backup_path = await backup_service.backup_to_local(backup_type)
+            
+            if backup_path:
+                print(f"💾 Database backed up to: {backup_path}")
+                return True
+            else:
+                print("⚠️ Backup creation returned None")
+                return False
+                
+        except ImportError:
+            # Fallback to simple backup if BackupService not available
             try:
                 import shutil
-                import datetime
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_path = f"/data/music_legends_backup_{timestamp}.db"
-                shutil.copy2("/data/music_legends.db", backup_path)
-                print(f"💾 Database backed up to: {backup_path}")
+                from datetime import datetime
+                from pathlib import Path
                 
-                # Keep only last 5 backups
-                import glob
-                backups = sorted(glob.glob("/data/music_legends_backup_*.db"))
-                if len(backups) > 5:
-                    for old_backup in backups[:-5]:
-                        os.remove(old_backup)
-                        print(f"🗑️ Removed old backup: {old_backup}")
-                        
+                db_path = "music_legends.db"
+                if not os.path.exists(db_path):
+                    return False
+                
+                backup_dir = Path("backups")
+                backup_dir.mkdir(exist_ok=True)
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = backup_dir / f"music_legends_backup_{timestamp}.db"
+                shutil.copy2(db_path, backup_path)
+                print(f"💾 Database backed up to: {backup_path}")
+                return True
             except Exception as e:
                 print(f"❌ Backup failed: {e}")
+                return False
+        except Exception as e:
+            print(f"❌ Backup failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     async def restore_database_if_needed(self):
         """Restore from backup if main database doesn't exist"""
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            if not os.path.exists("/data/music_legends.db"):
+        db_path = "music_legends.db"
+        
+        if not os.path.exists(db_path):
+            try:
+                from services.backup_service import backup_service
+                from pathlib import Path
+                import shutil
+                import gzip
+                
                 # Look for latest backup
-                import glob
-                backups = sorted(glob.glob("/data/music_legends_backup_*.db"))
+                backup_dir = Path("backups")
+                backups = []
+                
+                # Check all backup subdirectories
+                for subdir in ["shutdown", "critical", "daily", ""]:
+                    backup_subdir = backup_dir / subdir if subdir else backup_dir
+                    if backup_subdir.exists():
+                        backups.extend(backup_subdir.glob("*.db.gz"))
+                        backups.extend(backup_subdir.glob("*.db"))
+                
                 if backups:
-                    latest_backup = backups[-1]
-                    import shutil
-                    shutil.copy2(latest_backup, "/data/music_legends.db")
+                    # Sort by modification time, newest first
+                    backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    latest_backup = backups[0]
+                    
+                    # Decompress if needed
+                    if latest_backup.suffix == '.gz':
+                        with gzip.open(latest_backup, 'rb') as f_in:
+                            with open(db_path, 'wb') as f_out:
+                                shutil.copyfileobj(f_in, f_out)
+                    else:
+                        shutil.copy2(latest_backup, db_path)
+                    
                     print(f"🔄 Restored database from: {latest_backup}")
                     return True
+            except Exception as e:
+                print(f"❌ Restore failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
         return False
 
 # Single global instance

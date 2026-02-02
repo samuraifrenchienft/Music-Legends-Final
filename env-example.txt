@@ -24,3 +24,19 @@ AUDIODB_API_KEY=1
 # Comma-separated list of Discord user IDs
 # Example: DEV_USER_IDS=123456789,987654321
 DEV_USER_IDS=your_discord_user_id_here
+
+# Database Configuration
+# Railway provides DATABASE_URL automatically when PostgreSQL is added
+# Format: postgresql://user:password@host:port/database
+# If DATABASE_URL is set, the bot will use PostgreSQL instead of SQLite
+# Railway automatically sets this when you add a PostgreSQL service
+# Leave empty to use SQLite (local development)
+DATABASE_URL=
+
+# Optional: External PostgreSQL Backup Storage (for long-term archival)
+# This is SEPARATE from Railway's PostgreSQL - used for syncing backups to your own storage
+# Format: postgresql://user:password@host:port/database
+# Use this if you want to store backups in your own PostgreSQL instance (beyond Railway's 7-day retention)
+# Leave empty to use local file backups only (backups stored in backups/ directory)
+# Note: Railway already provides automatic 7-day backups - this is for YOUR custom backup storage
+POSTGRES_BACKUP_URL=

@@ -310,6 +310,15 @@ class DustCommandsCog(commands.Cog):
         )
         
         if success:
+            # Trigger backup after pack purchase
+            try:
+                from services.backup_service import backup_service
+                backup_path = await backup_service.backup_critical('pack_purchase', pack_id)
+                if backup_path:
+                    print(f"💾 Critical backup created after pack purchase: {backup_path}")
+            except Exception as e:
+                print(f"⚠️ Backup trigger failed (non-critical): {e}")
+            
             # Get audio file if available
             from pathlib import Path
             audio_path = Path('assets/sounds/pack_purchase.mp3')

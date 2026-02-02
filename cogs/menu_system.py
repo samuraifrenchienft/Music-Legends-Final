@@ -1687,6 +1687,15 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 """, (pack_id,))
                 conn.commit()
             
+            # Trigger backup after pack is published to marketplace
+            try:
+                from services.backup_service import backup_service
+                backup_path = await backup_service.backup_critical('pack_published', pack_id)
+                if backup_path:
+                    print(f"💾 Critical backup created after pack publication: {backup_path}")
+            except Exception as e:
+                print(f"⚠️ Backup trigger failed (non-critical): {e}")
+            
             # Create visual confirmation embed
             embed = discord.Embed(
                 title="✅ Pack Created Successfully!",

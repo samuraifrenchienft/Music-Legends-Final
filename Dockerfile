@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-01-29-01-49-00-RAILWAY-FIX
+ARG CACHE_BUST=2026-02-02-13-01-00-POSTGRESQL-TOOLS
 
 # Set working directory
 WORKDIR /app
@@ -11,6 +11,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     git \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

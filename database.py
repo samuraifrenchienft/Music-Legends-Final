@@ -625,6 +625,78 @@ class DatabaseManager:
             
             conn.commit()
     
+    def check_database_integrity(self) -> Dict[str, any]:
+        """
+        Check database integrity and validate critical data
+        
+        Returns:
+            Dict with integrity check results
+        """
+        results = {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "tables_checked": 0,
+            "json_validated": 0
+        }
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check database file integrity
+                cursor.execute("PRAGMA integrity_check")
+                integrity_result = cursor.fetchone()
+                if integrity_result[0] != 'ok':
+                    results["valid"] = False
+                    results["errors"].append(f"Database integrity check failed: {integrity_result[0]}")
+                    return results
+                
+                # Check critical tables exist
+                critical_tables = ['users', 'cards', 'creator_packs', 'user_cards']
+                cursor.execute("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name IN (?, ?, ?, ?)
+                """, critical_tables)
+                existing_tables = {row[0] for row in cursor.fetchall()}
+                
+                for table in critical_tables:
+                    results["tables_checked"] += 1
+                    if table not in existing_tables:
+                        results["valid"] = False
+                        results["errors"].append(f"Critical table missing: {table}")
+                
+                # Validate JSON in creator_packs.cards_data
+                cursor.execute("SELECT pack_id, cards_data FROM creator_packs WHERE cards_data IS NOT NULL")
+                packs = cursor.fetchall()
+                
+                for pack_id, cards_data_json in packs:
+                    try:
+                        cards = json.loads(cards_data_json)
+                        if not isinstance(cards, list):
+                            results["warnings"].append(f"Pack {pack_id}: cards_data is not a list")
+                        else:
+                            results["json_validated"] += 1
+                    except json.JSONDecodeError as e:
+                        results["valid"] = False
+                        results["errors"].append(f"Pack {pack_id}: Invalid JSON in cards_data - {e}")
+                
+                # Check foreign key integrity
+                cursor.execute("PRAGMA foreign_key_check")
+                fk_errors = cursor.fetchall()
+                if fk_errors:
+                    results["warnings"].append(f"Found {len(fk_errors)} foreign key constraint issues")
+                    for error in fk_errors[:5]:  # Show first 5
+                        results["warnings"].append(f"FK error: {error}")
+                
+        except Exception as e:
+            results["valid"] = False
+            results["errors"].append(f"Integrity check failed: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return results
+    
     def get_or_create_user(self, user_id: int, username: str, discord_tag: str) -> Dict:
         """Get existing user or create new one"""
         with sqlite3.connect(self.db_path) as conn:
@@ -1865,6 +1937,41 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error applying cosmetic to card: {e}")
             return False
+    
+    async def backup_database(self, backup_type: str = "periodic") -> Optional[str]:
+        """
+        Create a backup of the database using BackupService
+        
+        Args:
+            backup_type: Type of backup (periodic, critical, shutdown, daily)
+            
+        Returns:
+            Path to backup file if successful, None otherwise
+        """
+        try:
+            from services.backup_service import backup_service
+            
+            # Update backup service with correct path
+            backup_service.db_path = self.db_path
+            
+            # Create backup
+            backup_path = await backup_service.backup_to_local(backup_type)
+            
+            if backup_path:
+                print(f"💾 Database backup created: {backup_path}")
+                return backup_path
+            else:
+                print("⚠️ Backup creation returned None")
+                return None
+                
+        except ImportError:
+            print("⚠️ BackupService not available")
+            return None
+        except Exception as e:
+            print(f"❌ Backup failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def get_card_cosmetics(self, user_id: str, card_id: str) -> Optional[Dict]:
         """Get cosmetics applied to a specific card"""

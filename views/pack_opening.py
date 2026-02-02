@@ -371,6 +371,23 @@ class PackOpeningAnimator:
             )
             await interaction.edit_original_response(embed=summary_embed, view=None)
             
+            # Trigger backup if rare cards were received
+            rare_rarities = ['legendary', 'epic', 'mythic']
+            has_rare_cards = any(card.get('rarity') in rare_rarities for card in cards)
+            
+            if has_rare_cards:
+                try:
+                    from services.backup_service import backup_service
+                    user_id = interaction.user.id if hasattr(interaction, 'user') else None
+                    backup_path = await backup_service.backup_critical(
+                        'pack_opening',
+                        f"user_{user_id}" if user_id else ""
+                    )
+                    if backup_path:
+                        print(f"💾 Critical backup created after rare card pull: {backup_path}")
+                except Exception as e:
+                    print(f"⚠️ Backup trigger failed (non-critical): {e}")
+            
         except Exception as e:
             print(f"❌ Error in pack opening animation: {e}")
             import traceback

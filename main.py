@@ -72,22 +72,85 @@ class Bot(commands.Bot):
         # Create marketplace table
         await db_manager.create_marketplace_table()
         
-        # Check for database restore on Railway
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            restored = await db_manager.restore_database_if_needed()
-            if restored:
-                print("✅ Database restored from backup")
+        # Check for database restore if needed
+        restored = await db_manager.restore_database_if_needed()
+        if restored:
+            print("✅ Database restored from backup")
         
-        # Create automatic backup every hour
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            import asyncio
-            async def backup_loop():
-                while True:
-                    await asyncio.sleep(3600)  # 1 hour
-                    await db_manager.backup_database()
+        # Run database integrity check on startup
+        try:
+            from database import DatabaseManager
+            db = DatabaseManager()
+            integrity_results = db.check_database_integrity()
             
-            asyncio.create_task(backup_loop())
-            print("⏰ Automatic hourly backups enabled")
+            if integrity_results["valid"]:
+                print(f"✅ Database integrity check passed ({integrity_results['tables_checked']} tables, {integrity_results['json_validated']} JSON fields validated)")
+            else:
+                print(f"⚠️ Database integrity check found issues:")
+                for error in integrity_results["errors"]:
+                    print(f"   ❌ {error}")
+                for warning in integrity_results["warnings"][:5]:  # Show first 5 warnings
+                    print(f"   ⚠️ {warning}")
+                
+                # Try to restore from backup if integrity check failed
+                if integrity_results["errors"]:
+                    print("🔄 Attempting to restore from latest backup...")
+                    restored = await db_manager.restore_database_if_needed()
+                    if restored:
+                        print("✅ Database restored from backup after integrity check failure")
+        except Exception as e:
+            print(f"⚠️ Integrity check error (non-critical): {e}")
+        
+        # Initialize backup service and run cleanup
+        try:
+            # #region agent log
+            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"I","location":"main.py:105","message":"Before backup service import","data":{},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
+            from services.backup_service import backup_service
+            # #region agent log
+            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"I","location":"main.py:107","message":"After backup service import","data":{"backup_service_exists":backup_service is not None},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
+            backup_service.cleanup_old_backups()
+            print("✅ Backup service initialized")
+        except Exception as e:
+            # #region agent log
+            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"I","location":"main.py:110","message":"Backup service import error","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":int(__import__('time').time()*1000)})+'\n')
+            # #endregion
+            print(f"⚠️ Backup service initialization error: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Create periodic backup task (every 20 minutes during active periods)
+        import asyncio
+        async def periodic_backup_loop():
+            """Periodic backup task - runs every 20 minutes, only if bot is active"""
+            await asyncio.sleep(300)  # Wait 5 minutes after startup before first backup
+            
+            while True:
+                try:
+                    # Check if bot is active (has guilds and is ready)
+                    if hasattr(self, 'guilds') and len(self.guilds) > 0:
+                        from services.backup_service import backup_service
+                        backup_path = await backup_service.backup_periodic()
+                        if backup_path:
+                            print(f"⏰ Periodic backup created: {backup_path}")
+                    else:
+                        # Bot not ready yet, skip this cycle
+                        pass
+                except Exception as e:
+                    print(f"⚠️ Periodic backup error (non-critical): {e}")
+                
+                # Wait 20 minutes (1200 seconds) before next backup
+                await asyncio.sleep(1200)
+        
+        asyncio.create_task(periodic_backup_loop())
+        print("⏰ Periodic backups enabled (every 20 minutes during active periods)")
         
         # Initialize Season System
         print("🎮 Initializing Season System...")
@@ -201,6 +264,20 @@ class Bot(commands.Bot):
     async def close(self):
         """Cleanup when bot shuts down"""
         print("🔄 Cleaning up...")
+        
+        # Create backup before shutdown
+        try:
+            from services.backup_service import backup_service
+            print("💾 Creating shutdown backup...")
+            backup_path = await backup_service.backup_shutdown()
+            if backup_path:
+                print(f"✅ Shutdown backup created: {backup_path}")
+            else:
+                print("⚠️ Shutdown backup failed, but continuing with shutdown")
+        except ImportError:
+            print("⚠️ BackupService not available, skipping backup")
+        except Exception as e:
+            print(f"⚠️ Backup error (non-critical): {e}")
         
         try:
             from db_manager import db_manager
