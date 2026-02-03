@@ -94,3 +94,10 @@ KeyboardInterrupt
 2026-01-26 03:45:35,380 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
 2026-01-26 03:45:35,389 - discord.client - INFO - logging in using static token
 2026-01-26 03:45:37,022 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: d0f36f2dbd4e7a3316921627045aa769).
+2026-02-02 16:24:54,384 - __main__ - ERROR - Bot crashed: 'charmap' codec can't encode character '\U0001f433' in position 0: character maps to <undefined>
+2026-02-02 16:25:22,302 - __main__ - INFO - Starting Music Legends Bot...
+2026-02-02 16:25:28,067 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-02-02 16:25:28,078 - discord.client - INFO - logging in using static token
+2026-02-02 16:25:35,284 - services.backup_service - INFO - 🗄️ PostgreSQL detected - using pg_dump for backups
+2026-02-02 16:25:39,471 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: 664770806fb93437d27da8aeaac46263).
+2026-02-02 16:30:39,301 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.

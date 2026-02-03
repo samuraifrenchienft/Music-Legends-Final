@@ -20,6 +20,7 @@ from youtube_integration import youtube_integration
 from music_api_manager import music_api
 from views.song_selection import SongSelectionView
 from cogs.pack_creation_helpers import show_song_selection_lastfm, finalize_pack_creation_lastfm
+from services.image_cache import safe_image
 
 
 # ============================================
@@ -560,11 +561,15 @@ class DevPanelView(discord.ui.View):
     async def create_community_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create community pack (free for devs)"""
         try:
+            print(f"🔧 DEV PANEL: Create Community Pack button clicked")
             # Directly show the pack creation modal
             modal = PackCreationModal(pack_type="community", db=self.db, auto_select=False)
             await interaction.response.send_modal(modal)
+            print(f"🔧 DEV PANEL: Community Pack modal sent successfully")
         except Exception as e:
             print(f"❌ Error in create_community_button: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             except:
@@ -579,11 +584,15 @@ class DevPanelView(discord.ui.View):
     async def create_gold_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create gold pack (free for devs)"""
         try:
+            print(f"🔧 DEV PANEL: Create Gold Pack button clicked")
             # Directly show the pack creation modal
             modal = PackCreationModal(pack_type="gold", db=self.db, auto_select=False)
             await interaction.response.send_modal(modal)
+            print(f"🔧 DEV PANEL: Gold Pack modal sent successfully")
         except Exception as e:
             print(f"❌ Error in create_gold_button: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             except:
@@ -598,14 +607,18 @@ class DevPanelView(discord.ui.View):
     async def give_cards_button(self, interaction: Interaction, button: discord.ui.Button):
         """Give cards to users"""
         try:
+            print(f"🔧 DEV PANEL: Give Cards button clicked")
             view = GiveCardsView(self.db)
             await interaction.response.send_message(
                 "🎁 **Give Cards to Users**\n\nSelect card rarity:",
                 view=view,
                 ephemeral=True
             )
+            print(f"🔧 DEV PANEL: Give Cards view sent successfully")
         except Exception as e:
             print(f"❌ Error in give_cards_button: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             except:
@@ -738,10 +751,14 @@ class DevPanelView(discord.ui.View):
     async def announcement_button(self, interaction: Interaction, button: discord.ui.Button):
         """Send announcement"""
         try:
+            print(f"🔧 DEV PANEL: Announcement button clicked")
             modal = AnnouncementModal()
             await interaction.response.send_modal(modal)
+            print(f"🔧 DEV PANEL: Announcement modal sent successfully")
         except Exception as e:
             print(f"❌ Error in announcement_button: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             except:
