@@ -1717,23 +1717,13 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     if not song_title or len(song_title) < 2:
                         song_title = video_title[:50]
                     
-                    # Get image URL - try multiple possible field names with comprehensive fallback
-                    image_url = (
-                        track.get('thumbnail_url') or 
-                        track.get('youtube_thumbnail') or 
-                        track.get('image_url') or 
-                        track.get('image_xlarge') or
-                        track.get('image_large') or
-                        track.get('image_medium') or
-                        artist.get('image_url') or
-                        artist.get('image_xlarge') or
-                        artist.get('image_large') or
-                        artist.get('image_medium') or
-                        ''
-                    )
+                    # Get image URL using robust extraction with fallback
+                    from cogs.pack_creation_helpers import extract_image_url
+                    image_url = extract_image_url(track, artist)
+                    
                     print(f"   Image URL: {image_url[:80] if image_url else 'NONE'}...")
-                    if not image_url:
-                        print(f"   ⚠️ WARNING: No image URL found for track {track.get('title', track.get('name', 'Unknown'))}")
+                    if not image_url or image_url == '':
+                        print(f"   ⚠️  WARNING: Image URL is empty, using fallback")
                     
                     # Get video ID
                     video_id = track.get('video_id', str(random.randint(1000, 9999)))
@@ -1843,15 +1833,24 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     async def _search_youtube_fallback_auto(self, interaction: Interaction, pack_name: str, artist_name: str):
         """Auto-select mode: quickly search YouTube and create pack with first 5 videos"""
         try:
+            print(f"\n{'='*60}")
             print(f"🔧 [YOUTUBE_AUTO] Starting YouTube auto-search for: {artist_name}")
+            print(f"{'='*60}\n")
             
             # Search YouTube for videos
             try:
                 print(f"🔧 [YOUTUBE_AUTO] Querying YouTube API...")
                 videos = youtube_integration.search_music_video(artist_name, limit=10)
                 print(f"✅ [YOUTUBE_AUTO] YouTube returned {len(videos) if videos else 0} videos")
+                
+                if videos and len(videos) > 0:
+                    print(f"   First video structure: {videos[0].keys()}")
+                    print(f"   First video title: {videos[0].get('title', 'NO TITLE')}")
+                
             except Exception as youtube_error:
                 print(f"❌ [YOUTUBE_AUTO] YouTube search failed: {type(youtube_error).__name__}: {youtube_error}")
+                import traceback
+                traceback.print_exc()
                 await interaction.followup.send(
                     f"❌ **YouTube Search Failed**\n\n"
                     f"Could not search YouTube for **{artist_name}**\n\n"
@@ -1876,28 +1875,66 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             selected_videos = videos[:5]
             print(f"🔧 [YOUTUBE_AUTO] Selected first 5 videos for pack")
             
+            # Normalize video objects to track format for compatibility
+            normalized_tracks = []
+            for i, video in enumerate(selected_videos):
+                try:
+                    print(f"🔧 [YOUTUBE_AUTO] Normalizing video {i+1}/5: {video.get('title', 'Unknown')[:50]}")
+                    
+                    normalized_track = {
+                        'title': video.get('title', f'Track {i+1}'),
+                        'name': video.get('title', f'Track {i+1}'),
+                        'thumbnail_url': video.get('thumbnail_url', ''),
+                        'image_url': video.get('thumbnail_url', '') or video.get('image_url', ''),
+                        'image_xlarge': video.get('thumbnail_url', '') or video.get('image_url', ''),
+                        'image_large': video.get('thumbnail_url', '') or video.get('image_url', ''),
+                        'youtube_url': video.get('youtube_url', f"https://youtube.com/watch?v={video.get('video_id', '')}"),
+                        'youtube_id': video.get('video_id', ''),
+                        'video_id': video.get('video_id', ''),
+                        'artist': artist_name,
+                        'listeners': 0,
+                        'playcount': 0,
+                    }
+                    normalized_tracks.append(normalized_track)
+                    print(f"   ✅ Normalized: {normalized_track.get('title', 'Unknown')[:50]}")
+                    
+                except Exception as norm_error:
+                    print(f"   ❌ Error normalizing video: {norm_error}")
+                    continue
+            
+            if not normalized_tracks or len(normalized_tracks) < 5:
+                print(f"❌ [YOUTUBE_AUTO] Failed to normalize videos: {len(normalized_tracks)}/5")
+                await interaction.followup.send(
+                    content=f"❌ **Video Processing Failed**\n\n"
+                            f"Could not process YouTube videos properly.\n\n"
+                            f"Please try again or use a different artist.",
+                    ephemeral=False
+                )
+                return
+            
             # Use first video's thumbnail as artist image
-            first_video = selected_videos[0]
+            first_video = normalized_tracks[0]
             artist = {
                 'name': artist_name,
-                'image_url': first_video.get('thumbnail_url', '') or first_video.get('image_url', ''),
+                'image_url': first_video.get('thumbnail_url', '') or first_video.get('image_xlarge', ''),
                 'popularity': 75,
                 'followers': 1000000,
                 # Add Last.fm style image keys for compatibility
-                'image_xlarge': first_video.get('thumbnail_url', '') or first_video.get('image_url', ''),
-                'image_large': first_video.get('thumbnail_url', '') or first_video.get('image_url', '')
+                'image_xlarge': first_video.get('thumbnail_url', '') or first_video.get('image_xlarge', ''),
+                'image_large': first_video.get('thumbnail_url', '') or first_video.get('image_large', ''),
+                'image_medium': first_video.get('thumbnail_url', '') or first_video.get('image_large', ''),
             }
             
-            print(f"🔧 [YOUTUBE_AUTO] Using YouTube image: {artist.get('image_xlarge', 'none')[:80] if artist.get('image_xlarge') else 'FALLBACK'}")
+            print(f"🔧 [YOUTUBE_AUTO] Using image: {artist.get('image_xlarge', 'none')[:80] if artist.get('image_xlarge') else 'NONE'}")
             
             # Directly finalize pack creation without manual intervention
             try:
-                print(f"🔧 [YOUTUBE_AUTO] Finalizing pack with YouTube data...")
+                print(f"🔧 [YOUTUBE_AUTO] Finalizing pack with {len(normalized_tracks)} normalized videos...")
                 await self._finalize_pack_creation(
                     interaction,
                     pack_name,
                     artist,
-                    selected_videos,
+                    normalized_tracks,
                     interaction.user.id,
                     self.pack_type
                 )
