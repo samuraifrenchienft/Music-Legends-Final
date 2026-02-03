@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-03-INDENTATION-AND-ECONOMY-FIX
+ARG CACHE_BUST=2026-02-03-SOUND-EFFECTS-AND-EVERYONE-TAG
 
 # Set working directory
 WORKDIR /app
