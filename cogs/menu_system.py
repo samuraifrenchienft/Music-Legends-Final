@@ -1453,19 +1453,12 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     
     async def on_submit(self, interaction: Interaction):
         try:
-            print(f"[DEBUG-A] on_submit called for {self.pack_type}")
-            
             # Use artist name directly as pack name
             artist_name = self.artist_name.value
             pack_name = artist_name  # Automatically use artist name as pack name
             
-            print(f"[DEBUG-B] Artist extracted: '{artist_name}' (len={len(artist_name)})")
-            print(f"[DEBUG-B] Pack name set to: '{pack_name}'")
-            
             # Defer immediately
-            print(f"[DEBUG-C] Deferring response...")
             await interaction.response.defer(ephemeral=False, thinking=True)
-            print(f"[DEBUG-C] Defer successful")
             
             print(f"🔧 DEV PANEL: Creating {self.pack_type} pack")
             print(f"   Artist: {artist_name}")
@@ -1728,7 +1721,6 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     from cogs.pack_creation_helpers import extract_image_url
                     image_url = extract_image_url(track, artist)
                     
-                    print(f"[DEBUG-E] Image extraction for '{track.get('title','?')}': {image_url[:80] if image_url else 'NONE'}")
                     print(f"   Image URL: {image_url[:80] if image_url else 'NONE'}...")
                     if not image_url or image_url == '':
                         print(f"   ⚠️  WARNING: Image URL is empty, using fallback")

@@ -497,10 +497,11 @@ class CardGameCog(Cog):
             await interaction.followup.send(f"❌ Error opening pack: {e}", ephemeral=True)
 
     @app_commands.command(name="create_pack", description="Create a new pack with artist cards")
-    @app_commands.describe(pack_name="Name for your pack", artist_name="Main artist for the pack")
-    async def create_pack(self, interaction: Interaction, pack_name: str, artist_name: str):
+    @app_commands.describe(artist_name="Artist name (becomes pack name)")
+    async def create_pack(self, interaction: Interaction, artist_name: str):
         """Create a new pack with artist cards - Interactive workflow"""
-        print(f"🔥 DEBUG: create_pack called by {interaction.user.name} - pack: {pack_name}, artist: {artist_name}")
+        pack_name = artist_name  # Pack name automatically equals artist name
+        print(f"🔥 DEBUG: create_pack called by {interaction.user.name} - artist/pack: {artist_name}")
         await interaction.response.defer(ephemeral=True)
         
         try:
