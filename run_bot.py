@@ -32,6 +32,10 @@ def main():
         print(f"[DOCKER] Python path: {sys.path}")
         print(f"[DOCKER] Files in current dir: {os.listdir('.')}")
         
+        # Log startup
+        from services.system_monitor import log_bot_restart
+        log_bot_restart('startup')
+        
         # Load environment variables from .env.txt
         from dotenv import load_dotenv
         load_dotenv('.env.txt')
@@ -59,6 +63,9 @@ def main():
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
+        import traceback
+        from services.system_monitor import log_bot_crash
+        log_bot_crash(error=str(e), traceback_str=traceback.format_exc())
         sys.exit(1)
 
 if __name__ == "__main__":
