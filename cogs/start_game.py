@@ -39,9 +39,9 @@ class StartGameCog(commands.Cog):
 
 🚀 **Getting Started:**
 • `/drop` - Create a card drop for the community
-• `/collection` - View your card collection
+• `/deck` - View your battle deck and cards
 • `/battle @friend` - Challenge someone to a card battle
-• `/market` - Browse the card marketplace
+• `/packs` - Browse the card marketplace
 
 *Creating starter cards from YouTube... Please wait!*
             """,
@@ -129,7 +129,7 @@ class StartGameCog(commands.Cog):
 
 🎮 **Try these commands:**
 • `/drop` - Create a community drop
-• `/collection` - View your cards
+• `/deck` - View your cards
 • `/battle @friend` - Start a card battle
 
 {f'⚠️ Some artists failed to load: {", ".join(failed_artists[:5])}' if failed_artists else ''}
