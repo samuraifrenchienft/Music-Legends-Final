@@ -971,4 +971,4 @@ class CardUpgradeView(ui.View):
         return interaction.user.id == self.user_id
 
 async def setup(bot):
-    await bot.add_cog(GameplayCog(bot))
+    await bot.add_cog(GameplayCommands(bot))

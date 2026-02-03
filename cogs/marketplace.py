@@ -13,50 +13,6 @@ class MarketplaceCommands(commands.Cog):
         # Use working directory for database
         self.db_path = "music_legends.db"
     
-    @app_commands.command(name="market", description="View the card marketplace")
-    async def market_command(self, interaction: Interaction):
-        """View cards available in the marketplace"""
-        
-        embed = discord.Embed(
-            title="🏪 CARD MARKETPLACE",
-            description="Browse and trade cards with other players!",
-            color=discord.Color.gold()
-        )
-        
-        # Get marketplace listings
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT c.card_id, c.name, c.rarity, c.image_url, 
-                       m.price, m.seller_id, m.listed_at
-                FROM cards c
-                JOIN marketplace_listings m ON c.card_id = m.card_id
-                WHERE m.status = 'active'
-                ORDER BY m.listed_at DESC
-                LIMIT 10
-            """)
-            listings = cursor.fetchall()
-        
-        if listings:
-            for listing in listings[:5]:
-                card_id, name, rarity, image_url, price, seller_id, listed_at = listing
-                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity.lower(), "⚪")
-                
-                embed.add_field(
-                    name=f"{rarity_emoji} {name}",
-                    value=f"Price: {price:,} Gold\nCard ID: `{card_id}`\nUse `/buy {card_id}` to purchase",
-                    inline=True
-                )
-        else:
-            embed.add_field(
-                name="📦 No Listings",
-                value="No cards are currently for sale. Use `/sell <card_id>` to list your cards!",
-                inline=False
-            )
-        
-        embed.set_footer(text="Marketplace • Use /sell to list cards • Use /buy to purchase")
-        await interaction.response.send_message(embed=embed)
-    
     @app_commands.command(name="sell", description="List a card for sale")
     @app_commands.describe(card_id="Card ID to sell", price="Price in gold")
     async def sell_command(self, interaction: Interaction, card_id: str, price: int):

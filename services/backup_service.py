@@ -33,13 +33,14 @@ class BackupService:
         (self.backup_dir / "critical").mkdir(exist_ok=True)
         (self.backup_dir / "shutdown").mkdir(exist_ok=True)
         
-        # Check database type
+        # Check database type - disable PostgreSQL backups on Railway until tables are set up
         self.database_url = os.getenv("DATABASE_URL")
+        self.is_railway = os.getenv("RAILWAY_ENVIRONMENT") is not None
         self.is_postgresql = bool(self.database_url and (
             "postgresql://" in self.database_url or 
             "postgres://" in self.database_url or
             "postgresql+asyncpg://" in self.database_url
-        ))
+        )) and not self.is_railway  # Disable on Railway for now
         # #region agent log
         with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
             import json
@@ -50,7 +51,9 @@ class BackupService:
         self.last_backup_time = None
         self.backup_metadata_file = self.backup_dir / "backup_metadata.json"
         
-        if self.is_postgresql:
+        if self.is_railway:
+            logger.info("🚂 Railway environment detected - using SQLite fallback backups")
+        elif self.is_postgresql:
             logger.info("🗄️ PostgreSQL detected - using pg_dump for backups")
         else:
             logger.info("🗄️ SQLite detected - using file-based backups")

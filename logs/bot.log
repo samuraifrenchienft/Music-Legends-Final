@@ -101,3 +101,393 @@ KeyboardInterrupt
 2026-02-02 16:25:35,284 - services.backup_service - INFO - 🗄️ PostgreSQL detected - using pg_dump for backups
 2026-02-02 16:25:39,471 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: 664770806fb93437d27da8aeaac46263).
 2026-02-02 16:30:39,301 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 16:50:39,409 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 17:10:39,516 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 17:30:39,611 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 17:37:04,419 - discord.webhook.async_ - WARNING - Webhook ID 1468057666512486484 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 17:37:04,892 - discord.webhook.async_ - WARNING - Webhook ID 1468057666512486484 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 17:37:05,299 - discord.webhook.async_ - WARNING - Webhook ID 1468057666512486484 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 17:37:05,712 - discord.webhook.async_ - WARNING - Webhook ID 1468057666512486484 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 17:37:06,141 - discord.app_commands.tree - ERROR - Ignoring exception in command 'setup_dev_panel'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 2165, in setup_dev_panel
+    await interaction.response.defer(ephemeral=False)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'setup_dev_panel' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 17:50:39,749 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:00:29,929 - discord.webhook.async_ - WARNING - Webhook ID 1468063554132250689 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:00:30,360 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.primary: 1> url=None disabled=False label='📦 Create Community Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 567, in create_community_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 572, in create_community_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:01:25,079 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.success: 3> url=None disabled=False label='💎 Create Gold Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 590, in create_gold_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 595, in create_gold_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:05:25,676 - discord.webhook.async_ - WARNING - Webhook ID 1468064800276873226 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:05:26,102 - discord.app_commands.tree - ERROR - Ignoring exception in command 'packs'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\card_game.py", line 1000, in browse_packs
+    await interaction.response.send_message(embed=embed)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1051, in send_message
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'packs' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:06:49,204 - discord.webhook.async_ - WARNING - Webhook ID 1468065152338493490 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:06:49,605 - discord.webhook.async_ - WARNING - Webhook ID 1468065152338493490 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:06:50,015 - discord.webhook.async_ - WARNING - Webhook ID 1468065152338493490 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:06:50,533 - discord.webhook.async_ - WARNING - Webhook ID 1462769520660709408 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:07:56,381 - discord.webhook.async_ - WARNING - Webhook ID 1468065434438733916 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:07:56,795 - discord.webhook.async_ - WARNING - Webhook ID 1468065434438733916 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:07:57,200 - discord.webhook.async_ - WARNING - Webhook ID 1468065434438733916 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:07:57,607 - discord.app_commands.tree - ERROR - Ignoring exception in command 'setup_dev_panel'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 2165, in setup_dev_panel
+    "❌ This command is only available in the development server.",
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'setup_dev_panel' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:07:59,186 - discord.webhook.async_ - WARNING - Webhook ID 1468065446988222771 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:07:59,603 - discord.webhook.async_ - WARNING - Webhook ID 1468065446988222771 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:08:00,026 - discord.webhook.async_ - WARNING - Webhook ID 1468065446988222771 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:08:00,426 - discord.webhook.async_ - WARNING - Webhook ID 1468065446988222771 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:08:00,857 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.primary: 1> url=None disabled=False label='📦 Create Community Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 567, in create_community_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 572, in create_community_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:10:39,995 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:15:06,810 - discord.webhook.async_ - WARNING - Webhook ID 1468067239960772709 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:15:07,232 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.success: 3> url=None disabled=False label='💎 Create Gold Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 590, in create_gold_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 595, in create_gold_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:15:51,603 - discord.webhook.async_ - WARNING - Webhook ID 1468067428419244275 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:15:52,017 - discord.webhook.async_ - WARNING - Webhook ID 1468067428419244275 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:15:52,424 - discord.webhook.async_ - WARNING - Webhook ID 1468067428419244275 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:15:52,836 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.primary: 1> url=None disabled=False label='📦 Create Community Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 567, in create_community_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 572, in create_community_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:18:44,325 - discord.webhook.async_ - WARNING - Webhook ID 1468068152217829416 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:18:44,736 - discord.webhook.async_ - WARNING - Webhook ID 1468068152217829416 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:18:45,148 - discord.app_commands.tree - ERROR - Ignoring exception in command 'open_pack'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\card_game.py", line 431, in open_pack
+    await interaction.response.defer(ephemeral=False)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'open_pack' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:21:00,500 - __main__ - INFO - Starting Music Legends Bot...
+2026-02-02 18:21:01,630 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-02-02 18:21:01,634 - discord.client - INFO - logging in using static token
+2026-02-02 18:21:03,288 - services.backup_service - INFO - 🗄️ PostgreSQL detected - using pg_dump for backups
+2026-02-02 18:21:04,478 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: c14f9654bed87b2efb1d5664651b22dc).
+2026-02-02 18:22:02,641 - discord.webhook.async_ - WARNING - Webhook ID 1468068980890665156 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:22:03,113 - discord.app_commands.tree - ERROR - Ignoring exception in command 'setup_dev_panel'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 2165, in setup_dev_panel
+    "❌ This command is only available in the development server.",
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'setup_dev_panel' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:22:02,836 - discord.app_commands.tree - ERROR - Ignoring exception in command 'setup_dev_panel'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 2171, in setup_dev_panel
+    await interaction.response.defer(ephemeral=False)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'setup_dev_panel' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:22:05,906 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.primary: 1> url=None disabled=False label='📦 Create Community Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 567, in create_community_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 572, in create_community_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:22:06,011 - discord.webhook.async_ - WARNING - Webhook ID 1468068996107735240 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:02,363 - discord.webhook.async_ - WARNING - Webhook ID 1468069476485562440 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:02,292 - discord.app_commands.tree - ERROR - Ignoring exception in command 'setup_dev_panel'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 2165, in setup_dev_panel
+    test_server_id = os.getenv('TEST_SERVER_ID')
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'setup_dev_panel' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:24:02,800 - discord.webhook.async_ - WARNING - Webhook ID 1468069476485562440 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:03,204 - discord.webhook.async_ - WARNING - Webhook ID 1468069476485562440 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:03,614 - discord.app_commands.tree - ERROR - Ignoring exception in command 'setup_dev_panel'
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 858, in _do_call
+    return await self._callback(self.binding, interaction, **params)  # type: ignore
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 2171, in setup_dev_panel
+    return
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 858, in defer
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1297, in _call
+    await command._invoke_with_namespace(interaction, namespace)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 884, in _invoke_with_namespace
+    return await self._do_call(interaction, transformed_values)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\commands.py", line 877, in _do_call
+    raise CommandInvokeError(self, e) from e
+discord.app_commands.errors.CommandInvokeError: Command 'setup_dev_panel' raised an exception: HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+2026-02-02 18:24:05,343 - discord.webhook.async_ - WARNING - Webhook ID 1468069498816041118 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:05,456 - discord.webhook.async_ - WARNING - Webhook ID 1462769520660709408 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:05,765 - discord.ui.view - ERROR - Ignoring exception in view <DevPanelView timeout=None children=13> for item <Button style=<ButtonStyle.primary: 1> url=None disabled=False label='📦 Create Community Pack' emoji=None row=0 sku_id=None id=None>
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 567, in create_community_button
+    await interaction.response.send_modal(modal)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\interactions.py", line 1273, in send_modal
+    response = await adapter.create_interaction_response(
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\webhook\async_.py", line 226, in request
+    raise HTTPException(response, data)
+discord.errors.HTTPException: 400 Bad Request (error code: 40060): Interaction has already been acknowledged.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\ui\view.py", line 553, in _scheduled_task
+    await item.callback(interaction)
+  File "C:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\cogs\menu_system.py", line 572, in create_community_button
+    traceback.print_exc()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 179, in print_exc
+    print_exception(*sys.exc_info(), limit=limit, file=file, chain=chain)
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.10_3.10.3056.0_x64__qbz5n2kfra8p0\lib\traceback.py", line 121, in print_exception
+    print(line, file=file, end="")
+OSError: [Errno 22] Invalid argument
+2026-02-02 18:24:05,884 - discord.webhook.async_ - WARNING - Webhook ID 1462769520660709408 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:06,311 - discord.webhook.async_ - WARNING - Webhook ID 1462769520660709408 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:06,712 - discord.webhook.async_ - WARNING - Webhook ID 1462769520660709408 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:24:07,110 - discord.webhook.async_ - WARNING - Webhook ID 1462769520660709408 is rate limited. Retrying in 0.30 seconds.
+2026-02-02 18:26:04,253 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:30:40,121 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:34:07,506 - __main__ - INFO - Starting Music Legends Bot...
+2026-02-02 18:34:08,875 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-02-02 18:34:08,879 - discord.client - INFO - logging in using static token
+2026-02-02 18:34:11,044 - services.backup_service - INFO - 🗄️ PostgreSQL detected - using pg_dump for backups
+2026-02-02 18:34:12,826 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: 4fdf08cca8b95c053de3c2b07c7e005c).
+2026-02-02 18:38:39,227 - __main__ - INFO - Starting Music Legends Bot...
+2026-02-02 18:38:40,624 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-02-02 18:38:40,649 - discord.client - INFO - logging in using static token
+2026-02-02 18:38:43,491 - services.backup_service - INFO - 🗄️ PostgreSQL detected - using pg_dump for backups
+2026-02-02 18:38:45,234 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: ece1b16316727d4c7cf57c2037f68f72).
+2026-02-02 18:39:15,536 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:43:44,927 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:46:04,630 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-02 18:50:40,295 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.

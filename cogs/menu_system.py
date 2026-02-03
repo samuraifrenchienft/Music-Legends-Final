@@ -562,10 +562,14 @@ class DevPanelView(discord.ui.View):
         """Create community pack (free for devs)"""
         try:
             print(f"🔧 DEV PANEL: Create Community Pack button clicked")
-            # Directly show the pack creation modal
-            modal = PackCreationModal(pack_type="community", db=self.db, auto_select=False)
-            await interaction.response.send_modal(modal)
-            print(f"🔧 DEV PANEL: Community Pack modal sent successfully")
+            # Show auto/manual selection view
+            view = PackCreationModeView(pack_type="community", db=self.db)
+            await interaction.response.send_message(
+                "🎵 **Pack Creation Mode**\n\nChoose how you want to create your pack:",
+                view=view,
+                ephemeral=True
+            )
+            print(f"🔧 DEV PANEL: Pack creation mode view sent successfully")
         except Exception as e:
             print(f"❌ Error in create_community_button: {e}")
             import traceback
@@ -585,10 +589,14 @@ class DevPanelView(discord.ui.View):
         """Create gold pack (free for devs)"""
         try:
             print(f"🔧 DEV PANEL: Create Gold Pack button clicked")
-            # Directly show the pack creation modal
-            modal = PackCreationModal(pack_type="gold", db=self.db, auto_select=False)
-            await interaction.response.send_modal(modal)
-            print(f"🔧 DEV PANEL: Gold Pack modal sent successfully")
+            # Show auto/manual selection view
+            view = PackCreationModeView(pack_type="gold", db=self.db)
+            await interaction.response.send_message(
+                "🎵 **Pack Creation Mode**\n\nChoose how you want to create your pack:",
+                view=view,
+                ephemeral=True
+            )
+            print(f"🔧 DEV PANEL: Pack creation mode view sent successfully")
         except Exception as e:
             print(f"❌ Error in create_gold_button: {e}")
             import traceback
@@ -606,23 +614,36 @@ class DevPanelView(discord.ui.View):
     )
     async def give_cards_button(self, interaction: Interaction, button: discord.ui.Button):
         """Give cards to users"""
+        print(f"\n{'='*60}")
+        print(f"🔧 DEV PANEL: Give Cards button clicked")
+        print(f"   User: {interaction.user.id}")
+        print(f"   Guild: {interaction.guild_id}")
+        print(f"{'='*60}\n")
+        
         try:
-            print(f"🔧 DEV PANEL: Give Cards button clicked")
+            print(f"✅ Creating GiveCardsView...")
             view = GiveCardsView(self.db)
+            print(f"✅ View created successfully")
+            
+            print(f"✅ Sending message with view...")
             await interaction.response.send_message(
                 "🎁 **Give Cards to Users**\n\nSelect card rarity:",
                 view=view,
                 ephemeral=True
             )
-            print(f"🔧 DEV PANEL: Give Cards view sent successfully")
+            print(f"✅ Give Cards view sent successfully")
+            
         except Exception as e:
             print(f"❌ Error in give_cards_button: {e}")
             import traceback
             traceback.print_exc()
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
             except:
-                pass
+                try:
+                    await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+                except Exception as fe:
+                    print(f"❌ Could not send error message: {fe}")
     
     @discord.ui.button(
         label="💰 Give Currency",
@@ -750,19 +771,32 @@ class DevPanelView(discord.ui.View):
     )
     async def announcement_button(self, interaction: Interaction, button: discord.ui.Button):
         """Send announcement"""
+        print(f"\n{'='*60}")
+        print(f"🔧 DEV PANEL: Announcement button clicked")
+        print(f"   User: {interaction.user.id}")
+        print(f"   Guild: {interaction.guild_id}")
+        print(f"{'='*60}\n")
+        
         try:
-            print(f"🔧 DEV PANEL: Announcement button clicked")
+            print(f"✅ Creating AnnouncementModal...")
             modal = AnnouncementModal()
+            print(f"✅ Modal created successfully")
+            
+            print(f"✅ Sending modal to user...")
             await interaction.response.send_modal(modal)
-            print(f"🔧 DEV PANEL: Announcement modal sent successfully")
+            print(f"✅ Announcement modal sent successfully")
+            
         except Exception as e:
             print(f"❌ Error in announcement_button: {e}")
             import traceback
             traceback.print_exc()
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
             except:
-                pass
+                try:
+                    await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+                except Exception as fe:
+                    print(f"❌ Could not send error message: {fe}")
     
     @discord.ui.button(
         label="🔄 Restart Bot",
@@ -977,6 +1011,7 @@ class GiveCardsView(discord.ui.View):
         super().__init__(timeout=180)
         self.db = db
         self.selected_rarity = None
+        print(f"✅ [GiveCardsView] Initialized")
     
     @discord.ui.select(
         placeholder="Choose card rarity...",
@@ -989,9 +1024,27 @@ class GiveCardsView(discord.ui.View):
         ],
     )
     async def rarity_select(self, interaction: Interaction, select: discord.ui.Select):
-        self.selected_rarity = select.values[0]
-        modal = GiveCardModal(self.selected_rarity, self.db)
-        await interaction.response.send_modal(modal)
+        print(f"\n{'='*60}")
+        print(f"🔧 [GiveCardsView.rarity_select] STARTING")
+        print(f"   Selected: {select.values[0]}")
+        print(f"{'='*60}\n")
+        
+        try:
+            rarity = select.values[0]
+            print(f"✅ [GiveCardsView] Rarity selected: {rarity}")
+            
+            self.selected_rarity = rarity
+            modal = GiveCardModal(self.selected_rarity, self.db)
+            print(f"✅ [GiveCardsView] Modal created")
+            
+            await interaction.response.send_modal(modal)
+            print(f"✅ [GiveCardsView] Modal shown to user")
+            
+        except Exception as e:
+            print(f"❌ [GiveCardsView] Exception: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 class GiveCurrencyView(discord.ui.View):
@@ -1407,9 +1460,9 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             artist_name = self.artist_name.value
             pack_name = artist_name  # Use artist name directly for pack name
             
-            print(f"🔧 DEV PANEL: Creating {self.pack_type} pack")
-            print(f"   Artist: {artist_name}")
-            print(f"   Pack Name: {pack_name}")
+            print(f"🔧 [PACK_CREATE] Starting pack creation")
+            print(f"🔧 [PACK_CREATE] Type: {self.pack_type} | Mode: {'AUTO' if self.auto_select else 'MANUAL'}")
+            print(f"🔧 [PACK_CREATE] Artist: {artist_name} | Pack Name: {pack_name}")
             
             # Send initial message
             await interaction.followup.send(
@@ -1420,9 +1473,14 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             # Step 1: Try Last.fm first (if API key is available)
             lastfm_result = None
             try:
+                print(f"🔧 [PACK_CREATE] Attempting Last.fm search for: {artist_name}")
                 lastfm_result = await music_api.search_artist_with_tracks(artist_name, limit=10)
+                if lastfm_result:
+                    print(f"✅ [PACK_CREATE] Last.fm found artist with {len(lastfm_result.get('tracks', []))} tracks")
+                else:
+                    print(f"⚠️  [PACK_CREATE] Last.fm returned None for artist: {artist_name}")
             except Exception as e:
-                print(f"Last.fm error: {e}")
+                print(f"❌ [PACK_CREATE] Last.fm error: {type(e).__name__}: {e}")
                 import traceback
                 traceback.print_exc()
                 lastfm_result = None
@@ -1432,21 +1490,38 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 artist_data = lastfm_result['artist']
                 tracks = lastfm_result['tracks']
                 
+                print(f"🔧 [PACK_CREATE] Artist data loaded: {artist_data.get('name')} ({len(tracks)} tracks)")
+                
                 # If auto-select mode, automatically proceed with first 5 tracks
                 if self.auto_select:
-                    print(f"🔧 DEV PANEL: AUTO-SELECT MODE - Using first {min(5, len(tracks))} tracks")
+                    print(f"🔧 [PACK_CREATE] AUTO-SELECT MODE - Using first {min(5, len(tracks))} tracks")
                     selected_tracks = tracks[:5]  # Auto-select first 5 tracks
                     
+                    print(f"🔧 [PACK_CREATE] Selected tracks: {[t.get('name', 'Unknown') for t in selected_tracks]}")
+                    
                     # Directly finalize pack with auto-selected tracks
-                    await finalize_pack_creation_lastfm(
-                        interaction,
-                        pack_name,
-                        artist_data,
-                        selected_tracks,
-                        interaction.user.id,
-                        self.pack_type,
-                        self.db
-                    )
+                    try:
+                        print(f"🔧 [PACK_CREATE] Finalizing pack with Last.fm data...")
+                        await finalize_pack_creation_lastfm(
+                            interaction,
+                            pack_name,
+                            artist_data,
+                            selected_tracks,
+                            interaction.user.id,
+                            self.pack_type,
+                            self.db
+                        )
+                        print(f"✅ [PACK_CREATE] Pack finalization completed successfully")
+                    except Exception as finalize_error:
+                        print(f"❌ [PACK_CREATE] Finalization error: {type(finalize_error).__name__}: {finalize_error}")
+                        import traceback
+                        traceback.print_exc()
+                        await interaction.followup.send(
+                            f"❌ **Pack Creation Failed**\n\n"
+                            f"Error during finalization: `{str(finalize_error)[:100]}`\n\n"
+                            f"Please try again or contact support.",
+                            ephemeral=True
+                        )
                     return  # Exit immediately after finalization
                 
                 # Create image preview embed (only for manual mode)
@@ -1475,7 +1550,13 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 # Set the image on the preview embed
                 if image_url:
                     print(f"🔧 DEV PANEL: Image URL saved for cards: {image_url}")
-                    preview_embed.set_thumbnail(url=image_url)
+                    try:
+                        preview_embed.set_thumbnail(url=image_url)
+                        print(f"🔧 DEV PANEL: Image set on embed successfully")
+                    except Exception as img_error:
+                        print(f"🔧 DEV PANEL: Failed to set image: {img_error}")
+                        # Use a default image if the URL fails
+                        default_img = "https://media.discordapp.net/attachments/1234567890/1234567890/default_artist.png"
                 else:
                     print(f"🔧 DEV PANEL: No image found, will use YouTube fallback")
                 
@@ -1762,40 +1843,86 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     async def _search_youtube_fallback_auto(self, interaction: Interaction, pack_name: str, artist_name: str):
         """Auto-select mode: quickly search YouTube and create pack with first 5 videos"""
         try:
+            print(f"🔧 [YOUTUBE_AUTO] Starting YouTube auto-search for: {artist_name}")
+            
             # Search YouTube for videos
-            videos = youtube_integration.search_music_video(artist_name, limit=10)
+            try:
+                print(f"🔧 [YOUTUBE_AUTO] Querying YouTube API...")
+                videos = youtube_integration.search_music_video(artist_name, limit=10)
+                print(f"✅ [YOUTUBE_AUTO] YouTube returned {len(videos) if videos else 0} videos")
+            except Exception as youtube_error:
+                print(f"❌ [YOUTUBE_AUTO] YouTube search failed: {type(youtube_error).__name__}: {youtube_error}")
+                await interaction.followup.send(
+                    f"❌ **YouTube Search Failed**\n\n"
+                    f"Could not search YouTube for **{artist_name}**\n\n"
+                    f"Error: `{str(youtube_error)[:100]}`\n\n"
+                    f"Please try a different artist name.",
+                    ephemeral=False
+                )
+                return
             
             if not videos or len(videos) < 5:
+                print(f"⚠️  [YOUTUBE_AUTO] Insufficient videos: {len(videos) if videos else 0} < 5 required")
                 await interaction.followup.send(
-                    content=f"❌ Could not find enough videos for '{artist_name}' (need at least 5)",
+                    content=f"❌ **Insufficient Videos**\n\n"
+                            f"Could not find enough videos for **{artist_name}**\n\n"
+                            f"Found: {len(videos) if videos else 0} videos (need at least 5)\n\n"
+                            f"Try a more popular artist or a different spelling.",
                     ephemeral=False
                 )
                 return
             
             # Auto-select first 5 videos
             selected_videos = videos[:5]
+            print(f"🔧 [YOUTUBE_AUTO] Selected first 5 videos for pack")
+            
+            # Use first video's thumbnail as artist image
+            first_video = selected_videos[0]
             artist = {
                 'name': artist_name,
-                'image_url': videos[0].get('thumbnail_url', '') if videos else '',
+                'image_url': first_video.get('thumbnail_url', '') or first_video.get('image_url', ''),
                 'popularity': 75,
-                'followers': 1000000
+                'followers': 1000000,
+                # Add Last.fm style image keys for compatibility
+                'image_xlarge': first_video.get('thumbnail_url', '') or first_video.get('image_url', ''),
+                'image_large': first_video.get('thumbnail_url', '') or first_video.get('image_url', '')
             }
             
-            # Finalize pack with auto-selected videos
-            await self._finalize_pack_creation(
-                interaction,
-                pack_name,
-                artist,
-                selected_videos,
-                interaction.user.id,
-                self.pack_type
-            )
+            print(f"🔧 [YOUTUBE_AUTO] Using YouTube image: {artist.get('image_xlarge', 'none')[:80] if artist.get('image_xlarge') else 'FALLBACK'}")
+            
+            # Directly finalize pack creation without manual intervention
+            try:
+                print(f"🔧 [YOUTUBE_AUTO] Finalizing pack with YouTube data...")
+                await self._finalize_pack_creation(
+                    interaction,
+                    pack_name,
+                    artist,
+                    selected_videos,
+                    interaction.user.id,
+                    self.pack_type
+                )
+                print(f"✅ [YOUTUBE_AUTO] Pack finalization completed successfully")
+            except Exception as finalize_error:
+                print(f"❌ [YOUTUBE_AUTO] Finalization error: {type(finalize_error).__name__}: {finalize_error}")
+                import traceback
+                traceback.print_exc()
+                await interaction.followup.send(
+                    f"❌ **Pack Creation Failed During Finalization**\n\n"
+                    f"Error: `{str(finalize_error)[:100]}`\n\n"
+                    f"Please try again or contact support.",
+                    ephemeral=False
+                )
         
         except Exception as e:
-            print(f"❌ Error in auto-select YouTube fallback: {e}")
+            print(f"❌ [YOUTUBE_AUTO] Unexpected error: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=False)
+            await interaction.followup.send(
+                f"❌ **Unexpected Error in Auto-Generation**\n\n"
+                f"Error: `{str(e)[:100]}`\n\n"
+                f"Please try again or contact support.",
+                ephemeral=False
+            )
     
     async def _search_youtube_fallback(self, interaction: Interaction, pack_name: str, artist_name: str, artist_data: dict = None, lastfm_tracks: list = None):
         """Fall back to YouTube search for images while preserving Last.fm data"""
@@ -1920,6 +2047,7 @@ class GiveCardModal(discord.ui.Modal, title="Give Card"):
         super().__init__()
         self.rarity = rarity
         self.db = db
+        print(f"✅ [GiveCardModal] Initialized with rarity: {rarity}")
     
     user_id = discord.ui.TextInput(
         label="User ID",
@@ -1936,11 +2064,44 @@ class GiveCardModal(discord.ui.Modal, title="Give Card"):
     )
     
     async def on_submit(self, interaction: Interaction):
+        print(f"\n{'='*60}")
+        print(f"🔧 [GiveCardModal.on_submit] STARTING")
+        print(f"   User: {interaction.user.id}")
+        print(f"   Rarity: {self.rarity}")
+        print(f"   Card Name: {self.card_name.value}")
+        print(f"{'='*60}\n")
+        
         try:
-            target_id = int(self.user_id.value.replace('<@', '').replace('>', '').replace('!', ''))
+            await interaction.response.defer(ephemeral=True)
+            print(f"✅ [GiveCardModal] Response deferred")
             
-            # Create card and give to user
+            # Parse user ID
+            user_input = self.user_id.value.strip()
+            print(f"📝 [GiveCardModal] User input: {user_input}")
+            
+            target_id = int(user_input.replace('<@', '').replace('>', '').replace('!', ''))
+            print(f"✅ [GiveCardModal] Parsed target user ID: {target_id}")
+            
+            # Get or create user
+            try:
+                user = interaction.guild.get_member(target_id)
+                if not user:
+                    print(f"❌ [GiveCardModal] User not found in guild: {target_id}")
+                    await interaction.followup.send(f"❌ Could not find user with ID {target_id} in this server", ephemeral=True)
+                    return
+                print(f"✅ [GiveCardModal] Found user: {user.name} ({user.id})")
+            except Exception as e:
+                print(f"❌ [GiveCardModal] Error finding user: {e}")
+                raise
+            
+            # Get or create user in database
+            print(f"🔄 [GiveCardModal] Getting/creating user in database...")
+            self.db.get_or_create_user(target_id, user.name, user.discriminator)
+            print(f"✅ [GiveCardModal] User in database")
+            
+            # Create card
             card_id = f"dev_gift_{interaction.user.id}_{target_id}_{self.card_name.value.lower().replace(' ', '_')}"
+            print(f"📦 [GiveCardModal] Creating card with ID: {card_id}")
             
             card_data = {
                 'card_id': card_id,
@@ -1954,15 +2115,37 @@ class GiveCardModal(discord.ui.Modal, title="Give Card"):
                 'hype': 50,
             }
             
+            # Add to database
             self.db.add_card_to_master(card_data)
-            self.db.add_card_to_collection(target_id, card_id, 'dev_gift')
+            print(f"✅ [GiveCardModal] Added card to master")
             
-            await interaction.response.send_message(
-                f"✅ Gave **{self.rarity.title()} Card** ({self.card_name.value}) to user {target_id}!",
-                ephemeral=True
+            self.db.add_card_to_collection(target_id, card_id, 'dev_gift')
+            print(f"✅ [GiveCardModal] Added card to user collection")
+            
+            # Send confirmation
+            embed = discord.Embed(
+                title="✅ Card Given",
+                description=f"Gave **{self.rarity.upper()}** card to {user.mention}",
+                color=discord.Color.green()
             )
+            embed.add_field(name="Card Name", value=self.card_name.value, inline=False)
+            embed.add_field(name="User", value=f"{user.name} ({target_id})", inline=False)
+            embed.add_field(name="Rarity", value=self.rarity.upper(), inline=False)
+            embed.timestamp = interaction.created_at
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            print(f"✅ [GiveCardModal] Success - Card given!")
+            
+        except ValueError as e:
+            print(f"❌ [GiveCardModal] ValueError: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ Invalid user ID format: {e}", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            print(f"❌ [GiveCardModal] Exception: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
 
 
 class GiveCurrencyModal(discord.ui.Modal, title="Give Currency"):
@@ -2151,18 +2334,18 @@ class MenuSystemCog(commands.Cog):
     @app_commands.command(name="setup_dev_panel", description="[DEV] Post persistent Dev Panel in this channel")
     async def setup_dev_panel(self, interaction: Interaction):
         """Post persistent dev panel in current channel (dev-only channel)"""
+        # MUST defer immediately to prevent timeout
+        await interaction.response.defer(ephemeral=False)
+        
         # Check if in TEST_SERVER
         import os
         test_server_id = os.getenv('TEST_SERVER_ID')
         if test_server_id and interaction.guild_id != int(test_server_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ This command is only available in the development server.",
                 ephemeral=True
             )
             return
-        
-        # MUST defer immediately to prevent timeout
-        await interaction.response.defer(ephemeral=False)
         
         view = DevPanelView(self.db)
         

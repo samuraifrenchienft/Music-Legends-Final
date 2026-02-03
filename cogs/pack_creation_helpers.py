@@ -2,15 +2,223 @@
 """
 Helper methods for pack creation in menu_system.py
 Separated to keep menu_system.py cleaner
+
+Features:
+- Rate limiting and caching for YouTube searches
+- Performance optimization for pack creation
+- Graceful fallback strategies
 """
 
 import discord
 from discord import Interaction
 import random
 import sqlite3
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 from music_api_manager import music_api
 from views.song_selection import SongSelectionView
 from cogs.pack_preview_integration import show_pack_preview_lastfm
+
+
+# ==========================================
+# RATE LIMITING & CACHING
+# ==========================================
+
+class YouTubeSearchCache:
+    """Simple cache for YouTube searches with rate limiting"""
+    
+    def __init__(self, cache_duration_seconds: int = 3600, max_cache_size: int = 100):
+        self.cache: Dict[str, Tuple[List, datetime]] = {}
+        self.cache_duration = timedelta(seconds=cache_duration_seconds)
+        self.max_cache_size = max_cache_size
+        self.search_count = 0
+        self.search_timestamp = None
+        print(f"🎬 [CACHE] YouTube cache initialized (TTL: {cache_duration_seconds}s, Max: {max_cache_size})")
+    
+    def get(self, artist_name: str) -> Optional[List]:
+        """Get cached results for artist search"""
+        key = artist_name.lower().strip()
+        if key in self.cache:
+            results, timestamp = self.cache[key]
+            if datetime.now() - timestamp < self.cache_duration:
+                print(f"✅ [CACHE] Cache HIT for: {artist_name}")
+                return results
+            else:
+                print(f"⚠️  [CACHE] Cache EXPIRED for: {artist_name}")
+                del self.cache[key]
+        return None
+    
+    def set(self, artist_name: str, results: List) -> None:
+        """Cache search results"""
+        key = artist_name.lower().strip()
+        
+        # Simple LRU: remove oldest entry if cache is full
+        if len(self.cache) >= self.max_cache_size:
+            oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k][1])
+            print(f"🗑️  [CACHE] Evicting oldest cache entry: {oldest_key}")
+            del self.cache[oldest_key]
+        
+        self.cache[key] = (results, datetime.now())
+        print(f"💾 [CACHE] Cached {len(results)} results for: {artist_name}")
+    
+    def get_stats(self) -> Dict:
+        """Get cache statistics"""
+        return {
+            'cache_entries': len(self.cache),
+            'max_size': self.max_cache_size,
+            'searches': self.search_count,
+            'ttl_seconds': self.cache_duration.total_seconds()
+        }
+
+
+# Global cache instance
+youtube_cache = YouTubeSearchCache(cache_duration_seconds=3600, max_cache_size=100)
+
+# Default logo image for cards without images
+# Using the Music Legends Bot logo from Pinata IPFS
+DEFAULT_CARD_IMAGE = "https://olive-generous-kangaroo-378.mypinata.cloud/ipfs/bafybeiehxk5zhdxidab4qtuxg6lblrasxcxb2bkj6a3ipyjue5f7pzo3qi"
+
+
+# ==========================================
+# GRACEFUL FALLBACK STRATEGIES
+# ==========================================
+
+MINIMUM_VIDEOS_REQUIRED = 5
+RECOMMENDED_VIDEO_SEARCH_LIMIT = 15
+ALTERNATIVE_SEARCH_TERMS = {
+    'artist': ['official', 'music video', 'audio', 'remix', 'cover'],
+    'retry_count': 2
+}
+
+
+async def search_youtube_with_fallback(
+    artist_name: str, 
+    interaction: Interaction,
+    youtube_integration,
+    attempt: int = 1
+) -> Optional[List]:
+    """
+    Search YouTube with rate limiting, caching, and graceful fallbacks.
+    
+    Strategy:
+    1. Check cache first (avoids redundant API calls)
+    2. If cache miss, search YouTube
+    3. If insufficient results, try alternative search terms
+    4. If still insufficient, return what we have or None
+    
+    Args:
+        artist_name: Artist to search for
+        interaction: Discord interaction for logging
+        youtube_integration: YouTube integration module
+        attempt: Current attempt number (for retry logic)
+        
+    Returns:
+        List of videos or None if search failed
+    """
+    
+    print(f"🎬 [SEARCH] Starting YouTube search (Attempt {attempt})")
+    print(f"🎬 [SEARCH] Artist: {artist_name} | Limit: {RECOMMENDED_VIDEO_SEARCH_LIMIT}")
+    
+    # Step 1: Check cache first
+    cached_results = youtube_cache.get(artist_name)
+    if cached_results is not None:
+        return cached_results
+    
+    # Step 2: Try primary search
+    try:
+        print(f"🎬 [SEARCH] Querying YouTube API (primary search)...")
+        videos = youtube_integration.search_music_video(
+            artist_name, 
+            limit=RECOMMENDED_VIDEO_SEARCH_LIMIT
+        )
+        
+        if videos and len(videos) >= MINIMUM_VIDEOS_REQUIRED:
+            print(f"✅ [SEARCH] Found {len(videos)} videos")
+            youtube_cache.set(artist_name, videos)
+            return videos
+        else:
+            found_count = len(videos) if videos else 0
+            print(f"⚠️  [SEARCH] Insufficient videos: {found_count}/{MINIMUM_VIDEOS_REQUIRED}")
+            
+    except Exception as e:
+        print(f"❌ [SEARCH] Primary search error: {type(e).__name__}: {e}")
+    
+    # Step 3: Try alternative search terms (retry strategy)
+    if attempt <= ALTERNATIVE_SEARCH_TERMS['retry_count']:
+        for alt_term in ALTERNATIVE_SEARCH_TERMS['artist']:
+            try:
+                alternative_query = f"{artist_name} {alt_term}"
+                print(f"🎬 [SEARCH] Trying alternative query: '{alternative_query}'")
+                
+                alt_videos = youtube_integration.search_music_video(
+                    alternative_query,
+                    limit=RECOMMENDED_VIDEO_SEARCH_LIMIT
+                )
+                
+                if alt_videos and len(alt_videos) >= MINIMUM_VIDEOS_REQUIRED:
+                    print(f"✅ [SEARCH] Alternative search found {len(alt_videos)} videos")
+                    youtube_cache.set(artist_name, alt_videos)
+                    return alt_videos
+                    
+            except Exception as e:
+                print(f"⚠️  [SEARCH] Alternative search failed: {e}")
+                continue
+    
+    # Step 4: Return partial results or None
+    print(f"❌ [SEARCH] YouTube search exhausted all strategies")
+    return None
+
+
+def extract_image_url(track: dict, artist_data: dict, default: str = DEFAULT_CARD_IMAGE) -> str:
+    """
+    Extract image URL from track or artist data with robust fallback mechanism.
+    
+    Prioritization:
+    1. YouTube thumbnails (track or artist)
+    2. Last.fm track images (xlarge -> large -> medium)
+    3. Last.fm artist images (xlarge -> large -> medium)
+    4. Generic track images
+    5. Generic artist images
+    6. Default placeholder
+    
+    Args:
+        track: Track data dict
+        artist_data: Artist data dict
+        default: Default image URL if none found
+        
+    Returns:
+        Valid image URL string
+    """
+    # Priority 1: YouTube thumbnails (most reliable for videos)
+    if track.get('thumbnail_url'):
+        return track['thumbnail_url']
+    if artist_data.get('thumbnail_url'):
+        return artist_data['thumbnail_url']
+    
+    # Priority 2: Last.fm track images (best quality)
+    for size in ['image_xlarge', 'image_large', 'image_medium']:
+        if track.get(size):
+            return track[size]
+    
+    # Priority 3: Last.fm artist images
+    for size in ['image_xlarge', 'image_large', 'image_medium']:
+        if artist_data.get(size):
+            return artist_data[size]
+    
+    # Priority 4: Generic track images
+    if track.get('image'):
+        return track['image']
+    if track.get('image_url'):
+        return track['image_url']
+    
+    # Priority 5: Generic artist images
+    if artist_data.get('image'):
+        return artist_data['image']
+    if artist_data.get('image_url'):
+        return artist_data['image_url']
+    
+    # Priority 6: Default placeholder
+    return default
 
 
 async def show_song_selection_lastfm(
@@ -150,37 +358,50 @@ async def finalize_pack_creation_lastfm(
     """Finalize pack creation with Last.fm data"""
     
     try:
-        await interaction.response.defer(ephemeral=True)
+        # Don't defer again - interaction was already deferred in PackCreationModal
+        
+        print(f"🔧 [FINALIZE] Starting pack finalization")
+        print(f"🔧 [FINALIZE] Pack: {pack_name} | Type: {pack_type} | Tracks: {len(selected_tracks)}")
+        print(f"🔧 [FINALIZE] Creator ID: {creator_id} | Artist: {artist_data.get('name', 'Unknown')}")
         
         # Create pack in database
-        pack_id = db.create_creator_pack(
-            creator_id=creator_id,
-            name=pack_name,
-            description=f"{pack_type.title()} pack featuring {artist_data['name']}",
-            pack_size=len(selected_tracks)
-        )
+        try:
+            print(f"🔧 [FINALIZE] Creating pack record in database...")
+            pack_id = db.create_creator_pack(
+                creator_id=creator_id,
+                name=pack_name,
+                description=f"{pack_type.title()} pack featuring {artist_data['name']}",
+                pack_size=len(selected_tracks)
+            )
+            if pack_id:
+                print(f"✅ [FINALIZE] Pack created with ID: {pack_id}")
+            else:
+                print(f"❌ [FINALIZE] create_creator_pack returned None")
+        except Exception as db_error:
+            print(f"❌ [FINALIZE] Database error creating pack: {type(db_error).__name__}: {db_error}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(
+                "❌ Failed to create pack in database. Please try again or contact support.",
+                ephemeral=True
+            )
+            return
         
         if not pack_id:
+            print(f"❌ [FINALIZE] pack_id is None or empty")
             await interaction.followup.send("❌ Failed to create pack in database", ephemeral=True)
             return
         
         # Generate cards for each selected track
         cards_created = []
+        cards_failed = 0
         
-        for track in selected_tracks:
+        print(f"🔧 [FINALIZE] Starting card generation for {len(selected_tracks)} tracks...")
             try:
-                # Calculate stats from Last.fm play count
-                # Get image URL with proper fallback chain
-                image_url = (
-                    track.get('image_xlarge') or 
-                    track.get('image_large') or 
-                    track.get('image_medium') or
-                    artist_data.get('image_xlarge') or 
-                    artist_data.get('image_large') or 
-                    artist_data.get('image_medium') or
-                    track.get('image') or
-                    artist_data.get('image', '')
-                )
+                # Get image URL with robust fallback mechanism
+                image_url = extract_image_url(track, artist_data)
+                
+                print(f"🎨 Card image selected: {image_url[:80] if image_url else 'DEFAULT'}...")
                 
                 card_data = music_api.format_track_for_card(
                     track=track,
@@ -196,12 +417,14 @@ async def finalize_pack_creation_lastfm(
                 card_id = f"{pack_id}_{track['name'].lower().replace(' ', '_')[:20]}_{random.randint(1000, 9999)}"
                 
                 # Prepare card data for database - ensure all required fields are present
+                final_image_url = card_data.get('image_url', '') or image_url or DEFAULT_CARD_IMAGE
+                
                 db_card_data = {
                     'card_id': card_id,
                     'name': artist_data['name'],
                     'title': card_data.get('name', track['name'])[:100],
                     'rarity': card_data.get('rarity', 'common'),
-                    'image_url': card_data.get('image_url', ''),
+                    'image_url': final_image_url,  # Guaranteed to have an image
                     'youtube_url': card_data.get('video_url', ''),
                     'impact': card_data.get('attack', 50),
                     'skill': card_data.get('defense', 50),
@@ -213,7 +436,7 @@ async def finalize_pack_creation_lastfm(
                 }
                 
                 print(f"📦 Creating card: {db_card_data['title']} (Rarity: {db_card_data['rarity']})")
-                print(f"🖼️ Card image_url saved: {db_card_data.get('image_url', 'EMPTY')[:80] if db_card_data.get('image_url') else 'NO URL'}")
+                print(f"🖼️ Card image_url: {db_card_data.get('image_url', 'EMPTY')[:80] if db_card_data.get('image_url') else 'DEFAULT'}")
                 
                 # Add card to master list
                 success = db.add_card_to_master(db_card_data)

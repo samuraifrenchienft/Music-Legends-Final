@@ -964,40 +964,8 @@ class CardGameCog(Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="packs", description="Browse available creator packs")
-    async def browse_packs(self, interaction: Interaction):
-        live_packs = self.db.get_live_packs(limit=20)
-        
-        if not live_packs:
-            await interaction.response.send_message("No creator packs available yet!", ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="🛍️ Creator Packs Store",
-            description="Browse and purchase packs created by the community!",
-            color=discord.Color.blue()
-        )
-        
-        for pack in live_packs[:10]:  # Show max 10 packs
-            cards = eval(pack['cards_data'])
-            rarity_count = {}
-            for card in cards:
-                rarity = card.get('rarity', 'Common')
-                rarity_count[rarity] = rarity_count.get(rarity, 0) + 1
-            
-            rarity_display = []
-            for rarity, count in rarity_count.items():
-                emoji = {"Common": "🟩", "Rare": "🟦", "Epic": "🟪", "Legendary": "⭐"}.get(rarity, "🎴")
-                rarity_display.append(f"{emoji}{count}")
-            
-            embed.add_field(
-                name=f"📦 {pack['name']} by {pack['creator_name']}",
-                value=f"💰 ${pack['price_cents']/100:.2f} | 🎴 {len(cards)} cards | {' '.join(rarity_display)}\n"
-                      f"🛒 {pack['total_purchases']} purchases",
-                inline=False
-            )
-        
-        await interaction.response.send_message(embed=embed)
+    # NOTE: "packs" command is handled by cogs/marketplace.py
+    # This duplicate has been removed to avoid CommandAlreadyRegistered error
 
 async def setup(bot):
     print("🔥🔥🔥 SETTING UP CARDCOG - REGISTERING COMMANDS 🔥🔥🔥")
