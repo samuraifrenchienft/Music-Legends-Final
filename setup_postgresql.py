@@ -10,6 +10,13 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime
 import json
 
+# Load environment variables from .env.txt
+try:
+    from dotenv import load_dotenv
+    load_dotenv('.env.txt')
+except ImportError:
+    pass
+
 class PostgreSQLSetup:
     def __init__(self):
         self.db_url = os.getenv("DATABASE_URL")
