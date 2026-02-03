@@ -1436,7 +1436,7 @@ class ImageConfirmationView(discord.ui.View):
 
 
 class PackCreationModal(discord.ui.Modal, title="Create Pack"):
-    """Modal for pack creation - triggers full interactive flow with smart image selection"""
+    """Modal for pack creation - Artist name becomes the pack name"""
     
     def __init__(self, pack_type: str, db: DatabaseManager, auto_select: bool = False):
         super().__init__()
@@ -1457,12 +1457,14 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             # Use ephemeral=False so we don't interfere with the persistent dev panel
             await interaction.response.defer(ephemeral=False, thinking=True)
             
-            artist_name = self.artist_name.value
-            pack_name = artist_name  # Use artist name directly for pack name
+            artist_name = self.artist_name.value.strip()
+            pack_name = artist_name  # Pack name is ALWAYS the artist name - simplified!
             
+            print(f"\n{'='*60}")
             print(f"🔧 [PACK_CREATE] Starting pack creation")
             print(f"🔧 [PACK_CREATE] Type: {self.pack_type} | Mode: {'AUTO' if self.auto_select else 'MANUAL'}")
-            print(f"🔧 [PACK_CREATE] Artist: {artist_name} | Pack Name: {pack_name}")
+            print(f"🔧 [PACK_CREATE] Artist/Pack: {artist_name}")
+            print(f"{'='*60}\n")
             
             # Send initial message
             await interaction.followup.send(
