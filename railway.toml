@@ -2,7 +2,7 @@
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 startCommand = "python run_bot.py"
-# Force rebuild - 2026-02-03-SOUND-EFFECTS-AND-EVERYONE-TAG
+# Force rebuild - 2026-02-03-CHANGELOG-MANAGER-AUDIT-SYSTEM
 
 [[services]]
 name = "music-legends-bot"
