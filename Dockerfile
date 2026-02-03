@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-03-02-25-00-SIMPLIFIED-MODAL
+ARG CACHE_BUST=2026-02-03-CARD-GAME-CREATE-PACK-FIX
 
 # Set working directory
 WORKDIR /app
