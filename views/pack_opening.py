@@ -41,7 +41,8 @@ class PackOpeningAnimator:
     # Audio file paths
     AUDIO_DIR = Path('assets/sounds')
     AUDIO_FILES = {
-        'legendary_pull': AUDIO_DIR / 'legendary_pull.mp3',
+        'pack_opening': AUDIO_DIR / 'pack_opening.mp3',  # Sound when pack starts opening
+        'legendary_pull': AUDIO_DIR / 'legendary_pull.mp3',  # Triumphant sound for legendary
         'card_pickup': AUDIO_DIR / 'card_pickup.mp3',
     }
     
@@ -286,9 +287,15 @@ class PackOpeningAnimator:
             # Create skip view
             skip_view = SkipView()
             
-            # Show loading message with skip button
+            # Show loading message with skip button and pack opening sound
             loading_embed = self.create_loading_embed()
-            message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False)
+            audio_file = self.get_audio_file('pack_opening')
+            
+            # Send with audio if available
+            if audio_file:
+                message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False, file=audio_file)
+            else:
+                message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False)
             
             # Wait a moment
             await asyncio.sleep(1.5)

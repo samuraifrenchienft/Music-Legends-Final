@@ -54,7 +54,7 @@ class StartGameCog(commands.Cog):
             inline=False
         )
         
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(f"@everyone", embed=embed)
         
         # Create real artist cards using YouTube
         starter_artists = [
