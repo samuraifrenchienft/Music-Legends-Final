@@ -1453,18 +1453,23 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     
     async def on_submit(self, interaction: Interaction):
         try:
-            # MUST defer immediately to prevent timeout
-            # Use ephemeral=False so we don't interfere with the persistent dev panel
+            print(f"[DEBUG-A] on_submit called for {self.pack_type}")
+            
+            # Use artist name directly as pack name
+            artist_name = self.artist_name.value
+            pack_name = artist_name  # Automatically use artist name as pack name
+            
+            print(f"[DEBUG-B] Artist extracted: '{artist_name}' (len={len(artist_name)})")
+            print(f"[DEBUG-B] Pack name set to: '{pack_name}'")
+            
+            # Defer immediately
+            print(f"[DEBUG-C] Deferring response...")
             await interaction.response.defer(ephemeral=False, thinking=True)
+            print(f"[DEBUG-C] Defer successful")
             
-            artist_name = self.artist_name.value.strip()
-            pack_name = artist_name  # Pack name is ALWAYS the artist name - simplified!
-            
-            print(f"\n{'='*60}")
-            print(f"🔧 [PACK_CREATE] Starting pack creation")
-            print(f"🔧 [PACK_CREATE] Type: {self.pack_type} | Mode: {'AUTO' if self.auto_select else 'MANUAL'}")
-            print(f"🔧 [PACK_CREATE] Artist/Pack: {artist_name}")
-            print(f"{'='*60}\n")
+            print(f"🔧 DEV PANEL: Creating {self.pack_type} pack")
+            print(f"   Artist: {artist_name}")
+            print(f"   Pack Name: {pack_name}")
             
             # Send initial message
             await interaction.followup.send(
@@ -1723,6 +1728,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     from cogs.pack_creation_helpers import extract_image_url
                     image_url = extract_image_url(track, artist)
                     
+                    print(f"[DEBUG-E] Image extraction for '{track.get('title','?')}': {image_url[:80] if image_url else 'NONE'}")
                     print(f"   Image URL: {image_url[:80] if image_url else 'NONE'}...")
                     if not image_url or image_url == '':
                         print(f"   ⚠️  WARNING: Image URL is empty, using fallback")
@@ -1835,9 +1841,11 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
     async def _search_youtube_fallback_auto(self, interaction: Interaction, pack_name: str, artist_name: str):
         """Auto-select mode: quickly search YouTube and create pack with first 5 videos"""
         try:
-            print(f"\n{'='*60}")
-            print(f"🔧 [YOUTUBE_AUTO] Starting YouTube auto-search for: {artist_name}")
-            print(f"{'='*60}\n")
+            # #region agent log - Hypothesis D: YouTube auto-select entry
+            import json
+            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a') as f:
+                f.write(json.dumps({"location":"menu_system.py:1854","message":"youtube_auto_select entry","data":{"pack_name":pack_name,"artist_name":artist_name},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"D"})+"\n")
+            # #endregion
             
             # Search YouTube for videos
             try:
