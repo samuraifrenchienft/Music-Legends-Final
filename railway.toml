@@ -2,7 +2,7 @@
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 startCommand = "python run_bot.py"
-# Force rebuild - 2026-02-03-CARD-GAME-CREATE-PACK-FIX
+# Force rebuild - 2026-02-03-CREATOR-DASHBOARD-SIMPLIFIED-FINAL
 
 [[services]]
 name = "music-legends-bot"
