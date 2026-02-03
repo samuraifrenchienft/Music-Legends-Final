@@ -491,3 +491,9 @@ OSError: [Errno 22] Invalid argument
 2026-02-02 18:43:44,927 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
 2026-02-02 18:46:04,630 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
 2026-02-02 18:50:40,295 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-03 02:43:08,969 - __main__ - INFO - Starting Music Legends Bot...
+2026-02-03 02:43:09,812 - discord.client - WARNING - PyNaCl is not installed, voice will NOT be supported
+2026-02-03 02:43:09,817 - discord.client - INFO - logging in using static token
+2026-02-03 02:43:11,314 - services.backup_service - INFO - 🗄️ PostgreSQL detected - using pg_dump for backups
+2026-02-03 02:43:12,278 - discord.gateway - INFO - Shard ID None has connected to Gateway (Session ID: 340c70e4d1ae93601bb3f77d684149a2).
+2026-02-03 02:48:12,026 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.

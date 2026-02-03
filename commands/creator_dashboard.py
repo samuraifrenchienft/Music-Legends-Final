@@ -10,26 +10,22 @@ from models.creator_pack import CreatorPack
 
 class CreatePackModal(Modal, title="Create Creator Pack"):
 
-    name = TextInput(label="Pack Name", max_length=40)
-    genre = TextInput(label="Genre", max_length=20)
-    artists = TextInput(
-        label="Artists (comma separated)",
-        style=discord.TextStyle.paragraph
-    )
+    artist_name = TextInput(label="Artist Name", max_length=100, placeholder="Enter artist name (e.g. Drake)")
 
     async def on_submit(self, interaction: discord.Interaction):
-
-        artist_list = [a.strip() for a in self.artists.value.split(",")]
+        # Artist name becomes the pack name
+        pack_name = self.artist_name.value
+        artist_list = [self.artist_name.value.strip()]
 
         pack = create_creator_pack(
             interaction.user.id,
-            self.name.value,
+            pack_name,
             artist_list,
-            self.genre.value
+            "Music"  # Default genre
         )
 
         await interaction.response.send_message(
-            f"Pack **{pack.name}** submitted for review.",
+            f"Pack **{pack_name}** submitted for review.",
             ephemeral=True
         )
 
