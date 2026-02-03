@@ -397,6 +397,7 @@ async def finalize_pack_creation_lastfm(
         cards_failed = 0
         
         print(f"🔧 [FINALIZE] Starting card generation for {len(selected_tracks)} tracks...")
+        for track in selected_tracks:
             try:
                 # Get image URL with robust fallback mechanism
                 image_url = extract_image_url(track, artist_data)

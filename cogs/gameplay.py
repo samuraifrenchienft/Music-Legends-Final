@@ -17,7 +17,7 @@ class GameplayCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = DatabaseManager()
-        self.economy = CardEconomyManager(self.db)
+        self.economy = CardEconomyManager()
         self.active_drop_messages = {}  # Store active drop messages
         self.economy.initialize_economy_tables()
         
