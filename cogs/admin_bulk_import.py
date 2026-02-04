@@ -36,17 +36,7 @@ class AdminBulkImportCog(commands.Cog):
             print("⚠️  WARNING: TEST_SERVER_ID not set - bulk import commands will not be registered")
 
 
-def check_test_server(interaction: Interaction) -> bool:
-    """Check if command is being used in test server"""
-    test_server_id = os.getenv('TEST_SERVER_ID')
-    if not test_server_id:
-        return False
-    
-    try:
-        test_guild_id = int(test_server_id)
-        return interaction.guild_id == test_guild_id
-    except (ValueError, TypeError):
-        return False
+from cogs.dev_helpers import check_test_server
     
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
     @app_commands.check(check_test_server)

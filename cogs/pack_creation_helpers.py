@@ -191,33 +191,45 @@ def extract_image_url(track: dict, artist_data: dict, default: str = DEFAULT_CAR
     """
     # Priority 1: YouTube thumbnails (most reliable for videos)
     if track.get('thumbnail_url'):
+        print(f"🎨 [IMAGE] Using track thumbnail_url: {track['thumbnail_url'][:80]}...")
         return track['thumbnail_url']
+    if track.get('youtube_thumbnail'):
+        print(f"🎨 [IMAGE] Using track youtube_thumbnail: {track['youtube_thumbnail'][:80]}...")
+        return track['youtube_thumbnail']
     if artist_data.get('thumbnail_url'):
+        print(f"🎨 [IMAGE] Using artist thumbnail_url: {artist_data['thumbnail_url'][:80]}...")
         return artist_data['thumbnail_url']
     
     # Priority 2: Last.fm track images (best quality)
     for size in ['image_xlarge', 'image_large', 'image_medium']:
         if track.get(size):
+            print(f"🎨 [IMAGE] Using track {size}: {track[size][:80]}...")
             return track[size]
     
     # Priority 3: Last.fm artist images
     for size in ['image_xlarge', 'image_large', 'image_medium']:
         if artist_data.get(size):
+            print(f"🎨 [IMAGE] Using artist {size}: {artist_data[size][:80]}...")
             return artist_data[size]
     
     # Priority 4: Generic track images
     if track.get('image'):
+        print(f"🎨 [IMAGE] Using track image: {track['image'][:80]}...")
         return track['image']
     if track.get('image_url'):
+        print(f"🎨 [IMAGE] Using track image_url: {track['image_url'][:80]}...")
         return track['image_url']
     
     # Priority 5: Generic artist images
     if artist_data.get('image'):
+        print(f"🎨 [IMAGE] Using artist image: {artist_data['image'][:80]}...")
         return artist_data['image']
     if artist_data.get('image_url'):
+        print(f"🎨 [IMAGE] Using artist image_url: {artist_data['image_url'][:80]}...")
         return artist_data['image_url']
     
     # Priority 6: Default placeholder
+    print(f"🎨 [IMAGE] No image found, using default placeholder")
     return default
 
 
@@ -402,7 +414,11 @@ async def finalize_pack_creation_lastfm(
                 # Get image URL with robust fallback mechanism
                 image_url = extract_image_url(track, artist_data)
                 
-                print(f"🎨 Card image selected: {image_url[:80] if image_url else 'DEFAULT'}...")
+                print(f"🎨 [FINALIZE_LFM] Card image selected: {image_url[:80] if image_url else 'DEFAULT'}...")
+                if not image_url or image_url == '':
+                    print(f"⚠️  [FINALIZE_LFM] WARNING: Image URL is empty after extraction!")
+                    image_url = DEFAULT_CARD_IMAGE
+                    print(f"🎨 [FINALIZE_LFM] Using default image: {image_url[:80]}...")
                 
                 card_data = music_api.format_track_for_card(
                     track=track,

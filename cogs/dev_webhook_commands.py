@@ -18,47 +18,7 @@ import asyncio
 # Import pack creation helpers
 from cogs.pack_creation_helpers import safe_image
 from youtube_integration import youtube_integration
-
-
-def check_test_server(interaction: Interaction) -> bool:
-    """Check if command is being used in test server"""
-    test_server_id = os.getenv('TEST_SERVER_ID')
-    if not test_server_id:
-        return False
-    
-    try:
-        test_guild_id = int(test_server_id)
-        return interaction.guild_id == test_guild_id
-    except (ValueError, TypeError):
-        return False
-
-
-async def check_and_respond(interaction: Interaction) -> bool:
-    """Check test server and send custom error message if needed"""
-    test_server_id = os.getenv('TEST_SERVER_ID')
-    if not test_server_id:
-        await interaction.response.send_message(
-            "❌ Dev commands are not configured on this bot. `TEST_SERVER_ID` is not set.",
-            ephemeral=True
-        )
-        return False
-    
-    try:
-        test_guild_id = int(test_server_id)
-    except ValueError:
-        await interaction.response.send_message(
-            "❌ `TEST_SERVER_ID` in environment variables is not a valid integer.",
-            ephemeral=True
-        )
-        return False
-
-    if interaction.guild_id != test_guild_id:
-        await interaction.response.send_message(
-            "❌ This command is only available in the development server.",
-            ephemeral=True
-        )
-        return False
-    return True
+from cogs.dev_helpers import check_test_server, check_and_respond
 
 
 class AnnouncementModal(Modal, title="Send Update Announcement"):

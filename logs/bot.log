@@ -1253,3 +1253,17 @@ discord.app_commands.errors.CommandNotFound: Application command 'menu' not foun
 2026-02-03 18:51:23,933 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
 2026-02-03 19:11:24,039 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
 2026-02-03 19:31:24,127 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-03 19:51:24,225 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-03 20:04:19,402 - discord.app_commands.tree - ERROR - Ignoring exception in command tree
+Traceback (most recent call last):
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1138, in wrapper
+    await self._call(interaction)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1270, in _call
+    command, options = self._get_app_command_options(data)
+  File "C:\Users\AbuBa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\discord\app_commands\tree.py", line 1174, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'setup_dev_panel' not found
+2026-02-03 20:11:24,386 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.
+2026-02-03 20:16:08,693 - discord.gateway - INFO - Shard ID None has successfully RESUMED session edab030b8b974ee4d7bffd4a0187c4e4.
+2026-02-03 20:25:14,949 - discord.gateway - INFO - Shard ID None has successfully RESUMED session edab030b8b974ee4d7bffd4a0187c4e4.
+2026-02-03 20:31:24,460 - services.backup_service - ERROR - pg_dump not found. Install PostgreSQL client tools.

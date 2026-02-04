@@ -545,12 +545,22 @@ class UserHubView(discord.ui.View):
 class DevPanelView(discord.ui.View):
     """
     Admin panel - persistent in #dev-controls channel
-    Only devs can access this channel, so no permission checks needed!
+    Only available in TEST_SERVER_ID
     """
     
     def __init__(self, db: DatabaseManager = None):
         super().__init__(timeout=None)  # Never expires!
         self.db = db or DatabaseManager()
+    
+    def _check_dev_channel(self, interaction: Interaction) -> bool:
+        """Check if interaction is in dev channel (TEST_SERVER_ID)"""
+        test_server_id = os.getenv('TEST_SERVER_ID')
+        if not test_server_id:
+            return False
+        try:
+            return interaction.guild_id == int(test_server_id)
+        except (ValueError, TypeError):
+            return False
     
     @discord.ui.button(
         label="📦 Create Community Pack",
@@ -560,6 +570,13 @@ class DevPanelView(discord.ui.View):
     )
     async def create_community_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create community pack (free for devs)"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             print(f"🔧 DEV PANEL: Create Community Pack button clicked")
             # Show auto/manual selection view
@@ -587,6 +604,13 @@ class DevPanelView(discord.ui.View):
     )
     async def create_gold_button(self, interaction: Interaction, button: discord.ui.Button):
         """Create gold pack (free for devs)"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             print(f"🔧 DEV PANEL: Create Gold Pack button clicked")
             # Show auto/manual selection view
@@ -614,6 +638,13 @@ class DevPanelView(discord.ui.View):
     )
     async def give_cards_button(self, interaction: Interaction, button: discord.ui.Button):
         """Give cards to users"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         print(f"\n{'='*60}")
         print(f"🔧 DEV PANEL: Give Cards button clicked")
         print(f"   User: {interaction.user.id}")
@@ -653,6 +684,13 @@ class DevPanelView(discord.ui.View):
     )
     async def give_currency_button(self, interaction: Interaction, button: discord.ui.Button):
         """Give gold/tickets to users"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             view = GiveCurrencyView(self.db)
             await interaction.response.send_message(
@@ -675,6 +713,13 @@ class DevPanelView(discord.ui.View):
     )
     async def bot_stats_button(self, interaction: Interaction, button: discord.ui.Button):
         """View bot statistics"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             embed = create_bot_stats_embed(self.db)
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -693,6 +738,13 @@ class DevPanelView(discord.ui.View):
     )
     async def user_lookup_button(self, interaction: Interaction, button: discord.ui.Button):
         """Look up user data"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             modal = UserLookupModal(self.db)
             await interaction.response.send_modal(modal)
@@ -711,6 +763,13 @@ class DevPanelView(discord.ui.View):
     )
     async def database_button(self, interaction: Interaction, button: discord.ui.Button):
         """Database management"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             view = DatabaseView(self.db)
             embed = create_database_embed()
@@ -730,6 +789,13 @@ class DevPanelView(discord.ui.View):
     )
     async def settings_button(self, interaction: Interaction, button: discord.ui.Button):
         """Bot settings"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             view = SettingsView(self.db)
             embed = create_settings_embed()
@@ -749,6 +815,13 @@ class DevPanelView(discord.ui.View):
     )
     async def event_button(self, interaction: Interaction, button: discord.ui.Button):
         """Start special event"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             view = EventView(self.db)
             await interaction.response.send_message(
@@ -771,6 +844,13 @@ class DevPanelView(discord.ui.View):
     )
     async def announcement_button(self, interaction: Interaction, button: discord.ui.Button):
         """Send announcement"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         print(f"\n{'='*60}")
         print(f"🔧 DEV PANEL: Announcement button clicked")
         print(f"   User: {interaction.user.id}")
@@ -806,6 +886,13 @@ class DevPanelView(discord.ui.View):
     )
     async def restart_button(self, interaction: Interaction, button: discord.ui.Button):
         """Restart bot"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             await interaction.response.send_message(
                 "⚠️ **Restart Bot?**\n\nThis will disconnect all users briefly.\nAre you sure?",
@@ -827,6 +914,13 @@ class DevPanelView(discord.ui.View):
     )
     async def legendary_cosmetics_button(self, interaction: Interaction, button: discord.ui.Button):
         """Manage legendary card cosmetics"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         view = LegendaryCosmeticsView(self.db)
         await interaction.response.send_message(
             "✨ **Legendary Card Cosmetics**\n\nManage cosmetics for legendary cards:",
@@ -842,6 +936,13 @@ class DevPanelView(discord.ui.View):
     )
     async def test_button(self, interaction: Interaction, button: discord.ui.Button):
         """Test new features"""
+        if not self._check_dev_channel(interaction):
+            await interaction.response.send_message(
+                "❌ This panel is only available in the development server.",
+                ephemeral=True
+            )
+            return
+        
         try:
             view = TestView(self.db)
             await interaction.response.send_message(
@@ -1721,9 +1822,13 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     from cogs.pack_creation_helpers import extract_image_url
                     image_url = extract_image_url(track, artist)
                     
-                    print(f"   Image URL: {image_url[:80] if image_url else 'NONE'}...")
+                    print(f"🎨 [FINALIZE] Extracted image URL: {image_url[:80] if image_url else 'NONE'}...")
                     if not image_url or image_url == '':
-                        print(f"   ⚠️  WARNING: Image URL is empty, using fallback")
+                        print(f"⚠️  [FINALIZE] WARNING: Image URL is empty after extraction!")
+                        # Force use default
+                        from cogs.pack_creation_helpers import DEFAULT_CARD_IMAGE
+                        image_url = DEFAULT_CARD_IMAGE
+                        print(f"🎨 [FINALIZE] Using default image: {image_url[:80]}...")
                     
                     # Get video ID
                     video_id = track.get('video_id', str(random.randint(1000, 9999)))
@@ -1883,20 +1988,25 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 try:
                     print(f"🔧 [YOUTUBE_AUTO] Normalizing video {i+1}/5: {video.get('title', 'Unknown')[:50]}")
                     
+                    thumbnail = video.get('thumbnail_url', '') or video.get('image_url', '')
                     normalized_track = {
                         'title': video.get('title', f'Track {i+1}'),
                         'name': video.get('title', f'Track {i+1}'),
-                        'thumbnail_url': video.get('thumbnail_url', ''),
-                        'image_url': video.get('thumbnail_url', '') or video.get('image_url', ''),
-                        'image_xlarge': video.get('thumbnail_url', '') or video.get('image_url', ''),
-                        'image_large': video.get('thumbnail_url', '') or video.get('image_url', ''),
+                        'thumbnail_url': thumbnail,  # Primary YouTube thumbnail
+                        'youtube_thumbnail': thumbnail,  # Also include this key for extract_image_url
+                        'image_url': thumbnail,
+                        'image_xlarge': thumbnail,
+                        'image_large': thumbnail,
+                        'image_medium': thumbnail,
                         'youtube_url': video.get('youtube_url', f"https://youtube.com/watch?v={video.get('video_id', '')}"),
                         'youtube_id': video.get('video_id', ''),
                         'video_id': video.get('video_id', ''),
+                        'url': video.get('youtube_url', f"https://youtube.com/watch?v={video.get('video_id', '')}"),
                         'artist': artist_name,
                         'listeners': 0,
                         'playcount': 0,
                     }
+                    print(f"   🎨 Image keys: thumbnail_url={bool(normalized_track['thumbnail_url'])}, youtube_thumbnail={bool(normalized_track['youtube_thumbnail'])}")
                     normalized_tracks.append(normalized_track)
                     print(f"   ✅ Normalized: {normalized_track.get('title', 'Unknown')[:50]}")
                     
@@ -1994,11 +2104,15 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 # Create enhanced track with YouTube image
                 enhanced_track = track.copy()
                 if matching_video:
-                    enhanced_track['youtube_thumbnail'] = matching_video.get('thumbnail_url', '')
+                    thumbnail = matching_video.get('thumbnail_url', '')
+                    enhanced_track['youtube_thumbnail'] = thumbnail
+                    enhanced_track['thumbnail_url'] = thumbnail  # Add for extract_image_url compatibility
                     enhanced_track['youtube_url'] = matching_video.get('youtube_url', '')
                 else:
                     # Use first video as fallback
-                    enhanced_track['youtube_thumbnail'] = videos[0].get('thumbnail_url', '') if videos else ''
+                    thumbnail = videos[0].get('thumbnail_url', '') if videos else ''
+                    enhanced_track['youtube_thumbnail'] = thumbnail
+                    enhanced_track['thumbnail_url'] = thumbnail  # Add for extract_image_url compatibility
                     enhanced_track['youtube_url'] = videos[0].get('youtube_url', '') if videos else ''
                 
                 enhanced_tracks.append(enhanced_track)
@@ -2015,10 +2129,37 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             )
             return
         
+        # Normalize YouTube videos to ensure all image keys are present
+        normalized_videos = []
+        for video in videos:
+            thumbnail = video.get('thumbnail_url', '') or video.get('image_url', '')
+            normalized_video = {
+                'title': video.get('title', 'Unknown'),
+                'name': video.get('title', 'Unknown'),
+                'thumbnail_url': thumbnail,
+                'youtube_thumbnail': thumbnail,
+                'image_url': thumbnail,
+                'image_xlarge': thumbnail,
+                'image_large': thumbnail,
+                'image_medium': thumbnail,
+                'youtube_url': video.get('youtube_url', f"https://youtube.com/watch?v={video.get('video_id', '')}"),
+                'youtube_id': video.get('video_id', ''),
+                'video_id': video.get('video_id', ''),
+                'url': video.get('youtube_url', f"https://youtube.com/watch?v={video.get('video_id', '')}"),
+                'channel_title': video.get('channel_title', ''),
+                'artist_name': artist_name,
+            }
+            normalized_videos.append(normalized_video)
+        
         # No Last.fm data - pure YouTube fallback
+        first_thumbnail = normalized_videos[0].get('thumbnail_url', '') if normalized_videos else ''
         artist = {
             'name': artist_name,
-            'image_url': videos[0].get('thumbnail_url', '') if videos else '',
+            'image_url': first_thumbnail,
+            'thumbnail_url': first_thumbnail,
+            'image_xlarge': first_thumbnail,
+            'image_large': first_thumbnail,
+            'image_medium': first_thumbnail,
             'popularity': 75,
             'followers': 1000000
         }
@@ -2029,7 +2170,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             description=(
                 f"**{pack_name}** featuring **{artist['name']}**\n\n"
                 f"🎥 Using YouTube video thumbnails\n"
-                f"Found **{len(videos)}** videos. Select up to 5 songs for your pack."
+                f"Found **{len(normalized_videos)}** videos. Select up to 5 songs for your pack."
             ),
             color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
         )
@@ -2070,8 +2211,8 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 self.pack_type
             )
         
-        # Show selection view
-        view = SongSelectionView(videos, max_selections=5, callback=on_songs_selected)
+        # Show selection view with normalized videos
+        view = SongSelectionView(normalized_videos, max_selections=5, callback=on_songs_selected)
         await interaction.followup.send(
             embed=selection_embed,
             view=view,
@@ -2373,18 +2514,13 @@ class MenuSystemCog(commands.Cog):
     @app_commands.command(name="setup_dev_panel", description="[DEV] Post persistent Dev Panel in this channel")
     async def setup_dev_panel(self, interaction: Interaction):
         """Post persistent dev panel in current channel (dev-only channel)"""
-        # MUST defer immediately to prevent timeout
-        await interaction.response.defer(ephemeral=False)
-        
-        # Check if in TEST_SERVER
-        import os
-        test_server_id = os.getenv('TEST_SERVER_ID')
-        if test_server_id and interaction.guild_id != int(test_server_id):
-            await interaction.followup.send(
-                "❌ This command is only available in the development server.",
-                ephemeral=True
-            )
+        # Check if in TEST_SERVER before deferring
+        from cogs.dev_helpers import check_and_respond
+        if not await check_and_respond(interaction):
             return
+        
+        # Defer after check passes
+        await interaction.response.defer(ephemeral=False)
         
         view = DevPanelView(self.db)
         
@@ -2424,9 +2560,45 @@ class MenuSystemCog(commands.Cog):
         
         await interaction.followup.send(embed=embed, view=view)
     
+    @app_commands.command(name="setup_user_hub", description="Post persistent User Hub menu in this channel")
+    async def setup_user_hub(self, interaction: Interaction):
+        """Post persistent user hub menu in current channel (available everywhere)"""
+        await interaction.response.defer(ephemeral=False)
+        
+        view = UserHubView(self.db)
+        
+        embed = discord.Embed(
+            title="🎵 Music Legends - User Hub",
+            description=(
+                "**Welcome to Music Legends!**\n\n"
+                "**Quick Actions:**\n"
+                "• View Battle Pass progress\n"
+                "• Check VIP status\n"
+                "• Browse the shop\n"
+                "• Start battles\n"
+                "• View leaderboards\n\n"
+                "**Important:** After bot restarts, run `/setup_user_hub` again\n"
+                "to refresh the menu buttons in this channel."
+            ),
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="User Hub • Available to everyone")
+        
+        # Delete old hub message if exists
+        try:
+            async for message in interaction.channel.history(limit=50):
+                if message.author == self.bot.user and message.embeds:
+                    if message.embeds[0].title == "🎵 Music Legends - User Hub":
+                        await message.delete()
+                        break
+        except:
+            pass
+        
+        await interaction.followup.send(embed=embed, view=view)
+    
     @app_commands.command(name="menu", description="Open the main menu")
     async def menu_command(self, interaction: Interaction):
-        """Open main menu via slash command"""
+        """Open main menu via slash command (shows User Hub everywhere)"""
         view = UserHubView(self.db)
         
         embed = discord.Embed(
