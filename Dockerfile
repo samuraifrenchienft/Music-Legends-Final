@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-03-PSUTIL-DEPENDENCY-FIX
+ARG CACHE_BUST=2026-02-04-CLEANUP-REMOVE-HELP-COMMANDS
 
 # Set working directory
 WORKDIR /app
