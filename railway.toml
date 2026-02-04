@@ -2,7 +2,7 @@
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 startCommand = "python run_bot.py"
-# Force rebuild - 2026-02-04-FIX-IMPORT-PACKS-GUILD-CHECK
+# Force rebuild - 2026-02-04-DEBUG-GUILD-CHECK
 
 [[services]]
 name = "music-legends-bot"
