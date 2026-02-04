@@ -38,7 +38,6 @@ class AdminBulkImportCog(commands.Cog):
 
 
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
-    @app_commands.check(check_test_server)
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
         """Import multiple packs from a JSON file
         

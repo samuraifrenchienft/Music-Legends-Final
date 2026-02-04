@@ -2525,7 +2525,6 @@ class MenuSystemCog(commands.Cog):
         print("✅ Persistent menu views registered")
     
     @app_commands.command(name="setup_dev_panel", description="[DEV] Post persistent Dev Panel in this channel")
-    @app_commands.check(check_test_server)
     async def setup_dev_panel(self, interaction: Interaction):
         """Post persistent dev panel in current channel (dev-only channel)"""
         # Check if in TEST_SERVER before deferring
