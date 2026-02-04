@@ -87,9 +87,8 @@ class SystemMonitor:
             # Determine severity based on restart type
             severity = 'high' if restart_type == 'crash' else 'medium'
             
-            # Send alert to Discord
-            if self.bot:
-                asyncio.create_task(self._send_restart_alert(restart_info, severity))
+            # Send alert via webhook
+            asyncio.create_task(self._send_restart_alert_webhook(restart_info, severity))
             
             # Check for restart storm
             self._check_restart_storm()
@@ -100,25 +99,24 @@ class SystemMonitor:
             logger.error(f"Error logging restart: {e}")
             return False
     
-    async def _send_restart_alert(self, restart_info: Dict, severity: str = 'medium') -> None:
-        """Send restart alert to Discord"""
+    async def _send_restart_alert_webhook(self, restart_info: Dict, severity: str = 'medium') -> None:
+        """Send restart alert to webhook channel"""
         try:
-            if not self.bot or not self.bot.user:
-                return
+            from monitor.alerts import send_econ
             
-            await self._post_alert_to_channel(
-                title=f"🔄 System Restart - {restart_info['type'].title()}",
-                description=f"Bot restart detected",
-                fields={
-                    'Type': restart_info['type'],
-                    'Environment': restart_info['environment'],
-                    'Time': restart_info['timestamp'],
-                },
-                color_name=self._severity_to_color_name(severity)
-            )
+            restart_msg = f"**Type:** {restart_info['type'].title()}\n"
+            restart_msg += f"**Environment:** {restart_info['environment']}\n"
+            restart_msg += f"**Time:** {restart_info['timestamp']}"
+            
+            if restart_info.get('metadata'):
+                meta_str = ', '.join([f"{k}: {v}" for k, v in list(restart_info['metadata'].items())[:3]])
+                restart_msg += f"\n**Details:** {meta_str}"
+            
+            level = 'red' if severity == 'high' else 'orange'
+            await send_econ("🔄 System Restart", restart_msg, level)
         
         except Exception as e:
-            logger.error(f"Error sending restart alert: {e}")
+            logger.error(f"Error sending restart webhook alert: {e}")
     
     async def monitor_uptime(self) -> Dict[str, Any]:
         """

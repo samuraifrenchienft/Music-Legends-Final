@@ -172,6 +172,7 @@ class Bot(commands.Bot):
             'cogs.season_commands',           # Season progression and rewards
             'cogs.admin_bulk_import',         # Dev-only bulk pack import (TEST_SERVER)
             'cogs.admin_commands',            # Admin commands (all servers)
+            'cogs.dev_webhook_commands',      # Dev webhook channel commands (TEST_SERVER)
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")

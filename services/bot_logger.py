@@ -199,12 +199,36 @@ class BotLogger:
         """
         try:
             self.system_monitor.log_restart(restart_type, metadata)
+            
+            # Send webhook alert
+            asyncio.create_task(
+                self._send_restart_alert_webhook(restart_type, metadata)
+            )
+            
             logger.info(f"[RESTART] {restart_type} restart logged")
             return True
         
         except Exception as e:
             logger.error(f"Error logging restart: {e}")
             return False
+    
+    async def _send_restart_alert_webhook(self, restart_type: str, metadata: Optional[Dict] = None) -> None:
+        """Send restart alert to webhook channel"""
+        try:
+            from monitor.alerts import send_econ
+            
+            restart_msg = f"**Restart Type:** {restart_type.title()}\n"
+            restart_msg += f"**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            if metadata:
+                meta_str = ', '.join([f"{k}: {v}" for k, v in list(metadata.items())[:3]])
+                restart_msg += f"\n**Details:** {meta_str}"
+            
+            level = 'orange' if restart_type == 'crash' else 'info'
+            await send_econ("🔄 Bot Restart", restart_msg, level)
+        
+        except Exception as e:
+            logger.error(f"Error sending restart webhook alert: {e}")
     
     def log_deployment(
         self,
@@ -309,10 +333,10 @@ class BotLogger:
                 send_alert=send_alert
             )
             
-            # Send Discord alert
-            if send_alert and self.bot:
+            # Send Discord alert via webhook
+            if send_alert:
                 asyncio.create_task(
-                    self._send_error_alert(error_entry)
+                    self._send_error_alert_webhook(error_entry)
                 )
             
             logger.error(f"[ERROR] {error_context}: {error_str}")
@@ -360,78 +384,39 @@ class BotLogger:
             logger.error(f"Error logging warning: {e}")
             return False
     
-    async def _send_error_alert(self, error_entry: Dict) -> None:
-        """Send error alert to Discord"""
+    async def _send_error_alert_webhook(self, error_entry: Dict) -> None:
+        """Send simplified error alert to webhook channel"""
         try:
-            if not self.bot or not self.bot.user:
-                return
+            from monitor.alerts import send_econ
             
             severity = error_entry.get('severity', 'error')
             level_info = self.ERROR_LEVELS.get(severity, self.ERROR_LEVELS['error'])
             emoji = level_info['emoji']
             
-            import discord
-            
-            # Determine color based on severity
-            color_map = {
-                'debug': discord.Color.grey(),
-                'info': discord.Color.blue(),
-                'warning': discord.Color.orange(),
-                'error': discord.Color.red(),
-                'critical': discord.Color.dark_red(),
-            }
-            
-            embed = discord.Embed(
-                title=f"{emoji} Error Alert - {error_entry['error_type']}",
-                description=error_entry['details'][:100],
-                color=color_map.get(severity, discord.Color.red()),
-                timestamp=datetime.now()
-            )
-            
-            embed.add_field(
-                name="Context",
-                value=error_entry['context'],
-                inline=True
-            )
-            
-            embed.add_field(
-                name="Severity",
-                value=severity.upper(),
-                inline=True
-            )
+            # Simplified error message for easy patching
+            error_msg = f"**{emoji} [{error_entry['error_type']}]** {error_entry['context']}\n"
+            error_msg += f"```{error_entry['details'][:200]}```"
             
             if error_entry.get('user_id'):
-                embed.add_field(
-                    name="User",
-                    value=f"`{error_entry['user_id']}`",
-                    inline=True
-                )
+                error_msg += f"\n**User:** `{error_entry['user_id']}`"
             
-            if error_entry.get('metadata'):
-                meta_str = '\n'.join(
-                    [f"• {k}: {v}" for k, v in list(error_entry['metadata'].items())[:3]]
-                )
-                embed.add_field(
-                    name="Details",
-                    value=meta_str[:1024],
-                    inline=False
-                )
+            # Map severity to alert level
+            level_map = {
+                'debug': 'info',
+                'info': 'info',
+                'warning': 'orange',
+                'error': 'red',
+                'critical': 'red'
+            }
             
-            embed.set_footer(text="Music Legends Bot Logger")
-            
-            # Find error channel
-            for guild in self.bot.guilds:
-                for channel in guild.channels:
-                    if any(name in channel.name.lower() for name in 
-                           ['error-logs', 'dev-logs', 'admin-logs', 'system-logs']):
-                        try:
-                            await channel.send(embed=embed)
-                            return
-                        except:
-                            continue
+            await send_econ(
+                f"{emoji} Error Alert",
+                error_msg,
+                level_map.get(severity, 'red')
+            )
         
         except Exception as e:
-            logger.error(f"Error sending alert: {e}")
+            logger.error(f"Error sending webhook alert: {e}")
     
     # ==================== STATISTICS & RETRIEVAL ====================
     

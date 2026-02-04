@@ -98,9 +98,9 @@ class ChangeLogManager:
             
             logger.info(f"[CHANGELOG] {category}: {description}")
             
-            # Send alert if requested and bot available
-            if send_alert and self.bot:
-                asyncio.create_task(self._send_discord_alert(change_entry))
+            # Send alert via webhook if requested
+            if send_alert:
+                asyncio.create_task(self._send_webhook_alert(change_entry))
             
             return True
             
@@ -108,81 +108,45 @@ class ChangeLogManager:
             logger.error(f"Error logging change: {e}")
             return False
     
-    async def _send_discord_alert(self, change_entry: Dict[str, Any]) -> None:
+    async def _send_webhook_alert(self, change_entry: Dict[str, Any]) -> None:
         """
-        Send alert to development Discord channel
+        Send changelog alert to webhook channel
         
         Args:
             change_entry: Change log entry to alert about
         """
         try:
-            if not self.bot or not self.bot.user:
-                return
-            
-            # Find dev/admin channel
-            dev_channel_names = [
-                'dev-logs', 'dev-channel', 'admin-logs', 
-                'admin-channel', 'system-logs', 'changelog'
-            ]
-            
-            for guild in self.bot.guilds:
-                for channel in guild.channels:
-                    if channel.name.lower() in dev_channel_names:
-                        await self._post_alert_to_channel(channel, change_entry)
-                        return
-        
-        except Exception as e:
-            logger.error(f"Error sending Discord alert: {e}")
-    
-    async def _post_alert_to_channel(self, channel, change_entry: Dict[str, Any]) -> None:
-        """Post formatted alert to Discord channel"""
-        try:
-            import discord
+            from monitor.alerts import send_econ
             
             severity_emoji = change_entry['severity_emoji']
             
-            embed = discord.Embed(
-                title=f"{severity_emoji} System Change Alert",
-                description=change_entry['description'],
-                color=self._severity_to_color(change_entry['severity']),
-                timestamp=datetime.now()
-            )
-            
-            embed.add_field(
-                name="Category",
-                value=change_entry['category_name'],
-                inline=True
-            )
-            
-            embed.add_field(
-                name="Severity",
-                value=f"{severity_emoji} {change_entry['severity'].upper()}",
-                inline=True
-            )
+            changelog_msg = f"{severity_emoji} **{change_entry['category_name']}**\n"
+            changelog_msg += f"{change_entry['description']}\n"
             
             if change_entry['user_id']:
-                embed.add_field(
-                    name="User ID",
-                    value=str(change_entry['user_id']),
-                    inline=True
-                )
+                changelog_msg += f"**User:** `{change_entry['user_id']}`\n"
             
             if change_entry['metadata']:
-                metadata_str = '\n'.join(
-                    [f"• **{k}**: {v}" for k, v in list(change_entry['metadata'].items())[:5]]
-                )
-                embed.add_field(
-                    name="Metadata",
-                    value=metadata_str[:1024],
-                    inline=False
-                )
+                meta_items = list(change_entry['metadata'].items())[:3]
+                meta_str = ', '.join([f"{k}: {v}" for k, v in meta_items])
+                changelog_msg += f"**Details:** {meta_str}"
             
-            embed.set_footer(text="Music Legends Changelog")
+            # Map severity to alert level
+            level_map = {
+                'critical': 'red',
+                'high': 'orange',
+                'medium': 'yellow',
+                'low': 'info'
+            }
             
-            await channel.send(embed=embed)
+            await send_econ(
+                f"{severity_emoji} Changelog",
+                changelog_msg,
+                level_map.get(change_entry['severity'], 'info')
+            )
         
         except Exception as e:
-            logger.error(f"Error posting alert to channel: {e}")
+            logger.error(f"Error sending webhook alert: {e}")
     
     def _severity_to_color(self, severity: str) -> int:
         """Convert severity to Discord embed color"""
