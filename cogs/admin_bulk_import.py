@@ -40,19 +40,14 @@ class AdminBulkImportCog(commands.Cog):
         # Debug logging
         print(f"🔍 DEBUG interaction_check: interaction.guild_id={interaction.guild_id}, self.test_guild_id={self.test_guild_id}")
         
+        # Don't send message here - just return False
+        # The check failure will be handled by Discord
         if self.test_guild_id is None:
-            await interaction.response.send_message(
-                "❌ Dev commands are not configured on this bot.",
-                ephemeral=True
-            )
+            print(f"❌ test_guild_id is None")
             return False
         
         if interaction.guild_id != self.test_guild_id:
             print(f"❌ Guild mismatch: {interaction.guild_id} != {self.test_guild_id}")
-            await interaction.response.send_message(
-                "❌ This command is only available in the development server.",
-                ephemeral=True
-            )
             return False
         
         print(f"✅ Guild check passed")

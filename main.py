@@ -187,7 +187,7 @@ class Bot(commands.Bot):
                 # Continue loading other cogs - don't break the whole bot
         
         # Load additional cogs with error handling
-        additional_cogs = ['cogs.dust_commands', 'cogs.changelog_commands', 'cogs.system_monitor_commands', 'cogs.bot_logger_commands']
+        additional_cogs = ['cogs.dust_commands', 'cogs.system_monitor_commands', 'cogs.bot_logger_commands']
         for cog in additional_cogs:
             try:
                 await self.load_extension(cog)
