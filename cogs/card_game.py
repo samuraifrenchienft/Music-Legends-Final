@@ -502,7 +502,13 @@ class CardGameCog(Cog):
         """Create a new pack with artist cards - Interactive workflow"""
         pack_name = artist_name  # Pack name automatically equals artist name
         print(f"🔥 DEBUG: create_pack called by {interaction.user.name} - artist/pack: {artist_name}")
-        await interaction.response.defer(ephemeral=True)
+        
+        # CRITICAL: Defer IMMEDIATELY before any async operations
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception as e:
+            print(f"❌ Failed to defer interaction: {e}")
+            return
         
         try:
             # Check if YouTube API key is configured
