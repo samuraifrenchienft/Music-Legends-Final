@@ -44,62 +44,96 @@ class AdminBulkImportCog(commands.Cog):
         Args:
             file: JSON file containing pack data
         """
+        print(f"\n{'='*60}")
+        print(f"🔄 [IMPORT_PACKS] Command started")
+        print(f"   User: {interaction.user.id}")
+        print(f"   Guild: {interaction.guild_id}")
+        print(f"   Channel: {interaction.channel_id}")
+        print(f"   File: {file.filename}")
+        print(f"{'='*60}\n")
+        
+        # Check dev channel
+        from cogs.dev_helpers import check_and_respond
+        if not await check_and_respond(interaction):
+            print(f"❌ [IMPORT_PACKS] Authorization failed")
+            return
+        
+        print(f"✅ [IMPORT_PACKS] Authorization passed")
         await interaction.response.defer(ephemeral=True)
         
         # Validate file type
         if not file.filename.endswith('.json'):
+            print(f"❌ [IMPORT_PACKS] Invalid file type: {file.filename}")
             await interaction.followup.send(
                 "❌ **Error:** File must be a JSON file (.json extension)",
                 ephemeral=True
             )
             return
         
+        print(f"✅ [IMPORT_PACKS] File type valid: {file.filename}")
+        
         # Download and parse JSON
         try:
+            print(f"📥 [IMPORT_PACKS] Reading file...")
             file_content = await file.read()
+            print(f"✅ [IMPORT_PACKS] File read: {len(file_content)} bytes")
+            
             data = json.loads(file_content.decode('utf-8'))
+            print(f"✅ [IMPORT_PACKS] JSON parsed successfully")
         except json.JSONDecodeError as e:
+            print(f"❌ [IMPORT_PACKS] JSON Parse Error: {e}")
             await interaction.followup.send(
                 f"❌ **JSON Parse Error:** Invalid JSON format\n```{str(e)}```",
                 ephemeral=True
             )
             return
         except Exception as e:
+            print(f"❌ [IMPORT_PACKS] Read Error: {e}")
             await interaction.followup.send(
                 f"❌ **Error:** Failed to read file\n```{str(e)}```",
                 ephemeral=True
             )
             return
         
+        print(f"📊 [IMPORT_PACKS] Validating JSON structure...")
         # Validate JSON structure
         validation_result = self._validate_json_structure(data)
         if not validation_result['valid']:
             error_msg = "\n".join([f"• {err}" for err in validation_result['errors']])
+            print(f"❌ [IMPORT_PACKS] Validation failed:\n{error_msg}")
             await interaction.followup.send(
                 f"❌ **Validation Failed:**\n{error_msg}",
                 ephemeral=True
             )
             return
         
+        print(f"✅ [IMPORT_PACKS] Validation passed")
+        
         # Import packs
+        print(f"📦 [IMPORT_PACKS] Starting pack creation...")
         packs_data = data.get('packs', [])
         results = {
             'success': [],
             'failed': []
         }
         
-        for pack_data in packs_data:
+        for i, pack_data in enumerate(packs_data):
             try:
+                print(f"  Creating pack {i+1}/{len(packs_data)}: {pack_data.get('name', 'Unknown')}")
                 pack_id = await self._create_pack_from_data(pack_data, interaction.user.id)
                 results['success'].append({
                     'name': pack_data['name'],
                     'pack_id': pack_id
                 })
+                print(f"  ✅ Created pack: {pack_id}")
             except Exception as e:
+                print(f"  ❌ Error creating pack: {e}")
                 results['failed'].append({
                     'name': pack_data.get('name', 'Unknown'),
                     'error': str(e)
                 })
+        
+        print(f"📊 [IMPORT_PACKS] Results: {len(results['success'])} success, {len(results['failed'])} failed")
         
         # Create response embed
         embed = discord.Embed(
@@ -126,6 +160,7 @@ class AdminBulkImportCog(commands.Cog):
         embed.set_footer(text=f"Total: {len(packs_data)} packs processed")
         
         await interaction.followup.send(embed=embed, ephemeral=True)
+        print(f"✅ [IMPORT_PACKS] Command completed\n")
     
     def _validate_json_structure(self, data: dict) -> Dict[str, any]:
         """Validate the JSON structure matches expected schema"""
