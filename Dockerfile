@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-03-BOT-LOGGER-UNIFIED-SYSTEM
+ARG CACHE_BUST=2026-02-03-PSUTIL-DEPENDENCY-FIX
 
 # Set working directory
 WORKDIR /app
