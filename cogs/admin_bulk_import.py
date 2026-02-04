@@ -16,42 +16,11 @@ from typing import List, Dict, Optional
 import asyncio
 
 class AdminBulkImportCog(commands.Cog):
-    """Dev-only commands for bulk pack creation (TEST_SERVER only)"""
+    """Dev commands for bulk pack creation"""
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = DatabaseManager()
-        
-        # Get TEST_SERVER_ID from environment - commands only available in this guild
-        test_server_id = os.getenv('TEST_SERVER_ID')
-        if test_server_id:
-            try:
-                self.test_guild_id = int(test_server_id)
-                print(f"✅ Dev commands will be registered in TEST_SERVER: {self.test_guild_id}")
-            except ValueError:
-                self.test_guild_id = None
-                print("⚠️  WARNING: TEST_SERVER_ID is not a valid integer")
-        else:
-            self.test_guild_id = None
-            print("⚠️  WARNING: TEST_SERVER_ID not set - bulk import commands will not be registered")
-    
-    async def interaction_check(self, interaction: Interaction) -> bool:
-        """Ensure commands only work in TEST_SERVER"""
-        if self.test_guild_id is None:
-            await interaction.response.send_message(
-                "❌ Dev commands are not configured on this bot.",
-                ephemeral=True
-            )
-            return False
-        
-        if interaction.guild_id != self.test_guild_id:
-            await interaction.response.send_message(
-                "❌ This command is only available in the development server.",
-                ephemeral=True
-            )
-            return False
-        
-        return True
     
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
