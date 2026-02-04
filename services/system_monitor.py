@@ -47,6 +47,7 @@ class SystemMonitor:
         self.start_time = datetime.now()
         self.restart_count = 0
         self.last_alert_time = {}
+        self.pending_restart_alerts = []  # Queue for alerts when event loop isn't ready
         
         # Ensure log directory exists
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -87,8 +88,19 @@ class SystemMonitor:
             # Determine severity based on restart type
             severity = 'high' if restart_type == 'crash' else 'medium'
             
-            # Send alert via webhook
-            asyncio.create_task(self._send_restart_alert_webhook(restart_info, severity))
+            # Send alert via webhook (only if event loop is running)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._send_restart_alert_webhook(restart_info, severity))
+                else:
+                    # Queue for later when bot is ready
+                    self.pending_restart_alerts.append((restart_info, severity))
+                    logger.debug(f"[RESTART] Event loop not running, queued webhook alert")
+            except RuntimeError:
+                # Queue for later when bot is ready
+                self.pending_restart_alerts.append((restart_info, severity))
+                logger.debug(f"[RESTART] No event loop available, queued webhook alert")
             
             # Check for restart storm
             self._check_restart_storm()
@@ -117,6 +129,17 @@ class SystemMonitor:
         
         except Exception as e:
             logger.error(f"Error sending restart webhook alert: {e}")
+    
+    async def send_pending_alerts(self) -> None:
+        """Send any pending restart alerts that were queued during startup"""
+        try:
+            if self.pending_restart_alerts:
+                logger.info(f"[RESTART] Sending {len(self.pending_restart_alerts)} pending restart alerts")
+                for restart_info, severity in self.pending_restart_alerts:
+                    await self._send_restart_alert_webhook(restart_info, severity)
+                self.pending_restart_alerts.clear()
+        except Exception as e:
+            logger.error(f"Error sending pending restart alerts: {e}")
     
     async def monitor_uptime(self) -> Dict[str, Any]:
         """
@@ -263,19 +286,24 @@ class SystemMonitor:
                 logger.warning(f"[ALERT] Restart storm detected: {len(recent_restarts)} restarts in last hour")
                 
                 if self.bot and self._should_send_alert('restart_storm'):
-                    asyncio.create_task(
-                        self._post_alert_to_channel(
-                            title="🚨 Restart Storm Detected",
-                            description=f"{len(recent_restarts)} restarts in the last hour - possible loop detected",
-                            fields={
-                                'Time Period': 'Last 60 minutes',
-                                'Restart Count': str(len(recent_restarts)),
-                                'Threshold': str(self.RESTART_ALERT_THRESHOLD),
-                            },
-                            color_name='red'
-                        )
-                    )
-                    self.last_alert_time['restart_storm'] = datetime.now()
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.create_task(
+                                self._post_alert_to_channel(
+                                    title="🚨 Restart Storm Detected",
+                                    description=f"{len(recent_restarts)} restarts in the last hour - possible loop detected",
+                                    fields={
+                                        'Time Period': 'Last 60 minutes',
+                                        'Restart Count': str(len(recent_restarts)),
+                                        'Threshold': str(self.RESTART_ALERT_THRESHOLD),
+                                    },
+                                    color_name='red'
+                                )
+                            )
+                            self.last_alert_time['restart_storm'] = datetime.now()
+                    except RuntimeError:
+                        logger.debug(f"[ALERT] No event loop available for restart storm alert")
         
         except Exception as e:
             logger.error(f"Error checking restart storm: {e}")

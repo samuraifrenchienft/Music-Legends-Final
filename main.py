@@ -233,6 +233,14 @@ class Bot(commands.Bot):
         # Commands should auto-sync, skip manual sync to avoid errors
         print("📋 Commands should auto-register with Discord")
         
+        # Send any pending restart alerts that were queued during startup
+        try:
+            from services.system_monitor import get_system_monitor
+            monitor = get_system_monitor(bot=self)
+            await monitor.send_pending_alerts()
+        except Exception as e:
+            print(f"⚠️ Error sending pending alerts: {e}")
+        
         await self.change_presence(activity=discord.Activity(name="Music Legends"))
         
         # Send startup notice to dev channel
