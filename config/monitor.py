@@ -4,7 +4,7 @@ import os
 MONITOR = {
     # Webhooks
     "WEBHOOK_OPS": os.getenv("WEBHOOK_OPS"),
-    "WEBHOOK_ECON": os.getenv("WEBHOOK_ECONOMY"),  # Fixed: ECONOMY not ECON
+    "WEBHOOK_ECON": os.getenv("DEV_WEBHOOK_URL"),  # Use DEV_WEBHOOK_URL
 
     # Thresholds
     "CHECK_INTERVAL": 60,
