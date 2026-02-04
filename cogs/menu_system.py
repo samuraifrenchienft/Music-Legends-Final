@@ -554,14 +554,26 @@ class DevPanelView(discord.ui.View):
         self.db = db or DatabaseManager()
     
     def _check_dev_channel(self, interaction: Interaction) -> bool:
-        """Check if interaction is in dev channel (TEST_SERVER_ID)"""
+        """Check if interaction is in dev channel (TEST_SERVER_ID and optionally DEV_CHANNEL_ID)"""
         test_server_id = os.getenv('TEST_SERVER_ID')
         if not test_server_id:
             return False
         try:
-            return interaction.guild_id == int(test_server_id)
+            if interaction.guild_id != int(test_server_id):
+                return False
         except (ValueError, TypeError):
             return False
+        
+        # Check dev channel if configured
+        dev_channel_id = os.getenv('DEV_CHANNEL_ID')
+        if dev_channel_id:
+            try:
+                if interaction.channel_id != int(dev_channel_id):
+                    return False
+            except (ValueError, TypeError):
+                return False
+        
+        return True
     
     @discord.ui.button(
         label="📦 Create Community Pack",
