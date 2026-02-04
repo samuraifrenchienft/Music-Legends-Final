@@ -480,7 +480,14 @@ class BotLogger:
     def get_health_summary(self) -> Dict[str, Any]:
         """Get overall system health summary"""
         try:
-            import psutil
+            # Try to import psutil
+            try:
+                import psutil
+                memory_usage = psutil.virtual_memory().percent
+                cpu_usage = psutil.cpu_percent(interval=0.1)
+            except (ImportError, Exception):
+                memory_usage = 0
+                cpu_usage = 0
             
             errors = self.get_error_history(limit=1000)
             recent_errors = [
@@ -497,8 +504,8 @@ class BotLogger:
                 'total_errors': len(errors),
                 'errors_last_hour': len(recent_errors),
                 'error_types': error_types,
-                'memory_usage': psutil.virtual_memory().percent,
-                'cpu_usage': psutil.cpu_percent(interval=0.1),
+                'memory_usage': memory_usage,
+                'cpu_usage': cpu_usage,
                 'timestamp': datetime.now().isoformat(),
             }
         

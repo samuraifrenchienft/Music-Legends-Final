@@ -5,13 +5,20 @@ Provides real-time monitoring with Discord alerts for critical conditions
 
 import json
 import os
-import psutil
 import asyncio
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any
 import time
+
+# Try to import psutil, but gracefully handle if not available
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 logger = logging.getLogger(__name__)
 
@@ -124,18 +131,34 @@ class SystemMonitor:
             current_time = datetime.now()
             uptime_delta = current_time - self.start_time
             
+            # Get system metrics if psutil is available
+            if PSUTIL_AVAILABLE:
+                memory_usage = psutil.virtual_memory().percent
+                memory_mb = psutil.virtual_memory().used / 1024 / 1024
+                memory_total_mb = psutil.virtual_memory().total / 1024 / 1024
+                cpu_usage = psutil.cpu_percent(interval=1)
+                cpu_count = psutil.cpu_count()
+                disk_usage = psutil.disk_usage('/').percent
+            else:
+                memory_usage = 0
+                memory_mb = 0
+                memory_total_mb = 0
+                cpu_usage = 0
+                cpu_count = 0
+                disk_usage = 0
+            
             uptime_info = {
                 'start_time': self.start_time.isoformat(),
                 'current_time': current_time.isoformat(),
                 'uptime_seconds': uptime_delta.total_seconds(),
                 'uptime_formatted': self._format_uptime(uptime_delta),
                 'restart_count': self.restart_count,
-                'memory_usage': psutil.virtual_memory().percent,
-                'memory_mb': psutil.virtual_memory().used / 1024 / 1024,
-                'memory_total_mb': psutil.virtual_memory().total / 1024 / 1024,
-                'cpu_usage': psutil.cpu_percent(interval=1),
-                'cpu_count': psutil.cpu_count(),
-                'disk_usage': psutil.disk_usage('/').percent,
+                'memory_usage': memory_usage,
+                'memory_mb': memory_mb,
+                'memory_total_mb': memory_total_mb,
+                'cpu_usage': cpu_usage,
+                'cpu_count': cpu_count,
+                'disk_usage': disk_usage,
                 'active_servers': len(self.bot.guilds) if self.bot else 0,
                 'active_users': self._count_active_users() if self.bot else 0,
             }
