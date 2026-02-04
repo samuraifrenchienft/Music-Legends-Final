@@ -34,26 +34,22 @@ class AdminBulkImportCog(commands.Cog):
         else:
             self.test_guild_id = None
             print("⚠️  WARNING: TEST_SERVER_ID not set - bulk import commands will not be registered")
+
+
+def check_test_server(interaction: Interaction) -> bool:
+    """Check if command is being used in test server"""
+    test_server_id = os.getenv('TEST_SERVER_ID')
+    if not test_server_id:
+        return False
     
-    async def interaction_check(self, interaction: Interaction) -> bool:
-        """Ensure commands only work in TEST_SERVER"""
-        # Debug logging
-        print(f"🔍 DEBUG interaction_check: interaction.guild_id={interaction.guild_id}, self.test_guild_id={self.test_guild_id}")
-        
-        # Don't send message here - just return False
-        # The check failure will be handled by Discord
-        if self.test_guild_id is None:
-            print(f"❌ test_guild_id is None")
-            return False
-        
-        if interaction.guild_id != self.test_guild_id:
-            print(f"❌ Guild mismatch: {interaction.guild_id} != {self.test_guild_id}")
-            return False
-        
-        print(f"✅ Guild check passed")
-        return True
+    try:
+        test_guild_id = int(test_server_id)
+        return interaction.guild_id == test_guild_id
+    except (ValueError, TypeError):
+        return False
     
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
+    @app_commands.check(check_test_server)
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
         """Import multiple packs from a JSON file
         
