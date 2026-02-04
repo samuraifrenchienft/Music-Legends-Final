@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-04-DEBUG-GUILD-CHECK
+ARG CACHE_BUST=2026-02-04-FIX-IMPORT-PACKS-AND-REMOVE-COMMANDS
 
 # Set working directory
 WORKDIR /app
