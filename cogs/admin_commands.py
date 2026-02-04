@@ -45,25 +45,6 @@ class AdminCommandsCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed, view=view)
     
-    @app_commands.command(name="sync_commands", description="Force sync slash commands to this server")
-    @app_commands.default_permissions(administrator=True)
-    async def sync_commands(self, interaction: Interaction):
-        """Manually sync commands to current server"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            guild = interaction.guild
-            synced = await self.bot.tree.sync(guild=guild)
-            await interaction.followup.send(
-                f"✅ Synced {len(synced)} commands to **{guild.name}**!\n\n"
-                f"Commands should appear immediately.",
-                ephemeral=True
-            )
-        except Exception as e:
-            await interaction.followup.send(
-                f"❌ Failed to sync commands: {e}",
-                ephemeral=True
-            )
     
     @app_commands.command(name="delete_pack", description="[ADMIN] Delete a pack by ID")
     @app_commands.describe(pack_id="Pack ID to delete")

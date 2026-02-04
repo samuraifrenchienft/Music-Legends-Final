@@ -2521,57 +2521,7 @@ class MenuSystemCog(commands.Cog):
     async def on_ready(self):
         """Register persistent views on bot startup"""
         self.bot.add_view(UserHubView(self.db))
-        self.bot.add_view(DevPanelView(self.db))
         print("✅ Persistent menu views registered")
-    
-    @app_commands.command(name="setup_dev_panel", description="[DEV] Post persistent Dev Panel in this channel")
-    async def setup_dev_panel(self, interaction: Interaction):
-        """Post persistent dev panel in current channel (dev-only channel)"""
-        # Check if in TEST_SERVER before deferring
-        from cogs.dev_helpers import check_and_respond
-        if not await check_and_respond(interaction):
-            return
-        
-        # Defer after check passes
-        await interaction.response.defer(ephemeral=False)
-        
-        view = DevPanelView(self.db)
-        
-        embed = discord.Embed(
-            title="🔧 Developer Control Panel",
-            description=(
-                "**Important:** After bot restarts, run `/setup_dev_panel` again\n"
-                "to refresh the panel buttons in this channel.\n\n"
-                "**Pack Management:**\n"
-                "• Create Community/Gold Packs (free)\n\n"
-                "**User Management:**\n"
-                "• Give cards/currency to users\n"
-                "• Look up user data\n\n"
-                "**Bot Management:**\n"
-                "• View statistics\n"
-                "• Database tools\n"
-                "• Run events\n"
-                "• Send announcements\n\n"
-                "**Testing:**\n"
-                "• Test new features\n"
-                "• Restart bot\n\n"
-                "All actions are logged for audit purposes."
-            ),
-            color=0xe74c3c
-        )
-        embed.set_footer(text="Dev Panel • Only visible to developers")
-        
-        # Delete old panel message if exists
-        try:
-            async for message in interaction.channel.history(limit=50):
-                if message.author == self.bot.user and message.embeds:
-                    if message.embeds[0].title == "🔧 Developer Control Panel":
-                        await message.delete()
-                        break
-        except:
-            pass
-        
-        await interaction.followup.send(embed=embed, view=view)
     
     @app_commands.command(name="setup_user_hub", description="Post persistent User Hub menu in this channel")
     async def setup_user_hub(self, interaction: Interaction):
