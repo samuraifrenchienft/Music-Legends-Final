@@ -14,6 +14,7 @@ import uuid
 import os
 from typing import List, Dict, Optional
 import asyncio
+from cogs.dev_helpers import check_test_server
 
 class AdminBulkImportCog(commands.Cog):
     """Dev-only commands for bulk pack creation (TEST_SERVER only)"""
@@ -36,8 +37,6 @@ class AdminBulkImportCog(commands.Cog):
             print("⚠️  WARNING: TEST_SERVER_ID not set - bulk import commands will not be registered")
 
 
-from cogs.dev_helpers import check_test_server
-    
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
     @app_commands.check(check_test_server)
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
