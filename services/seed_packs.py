@@ -107,12 +107,19 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
     """
     genre_data = load_seed_data()
     if not genre_data:
-        return {"inserted": 0, "skipped": 0}
+        print("⚠️ [SEED_PACKS] No genre data loaded from JSON file")
+        return {"inserted": 0, "skipped": 0, "error": "no_data"}
 
     inserted = 0
     skipped = 0
 
-    conn, db_type = _get_db_connection()
+    try:
+        conn, db_type = _get_db_connection()
+        print(f"✅ [SEED_PACKS] Connected to {db_type} database")
+    except Exception as e:
+        print(f"❌ [SEED_PACKS] Database connection failed: {e}")
+        return {"inserted": 0, "skipped": 0, "error": str(e)}
+
     try:
         cursor = conn.cursor()
         # PostgreSQL uses %s placeholders, SQLite uses ?
@@ -222,6 +229,12 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
                 inserted += 1
 
         conn.commit()
+        print(f"✅ [SEED_PACKS] Committed {inserted} packs, skipped {skipped}")
+    except Exception as e:
+        print(f"❌ [SEED_PACKS] Error during insertion: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"inserted": inserted, "skipped": skipped, "error": str(e)}
     finally:
         conn.close()
 
