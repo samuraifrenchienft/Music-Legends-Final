@@ -292,10 +292,15 @@ class PackOpeningAnimator:
             audio_file = self.get_audio_file('pack_opening')
             
             # Send with audio if available
-            if audio_file:
-                message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False, file=audio_file)
-            else:
-                message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False)
+            try:
+                if audio_file:
+                    message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False, file=audio_file)
+                else:
+                    message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False)
+            except discord.NotFound:
+                # Interaction expired, send simple message instead
+                await interaction.channel.send(f"🎁 Opening pack...")
+                message = None
             
             # Wait a moment
             await asyncio.sleep(1.5)
@@ -331,10 +336,14 @@ class PackOpeningAnimator:
                     legendary_teaser = self.create_legendary_teaser_embed()
                     # Get audio file if available
                     audio_file = self.get_audio_file('legendary_pull')
-                    if audio_file:
-                        await interaction.edit_original_response(embed=legendary_teaser, attachments=[audio_file], view=skip_view)
-                    else:
-                        await interaction.edit_original_response(embed=legendary_teaser, view=skip_view)
+                    try:
+                        if audio_file:
+                            await interaction.edit_original_response(embed=legendary_teaser, attachments=[audio_file], view=skip_view)
+                        else:
+                            await interaction.edit_original_response(embed=legendary_teaser, view=skip_view)
+                    except discord.NotFound:
+                        # Interaction expired, skip animation
+                        pass
                     
                     # Add emoji reactions for celebration
                     try:
@@ -354,7 +363,12 @@ class PackOpeningAnimator:
                 )
                 
                 # Update message with card reveal
-                await interaction.edit_original_response(embed=reveal_embed, view=skip_view)
+                try:
+                    await interaction.edit_original_response(embed=reveal_embed, view=skip_view)
+                except discord.NotFound:
+                    # Interaction expired, send to channel instead
+                    if interaction.channel:
+                        await interaction.channel.send(embed=reveal_embed)
                 
                 # Rarity-specific delays
                 if i < len(cards):
@@ -376,7 +390,12 @@ class PackOpeningAnimator:
                 pack_id,
                 new_cards_count
             )
-            await interaction.edit_original_response(embed=summary_embed, view=None)
+            try:
+                await interaction.edit_original_response(embed=summary_embed, view=None)
+            except discord.NotFound:
+                # Interaction expired, send to channel
+                if interaction.channel:
+                    await interaction.channel.send(embed=summary_embed)
             
             # Trigger backup if rare cards were received
             rare_rarities = ['legendary', 'epic', 'mythic']
@@ -407,7 +426,11 @@ class PackOpeningAnimator:
                     ephemeral=True
                 )
             except:
-                pass
+                # If that fails too, try channel
+                if interaction.channel:
+                    await interaction.channel.send(
+                        f"✅ Pack opened! {len(cards)} cards added to your collection."
+                    )
 
 
 # Convenience function for quick pack opening
