@@ -16,7 +16,7 @@ from typing import List, Dict
 import asyncio
 
 # Import pack creation helpers
-from cogs.pack_creation_helpers import safe_image
+from services.image_cache import safe_image
 from youtube_integration import youtube_integration
 from cogs.dev_helpers import check_test_server, check_and_respond
 

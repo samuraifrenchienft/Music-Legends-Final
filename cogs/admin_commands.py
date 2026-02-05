@@ -17,35 +17,6 @@ class AdminCommandsCog(commands.Cog):
         self.bot = bot
         self.db = DatabaseManager()
     
-    @app_commands.command(name="setup_user_hub", description="Post persistent User Hub in this channel")
-    @app_commands.default_permissions(administrator=True)
-    async def setup_user_hub(self, interaction: Interaction):
-        """Post persistent user hub in current channel"""
-        from cogs.menu_system import UserHubView
-        
-        view = UserHubView(self.db)
-        
-        embed = discord.Embed(
-            title="🎵 Music Legends - Main Menu",
-            description=(
-                "Welcome to Music Legends!\n\n"
-                "**Get Started:**\n"
-                "• Click 🏪 **Shop** to buy your first pack\n"
-                "• Open packs to get cards\n"
-                "• Click ⚔️ **Battle** to challenge players\n"
-                "• Click 💰 **Daily Claim** for free rewards!\n\n"
-                "**Premium Features:**\n"
-                "• 🎵 **Battle Pass** - Exclusive rewards\n"
-                "• 👑 **VIP** - Daily bonuses & perks\n\n"
-                "Use the buttons below to navigate!"
-            ),
-            color=0x3498db
-        )
-        embed.set_footer(text="Tip: Click any button to get started!")
-        
-        await interaction.response.send_message(embed=embed, view=view)
-    
-    
     @app_commands.command(name="delete_pack", description="[ADMIN] Delete a pack by ID")
     @app_commands.describe(pack_id="Pack ID to delete")
     @app_commands.default_permissions(administrator=True)
