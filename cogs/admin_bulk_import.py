@@ -52,14 +52,21 @@ class AdminBulkImportCog(commands.Cog):
         print(f"   File: {file.filename}")
         print(f"{'='*60}\n")
         
-        # Check dev channel
+        # CRITICAL: Defer IMMEDIATELY before any checks
+        try:
+            await interaction.response.defer(ephemeral=True)
+            print(f"✅ [IMPORT_PACKS] Deferred interaction")
+        except Exception as e:
+            print(f"❌ [IMPORT_PACKS] Failed to defer: {e}")
+            return
+        
+        # NOW check authorization AFTER defer
         from cogs.dev_helpers import check_and_respond
         if not await check_and_respond(interaction):
             print(f"❌ [IMPORT_PACKS] Authorization failed")
             return
         
         print(f"✅ [IMPORT_PACKS] Authorization passed")
-        await interaction.response.defer(ephemeral=True)
         
         # Validate file type
         if not file.filename.endswith('.json'):
@@ -128,6 +135,8 @@ class AdminBulkImportCog(commands.Cog):
                 print(f"  ✅ Created pack: {pack_id}")
             except Exception as e:
                 print(f"  ❌ Error creating pack: {e}")
+                import traceback
+                traceback.print_exc()
                 results['failed'].append({
                     'name': pack_data.get('name', 'Unknown'),
                     'error': str(e)
