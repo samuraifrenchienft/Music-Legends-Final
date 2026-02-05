@@ -13,6 +13,7 @@ class DatabaseManager:
     def init_database(self):
         """Initialize all database tables"""
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.cursor()
             
             # Users table

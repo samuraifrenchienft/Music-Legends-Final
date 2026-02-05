@@ -394,6 +394,17 @@ class BattleCommands(commands.Cog):
 
         await interaction.followup.send(embed=result_embed)
 
+        # Log to changelog
+        try:
+            from services.changelog_manager import log_user_action
+            log_user_action(
+                f"battle_{tier_key}",
+                challenger_id,
+                {'opponent': opponent_id, 'winner': winner_id, 'tier': tier_key}
+            )
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # /battle_stats
     # ------------------------------------------------------------------

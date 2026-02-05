@@ -90,7 +90,7 @@ class AdminCommandsCog(commands.Cog):
                     
         except Exception as e:
             print(f"Error deleting pack: {e}")
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
     
     @app_commands.command(name="server_analytics", description="View server usage analytics")
     @app_commands.default_permissions(administrator=True)

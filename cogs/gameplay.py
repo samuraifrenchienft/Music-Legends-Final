@@ -202,7 +202,7 @@ class GameplayCommands(commands.Cog):
                     except Exception as e:
                         print(f"❌ Button callback error: {e}")
                         # Use followup.send after defer, not response.send_message
-                        await interaction.followup.send(f"Error viewing card: {e}", ephemeral=True)
+                        await interaction.followup.send("❌ Could not load card details. Please try again.", ephemeral=True)
                 
                 button.callback = button_callback
                 view.add_item(button)

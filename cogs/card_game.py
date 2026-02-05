@@ -252,12 +252,19 @@ class CardGameCog(Cog):
                 pack_id=pack_id,
                 delay=2.0  # 2 seconds between cards
             )
-            
+
+            # Log to changelog
+            try:
+                from services.changelog_manager import log_pack_creation
+                log_pack_creation(pack_id, pack_name, interaction.user.id, 'opened')
+            except Exception:
+                pass
+
         except Exception as e:
             print(f"Error opening pack: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error opening pack: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Error opening pack. Please try again.", ephemeral=True)
 
     @app_commands.command(name="create_pack", description="Create a new pack with artist cards")
     @app_commands.describe(artist_name="Artist name (becomes pack name)")
@@ -353,7 +360,7 @@ class CardGameCog(Cog):
             print(f"❌ Error creating pack: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.followup.send("❌ Something went wrong creating the pack. Please try again.", ephemeral=True)
     
     async def _finalize_pack_creation(self, interaction: Interaction, pack_name: str, artist: Dict, selected_tracks: List[Dict], creator_id: int):
         """Finalize pack creation after song selection"""
@@ -511,10 +518,17 @@ class CardGameCog(Cog):
             
             embed.set_footer(text=f"Use /packs to browse marketplace | Use /collection to see your cards")
             await interaction.followup.send(embed=embed)
-            
+
+            # Log to changelog
+            try:
+                from services.changelog_manager import log_pack_creation
+                log_pack_creation(pack_id, artist['name'], creator_id, 'creator')
+            except Exception:
+                pass
+
         except Exception as e:
             print(f"❌ Error finalizing pack: {e}")
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.followup.send("❌ An error occurred creating the pack. Please try again.", ephemeral=True)
 
     # /daily is in cogs/gameplay.py — /balance uses /collection or /rank
 
@@ -631,7 +645,7 @@ class CardGameCog(Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            await interaction.response.send_message(f"Error creating subscription: {str(e)}", ephemeral=True)
+            await interaction.response.send_message("❌ Could not create subscription. Please try again later.", ephemeral=True)
 
     @app_commands.command(name="server_info", description="View server subscription status")
     async def server_info(self, interaction: Interaction):

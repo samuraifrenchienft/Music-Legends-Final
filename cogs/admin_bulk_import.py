@@ -142,6 +142,11 @@ class AdminBulkImportCog(commands.Cog):
                     'pack_id': pack_id
                 })
                 print(f"  ✅ Created pack: {pack_id}")
+                try:
+                    from services.changelog_manager import log_pack_creation
+                    log_pack_creation(pack_id, pack_data['name'], interaction.user.id, 'import')
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"  ❌ Error creating pack: {e}")
                 import traceback

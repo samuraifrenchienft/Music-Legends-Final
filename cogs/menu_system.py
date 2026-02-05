@@ -724,7 +724,7 @@ class GiveCardsView(discord.ui.View):
             print(f"❌ [GiveCardsView] Exception: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.response.send_message(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.response.send_message("❌ Something went wrong. Please try again.", ephemeral=True)
 
 
 class GiveCurrencyView(discord.ui.View):
@@ -876,10 +876,10 @@ class LegendaryCosmeticsView(discord.ui.View):
         except Exception as e:
             print(f"❌ Error in set_default_frame_button: {e}")
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
-    
+
     @discord.ui.button(
         label="✨ Set Default Foil",
         style=discord.ButtonStyle.primary,
@@ -893,10 +893,10 @@ class LegendaryCosmeticsView(discord.ui.View):
         except Exception as e:
             print(f"❌ Error in set_default_foil_button: {e}")
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
-    
+
     @discord.ui.button(
         label="🔍 View Settings",
         style=discord.ButtonStyle.secondary,
@@ -942,7 +942,7 @@ class LegendaryCosmeticsView(discord.ui.View):
         except Exception as e:
             print(f"❌ Error in view_settings_button: {e}")
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
 
@@ -987,7 +987,7 @@ class SetLegendaryFrameModal(discord.ui.Modal, title="Set Legendary Frame"):
         except Exception as e:
             print(f"❌ Error in SetLegendaryFrameModal: {e}")
             try:
-                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+                await interaction.response.send_message("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
 
@@ -1032,7 +1032,7 @@ class SetLegendaryFoilModal(discord.ui.Modal, title="Set Legendary Foil"):
         except Exception as e:
             print(f"❌ Error in SetLegendaryFoilModal: {e}")
             try:
-                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+                await interaction.response.send_message("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
 
@@ -1058,10 +1058,10 @@ class PackCreationModeView(discord.ui.View):
         except Exception as e:
             print(f"❌ Error in auto_select_button: {e}")
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
-    
+
     @discord.ui.button(
         label="🎵 Manual Select",
         style=discord.ButtonStyle.secondary,
@@ -1075,7 +1075,7 @@ class PackCreationModeView(discord.ui.View):
         except Exception as e:
             print(f"❌ Error in manual_select_button: {e}")
             try:
-                await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+                await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
             except:
                 pass
 
@@ -1315,14 +1315,14 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             traceback.print_exc()
             try:
                 await interaction.followup.send(
-                    f"❌ Error creating pack: {str(e)}\n\nPlease try again or contact support.",
+                    "❌ Something went wrong creating the pack. Please try again or contact support.",
                     ephemeral=True
                 )
             except:
                 # If followup fails, try editing original response
                 try:
                     await interaction.edit_original_response(
-                        content=f"❌ Error: {str(e)}"
+                        content="❌ Something went wrong. Please try again."
                     )
                 except:
                     pass
@@ -1512,17 +1512,11 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             print(f"❌ Error finalizing pack: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-    
+            await interaction.followup.send("❌ Something went wrong finalizing the pack. Please try again.", ephemeral=True)
+
     async def _search_youtube_fallback_auto(self, interaction: Interaction, pack_name: str, artist_name: str):
         """Auto-select mode: quickly search YouTube and create pack with first 5 videos"""
         try:
-            # #region agent log - Hypothesis D: YouTube auto-select entry
-            import json
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a') as f:
-                f.write(json.dumps({"location":"menu_system.py:1854","message":"youtube_auto_select entry","data":{"pack_name":pack_name,"artist_name":artist_name},"timestamp":__import__('time').time(),"sessionId":"debug-session","hypothesisId":"D"})+"\n")
-            # #endregion
-            
             # Search YouTube for videos
             try:
                 print(f"🔧 [YOUTUBE_AUTO] Querying YouTube API...")
@@ -1904,7 +1898,7 @@ class GiveCardModal(discord.ui.Modal, title="Give Card"):
             print(f"❌ [GiveCardModal] Exception: {e}")
             import traceback
             traceback.print_exc()
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
 
 
 class GiveCurrencyModal(discord.ui.Modal, title="Give Currency"):
@@ -1955,7 +1949,7 @@ class GiveCurrencyModal(discord.ui.Modal, title="Give Currency"):
                 ephemeral=True
             )
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            await interaction.response.send_message("❌ Something went wrong. Please try again.", ephemeral=True)
 
 
 class UserLookupModal(discord.ui.Modal, title="User Lookup"):
@@ -2008,7 +2002,7 @@ class UserLookupModal(discord.ui.Modal, title="User Lookup"):
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            await interaction.response.send_message("❌ Something went wrong. Please try again.", ephemeral=True)
 
 
 class AnnouncementModal(discord.ui.Modal, title="Send Announcement"):
@@ -2069,7 +2063,7 @@ class EventDurationModal(discord.ui.Modal, title="Event Duration"):
                 ephemeral=True
             )
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            await interaction.response.send_message("❌ Something went wrong. Please try again.", ephemeral=True)
 
 
 # ============================================

@@ -79,7 +79,7 @@ async def show_pack_preview_lastfm(
         import traceback
         traceback.print_exc()
         await confirm_interaction.followup.send(
-            f"❌ Error showing preview: {e}",
+            "❌ Something went wrong showing the preview. Please try again.",
             ephemeral=True
         )
 
@@ -237,4 +237,4 @@ async def finalize_pack_with_cards(
         print(f"❌ Error finalizing pack: {e}")
         import traceback
         traceback.print_exc()
-        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+        await interaction.followup.send("❌ Something went wrong finalizing the pack. Please try again.", ephemeral=True)

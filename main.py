@@ -227,12 +227,29 @@ class Bot(commands.Bot):
         # Commands should auto-sync, skip manual sync to avoid errors
         print("📋 Commands should auto-register with Discord")
 
+        # Initialize bot logger so changelog webhook alerts work
+        try:
+            from services.bot_logger import get_bot_logger
+            bot_logger = get_bot_logger(bot=self)
+            bot_logger.log_major_event(
+                'startup', f"Bot online — {len(self.guilds)} servers",
+                severity='high', send_alert=True
+            )
+            print("📝 Bot logger initialized — changelogs active")
+        except Exception as e:
+            print(f"⚠️ Bot logger init failed (non-critical): {e}")
+
         # Load seed packs (25 genre packs so marketplace always has content)
         try:
             from services.seed_packs import seed_packs_into_db
             result = seed_packs_into_db()
             if result["inserted"] > 0:
                 print(f"🎵 Seed packs: {result['inserted']} inserted, {result['skipped']} already existed")
+                try:
+                    from services.changelog_manager import log_system_event
+                    log_system_event('seed_packs', f"Loaded {result['inserted']} seed packs", severity='high', metadata=result)
+                except Exception:
+                    pass
             else:
                 print(f"🎵 Seed packs: all {result['skipped']} already loaded")
         except Exception as e:

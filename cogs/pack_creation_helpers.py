@@ -555,4 +555,4 @@ async def finalize_pack_creation_lastfm(
         print(f"❌ Error finalizing Last.fm pack: {e}")
         import traceback
         traceback.print_exc()
-        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+        await interaction.followup.send("❌ Something went wrong finalizing the pack. Please try again.", ephemeral=True)

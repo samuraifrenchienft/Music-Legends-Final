@@ -19,7 +19,7 @@ except ImportError:
     pass
 
 # Configure Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET")
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 # Configure logging
 logger = logging.getLogger(__name__)

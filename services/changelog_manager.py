@@ -100,7 +100,11 @@ class ChangeLogManager:
             
             # Send alert via webhook if requested
             if send_alert:
-                asyncio.create_task(self._send_webhook_alert(change_entry))
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._send_webhook_alert(change_entry))
+                except RuntimeError:
+                    pass  # No running event loop yet (startup)
             
             return True
             
