@@ -109,9 +109,10 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
                 pack_id = _seed_pack_id(genre, vol)
                 pack_name = f"{emoji} {genre} Vol. {vol}"
 
-                # Check if this seed pack already exists
+                # Check if this seed pack already exists (by ID or by name)
                 cursor.execute(
-                    "SELECT 1 FROM creator_packs WHERE pack_id = ?", (pack_id,)
+                    "SELECT 1 FROM creator_packs WHERE pack_id = ? OR name = ?",
+                    (pack_id, pack_name)
                 )
                 if cursor.fetchone():
                     skipped += 1
