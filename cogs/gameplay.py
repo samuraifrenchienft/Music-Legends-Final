@@ -496,8 +496,6 @@ class GameplayCommands(commands.Cog):
         
         # Links
         links = []
-        if spotify_url:
-            links.append(f"[🎧 Spotify]({spotify_url})")
         if youtube_url:
             links.append(f"[▶️ YouTube]({youtube_url})")
         if links:
@@ -884,9 +882,9 @@ class GameplayCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="sell", description="Sell a card for gold")
-    async def sell_command(self, interaction: Interaction, serial_number: str):
-        """Sell a card for gold"""
+    @app_commands.command(name="quicksell", description="Instantly sell a card for gold")
+    async def quicksell_command(self, interaction: Interaction, serial_number: str):
+        """Instantly sell a card for gold (marketplace /sell lists for other players)"""
         from config.economy import get_card_sell_price, CARD_SELL_PRICES
         
         with sqlite3.connect(self.db.db_path) as conn:
@@ -952,21 +950,120 @@ class GameplayCommands(commands.Cog):
 
 
 class CardUpgradeView(ui.View):
+    """View that lets users select cards to upgrade to the next tier."""
+
+    # Map upgrade_type -> (source rarity, target rarity)
+    RARITY_MAP = {
+        'community_to_gold': ('common', 'rare'),
+        'gold_to_platinum': ('rare', 'epic'),
+        'platinum_to_legendary': ('epic', 'legendary'),
+    }
+
     def __init__(self, economy_manager: CardEconomyManager, user_id: int, upgrade_type: str):
-        super().__init__(timeout=180)  # 3 minutes
+        super().__init__(timeout=180)
         self.economy = economy_manager
         self.user_id = user_id
         self.upgrade_type = upgrade_type
         self.selected_cards = []
-        
-        required = economy_manager.upgrade_costs[upgrade_type]
-        self.add_item(ui.Button(
-            label=f"Upgrade ({required}/{required} selected)",
+        self.required = economy_manager.upgrade_costs.get(upgrade_type, 3)
+        self.source_rarity, self.target_rarity = self.RARITY_MAP.get(
+            upgrade_type, ('common', 'rare'))
+
+        # Load eligible cards from DB
+        self._eligible_cards = self._load_eligible_cards()
+
+        # Card select dropdown
+        if self._eligible_cards:
+            options = []
+            for card in self._eligible_cards[:25]:
+                name = card.get('name', 'Unknown')
+                cid = card.get('card_id', '')
+                label = f"{name}" if len(name) <= 50 else name[:47] + "..."
+                options.append(discord.SelectOption(label=label, value=cid))
+
+            select = ui.Select(
+                placeholder=f"Select {self.required} {self.source_rarity} cards...",
+                options=options,
+                min_values=self.required,
+                max_values=min(self.required, len(options)),
+                custom_id="upgrade_card_select",
+            )
+            select.callback = self._on_select
+            self.add_item(select)
+
+        # Upgrade button (starts disabled)
+        self.upgrade_btn = ui.Button(
+            label=f"Upgrade (0/{self.required} selected)",
             style=discord.ButtonStyle.primary,
             disabled=True,
-            custom_id="upgrade_button"
-        ))
-    
+            custom_id="upgrade_button",
+        )
+        self.upgrade_btn.callback = self._on_upgrade
+        self.add_item(self.upgrade_btn)
+
+    def _load_eligible_cards(self) -> list:
+        try:
+            with sqlite3.connect(self.economy.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT c.card_id, c.name, c.rarity
+                    FROM cards c
+                    JOIN user_cards uc ON c.card_id = uc.card_id
+                    WHERE uc.user_id = ? AND LOWER(c.rarity) = ?
+                """, (self.user_id, self.source_rarity))
+                cols = [d[0] for d in cursor.description]
+                return [dict(zip(cols, r)) for r in cursor.fetchall()]
+        except Exception:
+            return []
+
+    async def _on_select(self, interaction: Interaction):
+        self.selected_cards = interaction.data.get('values', [])
+        count = len(self.selected_cards)
+        self.upgrade_btn.label = f"Upgrade ({count}/{self.required} selected)"
+        self.upgrade_btn.disabled = count < self.required
+        await interaction.response.edit_message(view=self)
+
+    async def _on_upgrade(self, interaction: Interaction):
+        if len(self.selected_cards) < self.required:
+            return await interaction.response.send_message(
+                f"Select {self.required} cards first.", ephemeral=True)
+
+        # Remove consumed cards
+        with sqlite3.connect(self.economy.db_path) as conn:
+            cursor = conn.cursor()
+            for cid in self.selected_cards:
+                cursor.execute(
+                    "DELETE FROM user_cards WHERE user_id = ? AND card_id = ?",
+                    (self.user_id, cid))
+
+            # Award one card of the target rarity (random from DB)
+            cursor.execute(
+                "SELECT card_id, name FROM cards WHERE LOWER(rarity) = ? ORDER BY RANDOM() LIMIT 1",
+                (self.target_rarity,))
+            new_card = cursor.fetchone()
+            if new_card:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from) VALUES (?, ?, 'upgrade')",
+                    (self.user_id, new_card[0]))
+            conn.commit()
+
+        if new_card:
+            embed = discord.Embed(
+                title="⬆️ Upgrade Successful!",
+                description=f"You sacrificed {self.required} {self.source_rarity} cards and received:\n"
+                            f"**{new_card[1]}** ({self.target_rarity.title()})",
+                color=discord.Color.green(),
+            )
+        else:
+            embed = discord.Embed(
+                title="⬆️ Upgrade Failed",
+                description=f"No {self.target_rarity} cards available in the database.",
+                color=discord.Color.red(),
+            )
+
+        self.stop()
+        await interaction.response.edit_message(embed=embed, view=None)
+
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.user_id
 

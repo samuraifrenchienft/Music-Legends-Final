@@ -358,12 +358,18 @@ class MatchState:
             )
     
     def cancel(self):
-        """Cancel battle"""
+        """Cancel battle — refund wagers to both players"""
         self.status = BattleStatus.CANCELLED
-    
+        # Refund wagers
+        self.player1.gold_reward = self.player1.gold_wagered
+        self.player2.gold_reward = self.player2.gold_wagered
+
     def expire(self):
-        """Mark battle as expired"""
+        """Mark battle as expired — refund wagers to both players"""
         self.status = BattleStatus.EXPIRED
+        # Refund wagers
+        self.player1.gold_reward = self.player1.gold_wagered
+        self.player2.gold_reward = self.player2.gold_wagered
     
     def get_winner(self) -> Optional[PlayerState]:
         """Get winning player"""

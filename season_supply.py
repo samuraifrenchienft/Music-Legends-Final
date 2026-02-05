@@ -113,30 +113,55 @@ class SeasonSupply:
             }
     
     def record_mint(self, tier: str, artist_id: Optional[str] = None, season: int = 1) -> bool:
-        """Record a card mint and update supply counters"""
+        """Record a card mint with atomic cap check to prevent oversupply"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
-            # Update global supply
-            cursor.execute("""
-                UPDATE season_supply
-                SET minted = minted + 1, last_updated = CURRENT_TIMESTAMP
-                WHERE season = ? AND tier = ?
-            """, (season, tier))
-            
-            # Update artist supply for Legendary/Platinum
-            if artist_id and tier in ['legendary', 'platinum']:
-                artist_cap = self.LEGENDARY_PER_ARTIST if tier == 'legendary' else self.PLATINUM_PER_ARTIST
-                
+            cursor.execute("BEGIN IMMEDIATE")
+
+            try:
+                # Check global cap inside transaction
                 cursor.execute("""
-                    INSERT INTO artist_supply (season, artist_id, tier, minted, cap)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(season, artist_id, tier) 
-                    DO UPDATE SET minted = minted + 1, last_updated = CURRENT_TIMESTAMP
-                """, (season, artist_id, tier, artist_cap))
-            
-            conn.commit()
-            return True
+                    SELECT minted, cap FROM season_supply
+                    WHERE season = ? AND tier = ?
+                """, (season, tier))
+                row = cursor.fetchone()
+                if row and row[0] >= row[1]:
+                    conn.rollback()
+                    return False  # Cap reached
+
+                # Update global supply
+                cursor.execute("""
+                    UPDATE season_supply
+                    SET minted = minted + 1, last_updated = CURRENT_TIMESTAMP
+                    WHERE season = ? AND tier = ?
+                """, (season, tier))
+
+                # Update artist supply for Legendary/Platinum
+                if artist_id and tier in ['legendary', 'platinum']:
+                    artist_cap = self.LEGENDARY_PER_ARTIST if tier == 'legendary' else self.PLATINUM_PER_ARTIST
+
+                    # Check artist cap inside transaction
+                    cursor.execute("""
+                        SELECT minted FROM artist_supply
+                        WHERE season = ? AND artist_id = ? AND tier = ?
+                    """, (season, artist_id, tier))
+                    artist_row = cursor.fetchone()
+                    if artist_row and artist_row[0] >= artist_cap:
+                        conn.rollback()
+                        return False  # Artist cap reached
+
+                    cursor.execute("""
+                        INSERT INTO artist_supply (season, artist_id, tier, minted, cap)
+                        VALUES (?, ?, ?, 1, ?)
+                        ON CONFLICT(season, artist_id, tier)
+                        DO UPDATE SET minted = minted + 1, last_updated = CURRENT_TIMESTAMP
+                    """, (season, artist_id, tier, artist_cap))
+
+                conn.commit()
+                return True
+            except Exception:
+                conn.rollback()
+                raise
     
     def get_supply_status(self, season: int = 1) -> Dict:
         """Get current supply status for a season"""

@@ -1,5 +1,6 @@
 # monitor/health_checks.py
 import asyncio
+import os
 import redis
 import sqlite3
 import psutil
@@ -41,16 +42,27 @@ class HealthChecker:
         return True
     
     async def check_database_connection(self):
-        """Check database connection"""
+        """Check database connection (supports both SQLite and PostgreSQL)"""
         try:
-            # Test database connection
-            db_path = os.getenv("DATABASE_URL", "sqlite:///music_legends.db")
-            if db_path.startswith("sqlite:///"):
-                db_path = db_path[10:]
-            conn = sqlite3.connect(db_path, timeout=HEALTH_CHECKS["db_connection_timeout"])
-            conn.execute("SELECT 1")
-            conn.close()
-        except sqlite3.Error as e:
+            db_url = os.getenv("DATABASE_URL", "sqlite:///music_legends.db")
+
+            if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
+                # PostgreSQL check
+                import psycopg2
+                conn = psycopg2.connect(db_url, connect_timeout=HEALTH_CHECKS["db_connection_timeout"])
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.close()
+                conn.close()
+            else:
+                # SQLite check
+                db_path = db_url
+                if db_path.startswith("sqlite:///"):
+                    db_path = db_path[10:]
+                conn = sqlite3.connect(db_path, timeout=HEALTH_CHECKS["db_connection_timeout"])
+                conn.execute("SELECT 1")
+                conn.close()
+        except Exception as e:
             await database_connection_failed()
             return False
         return True

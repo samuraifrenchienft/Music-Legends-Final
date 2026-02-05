@@ -89,7 +89,7 @@ class HeroSlotSystem:
                 name="Luna Echo",
                 primary_genre="Electronic",
                 image_url="https://example.com/luna.jpg",
-                source=ArtistSource.SPOTIFY,
+                source=ArtistSource.YOUTUBE,
                 popularity_score=95.0,
                 visual_impact_score=92.0,
                 genre_tags=["synthwave", "ambient", "electronic"]
@@ -109,7 +109,7 @@ class HeroSlotSystem:
                 name="Crystal Waves",
                 primary_genre="Indie",
                 image_url="https://example.com/crystal.jpg",
-                source=ArtistSource.SPOTIFY,
+                source=ArtistSource.YOUTUBE,
                 popularity_score=82.0,
                 visual_impact_score=89.0,
                 genre_tags=["indie", "alternative", "dream-pop"]
@@ -131,7 +131,7 @@ class HeroSlotSystem:
                 name="Folk Revival",
                 primary_genre="Folk",
                 image_url="https://example.com/folk.jpg",
-                source=ArtistSource.SPOTIFY,
+                source=ArtistSource.YOUTUBE,
                 popularity_score=68.0,
                 visual_impact_score=72.0,
                 genre_tags=["folk", "acoustic", "indie-folk"]
@@ -143,7 +143,7 @@ class HeroSlotSystem:
                 name="Jazz Fusion",
                 primary_genre="Jazz",
                 image_url="https://example.com/jazz.jpg",
-                source=ArtistSource.SPOTIFY,
+                source=ArtistSource.YOUTUBE,
                 popularity_score=55.0,
                 visual_impact_score=60.0,
                 genre_tags=["jazz", "fusion", "instrumental"]
@@ -175,7 +175,7 @@ class HeroSlotSystem:
                 name="Garage Band",
                 primary_genre="Rock",
                 image_url="https://example.com/garage.jpg",
-                source=ArtistSource.SPOTIFY,
+                source=ArtistSource.YOUTUBE,
                 popularity_score=15.0,
                 visual_impact_score=20.0,
                 genre_tags=["rock", "garage", "indie-rock"]

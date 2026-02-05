@@ -7,10 +7,74 @@ import random
 import json
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
-from card_stats import (
-    CardStats, CardFactory, RarityAssigner, Rarity, 
-    PACK_DISTRIBUTION, RARITY_DISTRIBUTION_PER_PACK
-)
+try:
+    from card_stats import (
+        CardStats, CardFactory, RarityAssigner, Rarity,
+        PACK_DISTRIBUTION, RARITY_DISTRIBUTION_PER_PACK
+    )
+except ImportError:
+    # card_stats module uses function-based API; provide lightweight stubs
+    from enum import Enum
+    from dataclasses import dataclass, field
+
+    class Rarity(Enum):
+        COMMON = "common"
+        UNCOMMON = "uncommon"
+        RARE = "rare"
+        EPIC = "epic"
+        LEGENDARY = "legendary"
+
+    class CardType(Enum):
+        ARTIST = "artist"
+        SONG = "song"
+
+    @dataclass
+    class CardStats:
+        name: str = ""
+        artist: str = ""
+        power: int = 0
+        cost: int = 0
+        rarity: Rarity = Rarity.COMMON
+        abilities: list = field(default_factory=list)
+        views: int = 0
+        likes: int = 0
+        video_id: str = ""
+        card_type: CardType = CardType.ARTIST
+        engagement_ratio: float = 0.0
+
+    class CardFactory:
+        @staticmethod
+        def create_card_from_video(video_data: dict, is_hero: bool = False) -> CardStats:
+            from card_stats import assign_rarity_by_views, calculate_base_power_by_views
+            views = video_data.get("views", 0)
+            rarity_str = assign_rarity_by_views(views)
+            if is_hero and rarity_str != "legendary":
+                boost = {"common": "rare", "rare": "epic", "epic": "legendary"}
+                rarity_str = boost.get(rarity_str, rarity_str)
+            rarity = Rarity(rarity_str)
+            power = calculate_base_power_by_views(views)
+            return CardStats(
+                name=video_data.get("title", "Unknown"),
+                artist=video_data.get("artist", "Unknown"),
+                power=power,
+                cost=max(1, power // 10),
+                rarity=rarity,
+                views=views,
+                video_id=video_data.get("video_id", ""),
+            )
+
+        @staticmethod
+        def create_balanced_secondary_card(video_data: dict, forced_rarity: 'Rarity' = None) -> CardStats:
+            card = CardFactory.create_card_from_video(video_data, is_hero=False)
+            if forced_rarity:
+                card.rarity = forced_rarity
+            return card
+
+    class RarityAssigner:
+        pass
+
+    PACK_DISTRIBUTION = {}
+    RARITY_DISTRIBUTION_PER_PACK = {}
 
 @dataclass
 class PackGenerationConfig:
@@ -22,8 +86,8 @@ class PackGenerationConfig:
     wildcard_cards: int = 1
     
     # Stat balancing constraints
-    min_power_per_pack: int = 15
-    max_power_per_pack: int = 35
+    min_power_per_pack: int = 150
+    max_power_per_pack: int = 450
     ensure_rarity_variety: bool = True
     
     # Theme consistency

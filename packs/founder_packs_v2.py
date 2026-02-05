@@ -95,7 +95,6 @@ class FounderPacksV2:
             'print_number': serial,
             'quality': 'standard',
             'acquisition_source': source,
-            'spotify_artist_id': None,
             'stats': '{}'
         }
         
@@ -105,12 +104,12 @@ class FounderPacksV2:
             
             # Add card to database
             cursor.execute("""
-                INSERT INTO cards 
-                (card_id, type, name, rarity, spotify_artist_id, created_by_user_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO cards
+                (card_id, type, name, rarity, created_by_user_id)
+                VALUES (?, ?, ?, ?, ?)
             """, (
-                card_data['card_id'], card_data['type'], card_data['name'], 
-                card_data['rarity'], card_data.get('spotify_artist_id'), 0
+                card_data['card_id'], card_data['type'], card_data['name'],
+                card_data['rarity'], 0
             ))
             
             conn.commit()

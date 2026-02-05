@@ -41,18 +41,15 @@ class DatabaseSetup:
                 )
             """)
             
-            # 2. Cards table (minimal storage - Spotify canonical)
+            # 2. Cards table
             print("  🃏 Creating cards table...")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cards (
                     card_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL DEFAULT 'artist',
-                    spotify_artist_id TEXT,
-                    spotify_track_id TEXT,
                     name TEXT NOT NULL,
                     title TEXT,
                     image_url TEXT,
-                    spotify_url TEXT,
                     youtube_url TEXT,
                     rarity TEXT NOT NULL,
                     variant TEXT DEFAULT 'Classic',
@@ -246,7 +243,7 @@ class DatabaseSetup:
             # Create a bot user for system operations
             cursor.execute("""
                 INSERT OR IGNORE INTO users (user_id, username, discord_tag)
-                VALUES (0, 'MusicLegendsBot', 'Bot#0000')
+                VALUES (0, 'MusicLegendsBot', 'MusicLegendsBot')
             """)
             
             print("  🎵 Inserting sample cards...")

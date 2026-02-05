@@ -1,10 +1,20 @@
 # commands/creator_dashboard.py
+# NOTE: This is a template/scaffold file — not loaded as a cog in main.py
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal, TextInput
-from services.creator_service import create_creator_pack
-from services.creator_preview import build_preview
-from models.creator_pack import CreatorPack
+try:
+    from services.creator_service import create_creator_pack
+except ImportError:
+    create_creator_pack = None
+try:
+    from services.creator_preview import build_preview
+except ImportError:
+    build_preview = None
+try:
+    from models.creator_pack import CreatorPack
+except ImportError:
+    CreatorPack = None
 
 # ---------- MODAL FOR NEW PACK ----------
 
@@ -74,10 +84,8 @@ def dashboard_embed(user_id):
 
 # ---------- COMMAND ----------
 
-@bot.slash_command(name="creator")
-async def creator(ctx):
-
-    await ctx.respond(
-        embed=dashboard_embed(ctx.author.id),
-        view=DashboardView(ctx.author.id)
-    )
+# To register as a command, load this as a cog or call from an existing cog:
+# await interaction.response.send_message(
+#     embed=dashboard_embed(interaction.user.id),
+#     view=DashboardView(interaction.user.id)
+# )

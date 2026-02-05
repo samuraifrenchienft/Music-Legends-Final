@@ -105,6 +105,8 @@ class DevWebhookCommandsCog(commands.Cog):
         self.db = DatabaseManager()
     
     @app_commands.command(name="dev_announcement", description="[DEV] Send update announcement to all servers")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(check_test_server)
     async def dev_announcement(self, interaction: Interaction):
         """Send announcement to all servers"""
         if not await check_and_respond(interaction):
@@ -114,6 +116,8 @@ class DevWebhookCommandsCog(commands.Cog):
     
     @app_commands.command(name="dev_create_community_pack", description="[DEV] Create a community pack (simplified)")
     @app_commands.describe(artist_name="Artist name (becomes pack name)")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(check_test_server)
     async def dev_create_community_pack(self, interaction: Interaction, artist_name: str):
         """Create a community pack using simplified flow"""
         if not await check_and_respond(interaction):
@@ -122,6 +126,8 @@ class DevWebhookCommandsCog(commands.Cog):
     
     @app_commands.command(name="dev_create_gold_pack", description="[DEV] Create a gold pack (simplified, better stats)")
     @app_commands.describe(artist_name="Artist name (becomes pack name)")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(check_test_server)
     async def dev_create_gold_pack(self, interaction: Interaction, artist_name: str):
         """Create a gold pack using simplified flow with better stats"""
         if not await check_and_respond(interaction):
@@ -404,6 +410,8 @@ class DevWebhookCommandsCog(commands.Cog):
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
     @app_commands.command(name="dev_restart", description="[DEV] Restart the bot (with confirmation)")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(check_test_server)
     async def dev_restart(self, interaction: Interaction):
         """Restart the bot"""
         if not await check_and_respond(interaction):

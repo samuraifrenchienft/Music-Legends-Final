@@ -31,17 +31,14 @@ class DatabaseManager:
                 )
             """)
             
-            # Cards table (minimal storage - Spotify canonical)
+            # Cards table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cards (
                     card_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL DEFAULT 'artist', -- 'artist' or 'song'
-                    spotify_artist_id TEXT,
-                    spotify_track_id TEXT,
                     name TEXT NOT NULL,
                     title TEXT,
                     image_url TEXT,
-                    spotify_url TEXT,
                     youtube_url TEXT,
                     rarity TEXT NOT NULL,
                     variant TEXT DEFAULT 'Classic',
@@ -756,25 +753,24 @@ class DatabaseManager:
                 
                 cursor.execute(
                     """
-                    INSERT OR REPLACE INTO cards 
-                    (card_id, name, title, rarity, era, variant, impact, skill, 
-                     longevity, culture, hype, image_url, spotify_url, youtube_url, type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO cards
+                    (card_id, name, title, rarity, era, variant, impact, skill,
+                     longevity, culture, hype, image_url, youtube_url, type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        card_data['card_id'], 
-                        card_data['name'], 
+                        card_data['card_id'],
+                        card_data['name'],
                         card_data.get('title', ''),
-                        card_data['rarity'], 
-                        card_data.get('era'), 
+                        card_data['rarity'],
+                        card_data.get('era'),
                         card_data.get('variant'),
-                        card_data.get('impact', 0), 
+                        card_data.get('impact', 0),
                         card_data.get('skill', 0),
-                        card_data.get('longevity', 0), 
+                        card_data.get('longevity', 0),
                         card_data.get('culture', 0),
-                        card_data.get('hype', 0), 
+                        card_data.get('hype', 0),
                         card_data.get('image_url'),
-                        card_data.get('spotify_url'), 
                         card_data.get('youtube_url'),
                         card_data.get('type', card_data.get('card_type', 'artist'))
                     )
@@ -1096,8 +1092,8 @@ class DatabaseManager:
                     errors.append(f"Card {i+1} missing name")
                 if not card.get('rarity'):
                     errors.append(f"Card {i+1} missing rarity")
-                if not card.get('spotify_url'):
-                    warnings.append(f"Card {i+1} missing Spotify link")
+                if not card.get('youtube_url'):
+                    warnings.append(f"Card {i+1} missing YouTube link")
             
             return {
                 "valid": len(errors) == 0,
@@ -1506,29 +1502,22 @@ class DatabaseManager:
     
     def add_card_to_master_list(self, card_data: Dict) -> str:
         """Add card to master cards table with minimal storage"""
-        # Generate card_id based on Spotify data
-        if card_data.get('spotify_id'):
-            card_id = f"spotify_{card_data['spotify_id']}"
-        else:
-            card_id = f"{card_data['name'].lower().replace(' ', '_')}_{card_data.get('rarity', 'Common').lower()}"
-        
+        card_id = f"{card_data['name'].lower().replace(' ', '_')}_{card_data.get('rarity', 'Common').lower()}"
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR IGNORE INTO cards 
-                (card_id, type, spotify_artist_id, spotify_track_id, name, title, image_url, 
-                 spotify_url, youtube_url, rarity, variant, impact, skill, longevity, culture, hype,
+                INSERT OR IGNORE INTO cards
+                (card_id, type, name, title, image_url,
+                 youtube_url, rarity, variant, impact, skill, longevity, culture, hype,
                  effect_type, effect_value, pack_id, created_by_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 card_id,
                 card_data.get('type', 'artist'),
-                card_data.get('spotify_id'),
-                card_data.get('spotify_track_id'),
                 card_data.get('name'),
                 card_data.get('title', ''),
                 card_data.get('image_url', ''),
-                card_data.get('spotify_url', ''),
                 card_data.get('youtube_url', ''),
                 card_data.get('rarity', 'Common'),
                 card_data.get('variant', 'Classic'),
@@ -1542,7 +1531,7 @@ class DatabaseManager:
                 card_data.get('pack_id'),
                 card_data.get('created_by_user_id')
             ))
-            
+
             conn.commit()
             return card_id
     
@@ -1551,21 +1540,20 @@ class DatabaseManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT DISTINCT name, image_url, spotify_url
-                FROM cards 
+                SELECT DISTINCT name, image_url
+                FROM cards
                 WHERE name IS NOT NULL AND name != ''
                 LIMIT ?
             """, (limit,))
-            
+
             artists = []
             for row in cursor.fetchall():
                 artists.append({
                     'name': row[0],
                     'image_url': row[1],
-                    'spotify_url': row[2],
                     'stats': {}
                 })
-            
+
             # If no artists in database, return some defaults
             if not artists:
                 default_artists = [
@@ -1576,7 +1564,6 @@ class DatabaseManager:
                     artists.append({
                         'name': name,
                         'image_url': '',
-                        'spotify_url': '',
                         'stats': {}
                     })
             

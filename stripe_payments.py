@@ -29,9 +29,10 @@ class StripePaymentManager:
         # Pack creation fee
         self.pack_creation_fee = 999  # $9.99 to create a pack
         
-        # Server-based revenue sharing (10-30% to server owner)
-        # Platform gets remainder after server owner share
-        
+        # Revenue split between platform and creator
+        self.platform_split = 0.30  # 30% to platform
+        self.creator_split = 0.70   # 70% to creator
+
         # Stripe Connect (for server owner payouts)
         self.connect_platform_fee = 0.029  # 2.9% Stripe Connect fee
     

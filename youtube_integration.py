@@ -37,7 +37,7 @@ class YouTubeIntegration:
                 'key': self.api_key
             }
             
-            response = requests.get(f"{self.base_url}/search", params=params)
+            response = requests.get(f"{self.base_url}/search", params=params, timeout=10)
             print(f"📡 YouTube API response: {response.status_code}")
             
             if response.status_code == 200:
@@ -109,8 +109,8 @@ class YouTubeIntegration:
                 'key': self.api_key
             }
             
-            response = requests.get(f"{self.base_url}/videos", params=params)
-            
+            response = requests.get(f"{self.base_url}/videos", params=params, timeout=10)
+
             if response.status_code == 200:
                 data = response.json()
                 items = data.get('items', [])

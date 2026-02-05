@@ -19,7 +19,6 @@ class CardTier(str, Enum):
 
 class ArtistSource(str, Enum):
     YOUTUBE = "youtube"
-    SPOTIFY = "spotify"
 
 class FrameStyle(str, Enum):
     LUX_BLACK = "lux_black"

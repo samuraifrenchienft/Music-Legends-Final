@@ -28,6 +28,8 @@ class PlayerEconomy:
     
     def add_gold(self, amount: int):
         """Add gold to player"""
+        if amount <= 0:
+            return
         self.gold += amount
     
     def remove_gold(self, amount: int) -> bool:
@@ -42,6 +44,8 @@ class PlayerEconomy:
     
     def add_tickets(self, amount: int):
         """Add tickets to player"""
+        if amount <= 0:
+            return
         self.tickets += amount
     
     def remove_tickets(self, amount: int) -> bool:
@@ -439,23 +443,235 @@ if __name__ == "__main__":
         print(f"Gold after purchase: {player.gold}")
 
 # Additional classes needed by other cogs
+import sqlite3
+import uuid
+import time as _time
+
 class CardEconomyManager:
-    """Economy manager for card operations"""
-    def __init__(self):
+    """Economy manager for card operations — used by gameplay.py"""
+
+    # Upgrade costs: how many cards of the lower tier are consumed
+    upgrade_costs = {
+        'community_to_gold': 3,
+        'gold_to_platinum': 3,
+        'platinum_to_legendary': 5,
+    }
+
+    # Dust returned when burning a card
+    BURN_DUST = {
+        'common': 5, 'rare': 15, 'epic': 40,
+        'legendary': 100, 'mythic': 250,
+    }
+
+    # Drop cooldown per server (seconds)
+    DROP_COOLDOWN = 120  # 2 minutes
+
+    def __init__(self, db_path: str = "music_legends.db"):
+        self.db_path = db_path
         self.transactions = []
-    
+        self._drop_cooldowns: Dict[int, float] = {}   # server_id -> last drop timestamp
+        self._active_drops: Dict[int, dict] = {}       # channel_id -> drop data
+
+    # ------------------------------------------------------------------
+    # Table bootstrap (called once on cog init)
+    # ------------------------------------------------------------------
+    def initialize_economy_tables(self):
+        """Ensure user_inventory and related tables exist"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_inventory (
+                    user_id INTEGER PRIMARY KEY,
+                    gold INTEGER DEFAULT 500,
+                    dust INTEGER DEFAULT 0,
+                    tickets INTEGER DEFAULT 0,
+                    gems INTEGER DEFAULT 0,
+                    xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 1,
+                    daily_streak INTEGER DEFAULT 0,
+                    last_daily TEXT,
+                    last_daily_claim TEXT,
+                    premium_expires TEXT
+                )
+            """)
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # Balance helpers
+    # ------------------------------------------------------------------
     def get_balance(self, user_id: int) -> int:
-        """Get user balance"""
-        return 500  # Default balance
-    
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else 0
+
     def add_transaction(self, user_id: int, amount: int, description: str):
-        """Add transaction record"""
         self.transactions.append({
             'user_id': user_id,
             'amount': amount,
             'description': description,
             'timestamp': datetime.now()
         })
+
+    # ------------------------------------------------------------------
+    # Drop system
+    # ------------------------------------------------------------------
+    def _can_drop(self, server_id: int) -> bool:
+        last = self._drop_cooldowns.get(server_id, 0)
+        return (_time.time() - last) >= self.DROP_COOLDOWN
+
+    def create_drop(self, channel_id: int, server_id: int, user_id: int) -> dict:
+        """Create a card drop in a channel. Returns drop data or error."""
+        if not self._can_drop(server_id):
+            return {'success': False, 'error': 'Drop is on cooldown for this server.'}
+
+        # Pull 3 random cards from the database
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT card_id, name, title, rarity, image_url
+                FROM cards ORDER BY RANDOM() LIMIT 3
+            """)
+            rows = cursor.fetchall()
+
+        if not rows:
+            return {'success': False, 'error': 'No cards available in database.'}
+
+        cards = []
+        for row in rows:
+            rarity = (row[3] or 'common').lower()
+            tier_map = {'common': 'community', 'rare': 'gold',
+                        'epic': 'platinum', 'legendary': 'legendary', 'mythic': 'legendary'}
+            cards.append({
+                'card_id': row[0],
+                'artist_name': row[1],
+                'title': row[2] or '',
+                'tier': tier_map.get(rarity, 'community'),
+                'rarity': rarity,
+                'serial_number': row[0],
+                'quality': rarity,
+                'image_url': row[4] or '',
+            })
+
+        drop_id = f"drop_{uuid.uuid4().hex[:8]}"
+        expires_at = _time.time() + 300  # 5 minutes
+
+        self._drop_cooldowns[server_id] = _time.time()
+        self._active_drops[channel_id] = {
+            'drop_id': drop_id,
+            'cards': cards,
+            'expires_at': expires_at,
+            'claimed': set(),
+        }
+
+        return {
+            'success': True,
+            'drop_id': drop_id,
+            'cards': cards,
+            'expires_at': expires_at,
+        }
+
+    def claim_drop(self, channel_id: int, user_id: int, card_number: int) -> dict:
+        """Claim a card from an active drop."""
+        drop = self._active_drops.get(channel_id)
+        if not drop:
+            return {'success': False, 'error': 'No active drop in this channel.'}
+        if _time.time() > drop['expires_at']:
+            del self._active_drops[channel_id]
+            return {'success': False, 'error': 'This drop has expired.'}
+
+        idx = card_number - 1
+        if idx < 0 or idx >= len(drop['cards']):
+            return {'success': False, 'error': 'Invalid card number.'}
+        if idx in drop['claimed']:
+            return {'success': False, 'error': 'That card has already been claimed.'}
+
+        card = drop['cards'][idx]
+        drop['claimed'].add(idx)
+
+        # Award card to user
+        self._award_card_to_user(user_id, card['card_id'])
+
+        # If all cards claimed, remove drop
+        if len(drop['claimed']) >= len(drop['cards']):
+            del self._active_drops[channel_id]
+
+        return {'success': True, 'card': card}
+
+    # ------------------------------------------------------------------
+    # Card operations
+    # ------------------------------------------------------------------
+    def _award_card_to_user(self, user_id: int, card_id: str, source: str = 'drop'):
+        """Add a card to a user's collection"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            # Ensure user exists
+            cursor.execute(
+                "INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)",
+                (user_id, str(user_id))
+            )
+            cursor.execute(
+                "INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from) VALUES (?, ?, ?)",
+                (user_id, card_id, source)
+            )
+            conn.commit()
+
+    def burn_card_for_dust(self, user_id: int, serial_number: str) -> dict:
+        """Burn a card and give the user dust"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Find card owned by user
+            cursor.execute("""
+                SELECT c.card_id, c.rarity FROM cards c
+                JOIN user_cards uc ON c.card_id = uc.card_id
+                WHERE (c.card_id = ? OR c.serial_number = ?) AND uc.user_id = ?
+            """, (serial_number, serial_number, user_id))
+            row = cursor.fetchone()
+
+            if not row:
+                return {'success': False, 'error': 'Card not found in your collection.'}
+
+            card_id, rarity = row
+            dust = self.BURN_DUST.get((rarity or 'common').lower(), 5)
+
+            # Remove from collection
+            cursor.execute(
+                "DELETE FROM user_cards WHERE user_id = ? AND card_id = ?",
+                (user_id, card_id)
+            )
+
+            # Add dust
+            cursor.execute("""
+                INSERT INTO user_inventory (user_id, dust)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET dust = COALESCE(dust, 0) + ?
+            """, (user_id, dust, dust))
+
+            conn.commit()
+
+        return {'success': True, 'dust_earned': dust, 'card_id': card_id}
+
+    def create_card(self, card_data: dict) -> dict:
+        """Insert a new card into the database"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            card_id = card_data.get('card_id', f"card_{uuid.uuid4().hex[:8]}")
+            cursor.execute("""
+                INSERT OR IGNORE INTO cards (card_id, name, title, rarity, image_url, type)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                card_id,
+                card_data.get('name', 'Unknown'),
+                card_data.get('title', ''),
+                card_data.get('rarity', 'common'),
+                card_data.get('image_url', ''),
+                card_data.get('type', 'artist'),
+            ))
+            conn.commit()
+        return {'success': True, 'card_id': card_id}
+
 
 def get_economy_manager() -> CardEconomyManager:
     """Get global economy manager instance"""

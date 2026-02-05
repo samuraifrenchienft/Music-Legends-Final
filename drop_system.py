@@ -12,7 +12,7 @@ from database import DatabaseManager
 @dataclass
 class DropConfig:
     DROP_COOLDOWN: int = 1800  # 30 minutes in seconds
-    CLAIM_WINDOW: int = 1000    # 1 second in milliseconds
+    CLAIM_WINDOW: int = 30000    # 30 seconds in milliseconds
     MAX_RETRIES: int = 3
     QUEUE_POLL: int = 50        # 50ms poll interval
 
@@ -156,43 +156,42 @@ class DropSystem:
             return None  # Expired or claimed
     
     async def resolve_drop(self, channel_id: int, user_id: int, reaction_number: int) -> Dict:
-        """Resolve a drop claim"""
-        if channel_id not in self.active_drops:
-            return {'success': False, 'error': 'No active drop'}
-        
-        drop_data = self.active_drops[channel_id]
-        
-        # Check if expired
-        if time.time() > drop_data['expires_at']:
-            del self.active_drops[channel_id]
-            return {'success': False, 'error': 'Drop expired'}
-        
-        # Check if valid reaction number
-        if reaction_number < 1 or reaction_number > len(drop_data['cards']):
-            return {'success': False, 'error': 'Invalid card number'}
-        
-        # Get the card
-        card = drop_data['cards'][reaction_number - 1]
-        
-        # Queue the award operation
-        task_key = f"award_{user_id}_{card['card_id']}"
-        
-        async def award_task():
+        """Resolve a drop claim — uses channel-level lock to prevent double claims"""
+        # Use channel-level lock so only one claim can process at a time per channel
+        task_key = f"drop_claim_{channel_id}"
+
+        async def claim_task():
+            if channel_id not in self.active_drops:
+                return {'success': False, 'error': 'No active drop'}
+
+            drop_data = self.active_drops[channel_id]
+
+            # Check if expired
+            if time.time() > drop_data['expires_at']:
+                del self.active_drops[channel_id]
+                return {'success': False, 'error': 'Drop expired'}
+
+            # Check if valid reaction number
+            if reaction_number < 1 or reaction_number > len(drop_data['cards']):
+                return {'success': False, 'error': 'Invalid card number'}
+
+            # Get the card
+            card = drop_data['cards'][reaction_number - 1]
+
             # Award card to user
             self.economy._award_card_to_user(user_id, card)
-            
-            # Remove from active drops
-            if channel_id in self.active_drops:
-                del self.active_drops[channel_id]
-            
+
+            # Remove from active drops (inside lock, prevents double claim)
+            del self.active_drops[channel_id]
+
             return {
                 'success': True,
                 'card': card,
                 'drop_id': drop_data['drop_id']
             }
-        
+
         try:
-            task = Task(key=task_key, action=award_task)
+            task = Task(key=task_key, action=claim_task)
             result = await action_queue.run(task)
             
             # Schedule cooldown reset

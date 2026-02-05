@@ -11,13 +11,14 @@ class SeasonManager:
         self.current_season = None
         self.season_duration_days = 60  # 60 days per season (synced with battle pass)
         
-        # Season 1 Configuration
+        # Season 1 Configuration — dates calculated dynamically from now
+        season_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         self.SEASON_1_CONFIG = {
             'name': 'Rhythm Rising',
             'number': 1,
             'theme': 'Origins - The First Legends',
-            'start_date': datetime(2026, 2, 1),  # February 1, 2026
-            'end_date': datetime(2026, 4, 1),     # April 1, 2026 (60 days)
+            'start_date': season_start,
+            'end_date': season_start + timedelta(days=self.season_duration_days),
             'exclusive_cards': [
                 "Founder's Legend - Mythic",
                 "Season 1 Champion - Legendary",
@@ -545,62 +546,87 @@ class SeasonManager:
             return available_rewards
     
     def claim_reward(self, user_id: int, reward_id: str) -> Dict:
-        """Claim a season reward"""
+        """Claim a season reward — uses BEGIN IMMEDIATE for atomicity"""
         current_season = self.get_current_season()
         if not current_season:
             return {'success': False, 'error': 'No active season'}
-        
-        progress = self.get_player_season_progress(user_id)
-        claimed_rewards = json.loads(progress['claimed_rewards']) if progress['claimed_rewards'] else []
-        
-        if reward_id in claimed_rewards:
-            return {'success': False, 'error': 'Reward already claimed'}
-        
+
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
-            
-            # Get reward details
-            cursor.execute("""
-                SELECT * FROM season_rewards 
-                WHERE reward_id = ? AND season_id = ?
-            """, (reward_id, current_season['season_id']))
-            
-            reward = cursor.fetchone()
-            if not reward:
-                return {'success': False, 'error': 'Reward not found'}
-            
-            # Check if player meets requirements
-            can_claim = True
-            
-            if reward[5] and progress['season_level'] < reward[5]:  # required_level
-                can_claim = False
-            elif reward[6] and (progress['season_level'] * 100 + progress['season_xp']) < reward[6]:  # required_xp
-                can_claim = False
-            elif reward[7] and progress['cards_collected'] < reward[7]:  # required_cards
-                can_claim = False
-            elif reward[8] and progress['season_rank'] != reward[8]:  # required_rank
-                can_claim = False
-            
-            if not can_claim:
-                return {'success': False, 'error': 'Requirements not met'}
-            
-            # Add to claimed rewards
-            claimed_rewards.append(reward_id)
-            cursor.execute("""
-                UPDATE player_season_progress 
-                SET claimed_rewards = ?
-                WHERE user_id = ? AND season_id = ?
-            """, (json.dumps(claimed_rewards), user_id, current_season['season_id']))
-            
-            # Update total claims if limited
-            if reward[10]:  # is_limited
+            # BEGIN IMMEDIATE acquires a write lock, preventing race conditions
+            cursor.execute("BEGIN IMMEDIATE")
+
+            try:
+                # Re-read progress inside the transaction to prevent double claims
                 cursor.execute("""
-                    UPDATE season_rewards 
-                    SET total_claims = total_claims + 1
-                    WHERE reward_id = ?
-                """, (reward_id,))
-            
-            conn.commit()
+                    SELECT claimed_rewards, season_level, season_xp, cards_collected, season_rank
+                    FROM player_season_progress
+                    WHERE user_id = ? AND season_id = ?
+                """, (user_id, current_season['season_id']))
+                progress_row = cursor.fetchone()
+
+                if not progress_row:
+                    conn.rollback()
+                    return {'success': False, 'error': 'No season progress found'}
+
+                claimed_rewards = json.loads(progress_row[0]) if progress_row[0] else []
+
+                if reward_id in claimed_rewards:
+                    conn.rollback()
+                    return {'success': False, 'error': 'Reward already claimed'}
+
+                season_level = progress_row[1]
+                season_xp = progress_row[2]
+                cards_collected = progress_row[3]
+                season_rank = progress_row[4]
+
+                # Get reward details
+                cursor.execute("""
+                    SELECT * FROM season_rewards
+                    WHERE reward_id = ? AND season_id = ?
+                """, (reward_id, current_season['season_id']))
+
+                reward = cursor.fetchone()
+                if not reward:
+                    conn.rollback()
+                    return {'success': False, 'error': 'Reward not found'}
+
+                # Check if player meets requirements
+                can_claim = True
+
+                if reward[5] and season_level < reward[5]:
+                    can_claim = False
+                elif reward[6] and (season_level * 100 + season_xp) < reward[6]:
+                    can_claim = False
+                elif reward[7] and cards_collected < reward[7]:
+                    can_claim = False
+                elif reward[8] and season_rank != reward[8]:
+                    can_claim = False
+
+                if not can_claim:
+                    conn.rollback()
+                    return {'success': False, 'error': 'Requirements not met'}
+
+                # Add to claimed rewards
+                claimed_rewards.append(reward_id)
+                cursor.execute("""
+                    UPDATE player_season_progress
+                    SET claimed_rewards = ?
+                    WHERE user_id = ? AND season_id = ?
+                """, (json.dumps(claimed_rewards), user_id, current_season['season_id']))
+
+                # Update total claims if limited
+                if reward[10]:  # is_limited
+                    cursor.execute("""
+                        UPDATE season_rewards
+                        SET total_claims = total_claims + 1
+                        WHERE reward_id = ?
+                    """, (reward_id,))
+
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
             
             # Return reward data for processing
             reward_data = json.loads(reward[4]) if reward[4] else {}

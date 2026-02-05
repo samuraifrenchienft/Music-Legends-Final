@@ -53,16 +53,15 @@ async def stripe_webhook(request):
             logger.error("Missing Stripe signature")
             return {"error": "Missing signature"}, 400
         
-        # Verify webhook signature (skip for testing)
+        # Verify webhook signature
         try:
-            # Skip signature verification for testing
-            # event = stripe.Webhook.construct_event(
-            #     payload, sig, WH_SECRET
-            # )
-            
-            # For testing, parse the payload directly
-            event = json.loads(payload.decode('utf-8'))
-            logger.info(f"Test mode: skipping signature verification for event {event.get('type')}")
+            if not WH_SECRET:
+                logger.error("STRIPE_WEBHOOK_SECRET not configured")
+                return {"error": "Webhook secret not configured"}, 500
+
+            event = stripe.Webhook.construct_event(
+                payload, sig, WH_SECRET
+            )
             
         except Exception as e:
             logger.error(f"Stripe webhook construction failed: {e}")

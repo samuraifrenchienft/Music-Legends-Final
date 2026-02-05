@@ -4,6 +4,7 @@ import redis
 import json
 import asyncio
 import uuid
+import time
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -39,6 +40,7 @@ class RedisMessageQueue:
         }
         self.dead_letter_queue = 'dlq'
         self.processing = set()  # Track currently processing message IDs
+        self.processing_timestamps: Dict[str, float] = {}  # Track when messages started processing
         
     async def enqueue(self, queue_name: str, payload: Dict[str, Any], delay_ms: int = 0) -> str:
         """Enqueue a message with optional delay"""
@@ -61,21 +63,30 @@ class RedisMessageQueue:
     
     async def dequeue(self, queue_name: str) -> Optional[QueueMessage]:
         """Dequeue next available message"""
+        # Clean up stale processing entries (older than 5 minutes)
+        now_time = time.time()
+        stale_ids = [mid for mid, timestamp in self.processing_timestamps.items()
+                     if now_time - timestamp > 300]
+        for stale_id in stale_ids:
+            self.processing.discard(stale_id)
+            self.processing_timestamps.pop(stale_id, None)
+
         # Get next message by score (earliest)
         now = datetime.now().timestamp()
         result = self.redis.zrangebyscore(f"queue:{queue_name}", 0, now, start=0, num=1)
-        
+
         if not result:
             return None
-        
+
         message_id = result[0]
-        
+
         # Check if already being processed
         if message_id in self.processing:
             return None
-        
+
         # Mark as processing
         self.processing.add(message_id)
+        self.processing_timestamps[message_id] = now_time
         
         # Get message data
         message_data = self.redis.hgetall(f"msg:{message_id}")
@@ -103,10 +114,11 @@ class RedisMessageQueue:
         """Mark message as completed"""
         # Remove from processing
         self.processing.discard(message.id)
-        
+        self.processing_timestamps.pop(message.id, None)
+
         # Delete message data
         self.redis.delete(f"msg:{message.id}")
-        
+
         logging.info(f"Completed message {message.id}")
     
     async def retry(self, message: QueueMessage, error: str = None):
@@ -129,9 +141,10 @@ class RedisMessageQueue:
             self.redis.zadd(f"queue:{message.queue}", {message.id: message.next_attempt_at})
             
             logging.info(f"Retrying message {message.id} (attempt {message.attempts})")
-        
+
         # Remove from processing
         self.processing.discard(message.id)
+        self.processing_timestamps.pop(message.id, None)
     
     def _store_message(self, message: QueueMessage):
         """Store message data"""

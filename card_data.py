@@ -24,7 +24,7 @@ class CardDataManager:
                 "culture": 99,
                 "hype": 86,
                 "image_url": "https://i.imgur.com/kendrick_example.png",
-                "spotify_url": "https://open.spotify.com/artist/2YZyLoL8N0Vc9KqbPAJQGu",
+
                 "youtube_url": "https://www.youtube.com/watch?v=JKbIMxf3d3U",
                 "card_type": "artist"
             },
@@ -41,7 +41,6 @@ class CardDataManager:
                 "culture": 91,
                 "hype": 89,
                 "image_url": "https://i.imgur.com/drake_example.png",
-                "spotify_url": "https://open.spotify.com/artist/3TVXtAsR1Inumwj47Ei3VS",
                 "youtube_url": "https://www.youtube.com/watch?v=xpVfcn0CV5c",
                 "card_type": "artist"
             },
@@ -58,7 +57,6 @@ class CardDataManager:
                 "culture": 95,
                 "hype": 87,
                 "image_url": "https://i.imgur.com/taylor_example.png",
-                "spotify_url": "https://open.spotify.com/artist/06HL4z0CvFAxyc27GXpf02",
                 "youtube_url": "https://www.youtube.com/watch?v=BWW4Ea5_3pU",
                 "card_type": "artist"
             },
@@ -75,7 +73,6 @@ class CardDataManager:
                 "culture": 85,
                 "hype": 91,
                 "image_url": "https://i.imgur.com/weeknd_example.png",
-                "spotify_url": "https://open.spotify.com/artist/1Xyo4u8uXC1Zm9pci9wwuL",
                 "youtube_url": "https://www.youtube.com/watch?v=4Cd0XKzqEy4",
                 "card_type": "artist"
             },
@@ -92,7 +89,6 @@ class CardDataManager:
                 "culture": 88,
                 "hype": 84,
                 "image_url": "https://i.imgur.com/billie_example.png",
-                "spotify_url": "https://open.spotify.com/artist/6qqNVTkY8uBg9cP3Jd7DAH",
                 "youtube_url": "https://www.youtube.com/watch?v=DyDfgMOUjCI",
                 "card_type": "artist"
             },
@@ -109,7 +105,6 @@ class CardDataManager:
                 "culture": 83,
                 "hype": 88,
                 "image_url": "https://i.imgur.com/postmalone_example.png",
-                "spotify_url": "https://open.spotify.com/artist/246dkjvS1zqtiSJoK5cR6G",
                 "youtube_url": "https://www.youtube.com/watch?v=U-AYl_ObySQ",
                 "card_type": "artist"
             },
@@ -126,7 +121,6 @@ class CardDataManager:
                 "culture": 89,
                 "hype": 93,
                 "image_url": "https://i.imgur.com/travis_example.png",
-                "spotify_url": "https://open.spotify.com/artist/0Y5tJX1xmLdwvJ4FoV5ALR",
                 "youtube_url": "https://www.youtube.com/watch?v=6ONRf7H3pic",
                 "card_type": "artist"
             },
@@ -143,7 +137,6 @@ class CardDataManager:
                 "culture": 86,
                 "hype": 85,
                 "image_url": "https://i.imgur.com/ariana_example.png",
-                "spotify_url": "https://open.spotify.com/artist/66CXWjxzNUsdJxJ2wdwW0v",
                 "youtube_url": "https://www.youtube.com/watch?v=gl1aHtxXcng",
                 "card_type": "artist"
             },
@@ -160,7 +153,6 @@ class CardDataManager:
                 "culture": 82,
                 "hype": 80,
                 "image_url": "https://i.imgur.com/edsheeran_example.png",
-                "spotify_url": "https://open.spotify.com/artist/6eUXZXqKkvbBRLoE2H9g1S",
                 "youtube_url": "https://www.youtube.com/watch?v=JGwWNGJdvx8",
                 "card_type": "artist"
             },
@@ -177,7 +169,6 @@ class CardDataManager:
                 "culture": 87,
                 "hype": 86,
                 "image_url": "https://i.imgur.com/doja_example.png",
-                "spotify_url": "https://open.spotify.com/artist/5cj0lLjcoR7YOSvrhrZDxq",
                 "youtube_url": "https://www.youtube.com/watch?v=kOq85cYmF9Q",
                 "card_type": "artist"
             },
@@ -194,7 +185,6 @@ class CardDataManager:
                 "culture": 90,
                 "hype": 88,
                 "image_url": "https://i.imgur.com/lilnasx_example.png",
-                "spotify_url": "https://open.spotify.com/artist/6VuMDdCeZyXcCs3I2xO4Wf",
                 "youtube_url": "https://www.youtube.com/watch?v=7ysqg2L38OA",
                 "card_type": "artist"
             },
@@ -211,7 +201,6 @@ class CardDataManager:
                 "culture": 82,
                 "hype": 85,
                 "image_url": "https://i.imgur.com/olivia_example.png",
-                "spotify_url": "https://open.spotify.com/artist/1DUyVZEs2e1cYUWO2vNBqf",
                 "youtube_url": "https://www.youtube.com/watch?v/ppgOKCTYm1A",
                 "card_type": "artist"
             }
@@ -234,10 +223,10 @@ class CardDataManager:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM cards WHERE card_id = ?", (card_id,))
         card = cursor.fetchone()
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
         conn.close()
-        
+
         if card:
-            columns = [desc[0] for desc in cursor.description]
             return dict(zip(columns, card))
         return None
     
@@ -248,9 +237,9 @@ class CardDataManager:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM cards ORDER BY rarity DESC, name")
         cards = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
         conn.close()
-        
-        columns = [desc[0] for desc in cursor.description]
+
         return [dict(zip(columns, card)) for card in cards]
     
     def get_cards_by_rarity(self, rarity: str) -> List[Dict]:
@@ -260,9 +249,9 @@ class CardDataManager:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM cards WHERE rarity = ? ORDER BY name", (rarity,))
         cards = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
         conn.close()
-        
-        columns = [desc[0] for desc in cursor.description]
+
         return [dict(zip(columns, card)) for card in cards]
     
     def generate_pack_drop(self, pack_type: str = "Daily") -> List[str]:
@@ -311,8 +300,12 @@ class CardDataManager:
         
         # Ensure guaranteed rarity is included
         guaranteed_cards = rarity_pools.get(config["guaranteed_rarity"], [])
-        if guaranteed_cards and config["guaranteed_rarity"] not in [c.split("-")[1] for c in cards_received]:
-            cards_received[0] = random.choice(guaranteed_cards)["card_id"]
+        if guaranteed_cards:
+            # Check if any received card has the guaranteed rarity
+            guaranteed_rarity_ids = {c["card_id"] for c in guaranteed_cards}
+            has_guaranteed = any(cid in guaranteed_rarity_ids for cid in cards_received)
+            if not has_guaranteed and cards_received:
+                cards_received[0] = random.choice(guaranteed_cards)["card_id"]
         
         return cards_received[:config["total_cards"]]
     

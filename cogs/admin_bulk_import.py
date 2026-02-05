@@ -38,6 +38,8 @@ class AdminBulkImportCog(commands.Cog):
 
 
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.check(check_test_server)
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
         """Import multiple packs from a JSON file
         
@@ -65,9 +67,18 @@ class AdminBulkImportCog(commands.Cog):
         if not await check_and_respond(interaction):
             print(f"❌ [IMPORT_PACKS] Authorization failed")
             return
-        
+
         print(f"✅ [IMPORT_PACKS] Authorization passed")
-        
+
+        # Validate file size (max 1MB)
+        if file.size > 1_048_576:
+            print(f"❌ [IMPORT_PACKS] File too large: {file.size} bytes")
+            await interaction.followup.send(
+                "❌ **Error:** File too large. Maximum size is 1MB.",
+                ephemeral=True
+            )
+            return
+
         # Validate file type
         if not file.filename.endswith('.json'):
             print(f"❌ [IMPORT_PACKS] Invalid file type: {file.filename}")

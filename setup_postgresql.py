@@ -61,12 +61,9 @@ class PostgreSQLSetup:
                     CREATE TABLE IF NOT EXISTS cards (
                         card_id VARCHAR(255) PRIMARY KEY,
                         type VARCHAR(50) NOT NULL DEFAULT 'artist',
-                        spotify_artist_id VARCHAR(255),
-                        spotify_track_id VARCHAR(255),
                         name VARCHAR(255) NOT NULL,
                         title VARCHAR(255),
                         image_url TEXT,
-                        spotify_url TEXT,
                         youtube_url TEXT,
                         rarity VARCHAR(50) NOT NULL,
                         variant VARCHAR(100) DEFAULT 'Classic',
@@ -265,7 +262,7 @@ class PostgreSQLSetup:
                 # Create a bot user for system operations
                 cursor.execute("""
                     INSERT INTO users (user_id, username, discord_tag)
-                    VALUES (0, 'MusicLegendsBot', 'Bot#0000')
+                    VALUES (0, 'MusicLegendsBot', 'MusicLegendsBot')
                     ON CONFLICT (user_id) DO NOTHING
                 """)
                 

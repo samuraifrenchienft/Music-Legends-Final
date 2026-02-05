@@ -103,25 +103,10 @@ class Bot(commands.Bot):
         
         # Initialize backup service and run cleanup
         try:
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"I","location":"main.py:105","message":"Before backup service import","data":{},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             from services.backup_service import backup_service
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"I","location":"main.py:107","message":"After backup service import","data":{"backup_service_exists":backup_service is not None},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             backup_service.cleanup_old_backups()
             print("✅ Backup service initialized")
         except Exception as e:
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"I","location":"main.py:110","message":"Backup service import error","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             print(f"⚠️ Backup service initialization error: {e}")
             import traceback
             traceback.print_exc()
@@ -173,6 +158,8 @@ class Bot(commands.Bot):
             'cogs.admin_bulk_import',         # Dev-only bulk pack import (TEST_SERVER)
             'cogs.admin_commands',            # Admin commands (all servers)
             'cogs.dev_webhook_commands',      # Dev webhook channel commands (TEST_SERVER)
+            'cogs.battle_commands',           # Battle system (/battle, /battle_stats)
+            'cogs.battlepass_commands',       # Battle Pass + Daily Quests
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")
@@ -207,20 +194,27 @@ class Bot(commands.Bot):
         print(f"📋 Total commands loaded: {len(loaded_commands)}")
         print(f"📋 Commands: {loaded_commands}")
         
-        # Sync commands in setup_hook (runs before on_ready)
+        # Sync commands
         test_server_id = os.getenv("TEST_SERVER_ID")
-        
+
         try:
-            if not test_server_id or test_server_id == "":
-                print("🔄 Syncing commands globally...")
-                synced = await self.tree.sync()
-                print(f"✅ Synced {len(synced)} commands globally")
-            else:
-                print(f"⚠️ Skipping guild sync due to Discord API issues - commands should auto-sync")
-                print(f"📋 Commands are registered and should appear automatically")
+            # Always sync global commands (non-dev commands)
+            print("🔄 Syncing global commands...")
+            synced = await self.tree.sync()
+            print(f"✅ Synced {len(synced)} commands globally")
+
+            # Also sync to test guild so dev commands appear there immediately
+            if test_server_id:
+                try:
+                    test_guild = discord.Object(id=int(test_server_id))
+                    self.tree.copy_global_to(guild=test_guild)
+                    guild_synced = await self.tree.sync(guild=test_guild)
+                    print(f"✅ Synced {len(guild_synced)} commands to test guild {test_server_id}")
+                except Exception as e:
+                    print(f"⚠️ Could not sync to test guild: {e}")
         except Exception as e:
             print(f'❌ Unexpected error during sync: {e}')
-            print(f"📋 Commands are still registered locally - should work when Discord syncs automatically")
+            import traceback
             traceback.print_exc()
 
     async def on_ready(self):

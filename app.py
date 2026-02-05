@@ -8,6 +8,7 @@ Handles webhook signature verification and routes events to appropriate handlers
 import os
 import json
 import logging
+from datetime import datetime
 from flask import Flask, request, jsonify, Response
 from functools import wraps
 import hashlib
@@ -154,24 +155,10 @@ def verify_paypal_signature(request) -> bool:
     Raises:
         WebhookSignatureError: If verification fails
     """
-    try:
-        # PayPal uses different verification method
-        # This is a simplified version - in production, you'd verify with PayPal API
-        cert_id = request.headers.get('Paypal-Cert-Id')
-        if not cert_id:
-            raise WebhookSignatureError("Missing PayPal certificate ID")
-        
-        webhook_id = app.config.get('PAYPAL_WEBHOOK_ID')
-        if not webhook_id:
-            raise WebhookSignatureError("Missing PayPal webhook ID")
-        
-        # For now, just log and accept (implement proper verification in production)
-        logger.info(f"PayPal webhook received with cert ID: {cert_id}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"PayPal signature verification error: {e}")
-        raise WebhookSignatureError(f"PayPal verification failed: {str(e)}")
+    # TODO: PayPal integration — configure PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET,
+    # PAYPAL_WEBHOOK_ID env vars then implement full verification here.
+    logger.warning("PayPal integration not yet configured — rejecting webhook")
+    raise WebhookSignatureError("PayPal integration is not yet enabled")
 
 def handle_webhook_error(func):
     """Decorator to handle webhook errors consistently."""
@@ -249,7 +236,7 @@ def stripe_webhook_endpoint():
 
 @app.route('/webhooks/payments', methods=['POST'])
 @handle_webhook_error
-async def payments_webhook():
+def payments_webhook():
     """
     Main payment webhook endpoint.
     
@@ -318,17 +305,17 @@ async def payments_webhook():
 
 @app.route('/webhooks/paypal', methods=['POST'])
 @handle_webhook_error
-async def paypal_webhook():
+def paypal_webhook():
     """
     PayPal-specific webhook endpoint.
-    
+
     Routes to main payment webhook with PayPal gateway identification.
     """
     # Override gateway detection
     request.paypal_gateway = True
-    
+
     # Process through main webhook handler
-    return await payments_webhook()
+    return payments_webhook()
 
 # Health and Status Endpoints
 
@@ -408,7 +395,7 @@ def status_check():
 
 @app.route('/webhooks/test', methods=['POST'])
 @handle_webhook_error
-async def test_webhook():
+def test_webhook():
     """
     Test webhook endpoint for development and testing.
     

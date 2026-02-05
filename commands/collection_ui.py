@@ -1,9 +1,44 @@
 # commands/collection_ui.py
+# NOTE: This is a template/scaffold file — not loaded as a cog in main.py
+import time
+import discord
+from discord import Interaction, Embed
 from discord.ext import commands
-from discord.ui import View, Button
-from models.card import Card
+from discord.ui import View, Button, Modal, TextInput
+try:
+    from models.card import Card
+except ImportError:
+    Card = None
+try:
+    from models.creator_pack import CreatorPack
+except ImportError:
+    CreatorPack = None
 
 PAGE_SIZE = 8
+
+# Stub functions for state management (not yet implemented)
+def restore_collection(state_id: str):
+    return None
+
+def update_state(state_id: str, data: dict):
+    pass
+
+
+class BurnConfirmView(View):
+    def __init__(self, card, user_id):
+        super().__init__(timeout=60)
+        self.card = card
+        self.user_id = user_id
+
+
+class TradeModal(Modal, title="Trade Card"):
+    def __init__(self, card):
+        super().__init__()
+        self.card = card
+
+    async def on_submit(self, interaction: Interaction):
+        await interaction.response.send_message("Trade system coming soon!", ephemeral=True)
+
 
 class CollectionView(View):
 
@@ -11,6 +46,10 @@ class CollectionView(View):
         super().__init__(timeout=180)
         self.user_id = user_id
         self.page = page
+
+    def save_state(self):
+        """Save current page state (stub)"""
+        pass
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         """Enhanced interaction check with state validation"""
@@ -305,12 +344,9 @@ def collection_embed(user_id, page, filters=None, sort_by="newest"):
     return e
 
 
-@bot.slash_command(name="collection")
-async def collection(ctx):
-    """Enhanced collection browser command"""
-    
-    await ctx.respond(
-        embed=collection_embed(ctx.author.id, 0),
-        view=CollectionView(ctx.author.id),
-        ephemeral=True
-    )
+# To register as a command, load this as a cog or call from an existing cog:
+# await interaction.response.send_message(
+#     embed=collection_embed(interaction.user.id, 0),
+#     view=CollectionView(interaction.user.id),
+#     ephemeral=True
+# )

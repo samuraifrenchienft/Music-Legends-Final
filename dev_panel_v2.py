@@ -9,8 +9,15 @@ from discord import Interaction, app_commands, ui
 from discord.ext import commands
 import traceback
 import sqlite3
+import os
 from database import DatabaseManager
 from datetime import datetime
+
+
+def _is_dev_user(user_id: int) -> bool:
+    """Check if user is an authorized dev"""
+    dev_ids = os.getenv('DEV_USER_IDS', '').split(',')
+    return str(user_id) in [uid.strip() for uid in dev_ids if uid.strip()]
 
 class GiveCardsModal(discord.ui.Modal, title="Give Card"):
     """Modal for giving cards with detailed error handling"""
@@ -234,7 +241,11 @@ class DevPanelView(discord.ui.View):
         print(f"   User: {interaction.user.id}")
         print(f"   Guild: {interaction.guild_id}")
         print(f"{'='*60}\n")
-        
+
+        if not _is_dev_user(interaction.user.id):
+            await interaction.response.send_message("❌ Unauthorized. Dev-only feature.", ephemeral=True)
+            return
+
         try:
             print(f"✅ [DevPanelView] Creating GiveCardsView...")
             view = GiveCardsView(self.db)
@@ -271,7 +282,11 @@ class DevPanelView(discord.ui.View):
         print(f"   User: {interaction.user.id}")
         print(f"   Guild: {interaction.guild_id}")
         print(f"{'='*60}\n")
-        
+
+        if not _is_dev_user(interaction.user.id):
+            await interaction.response.send_message("❌ Unauthorized. Dev-only feature.", ephemeral=True)
+            return
+
         try:
             print(f"✅ [DevPanelView] Creating AnnouncementModal...")
             modal = AnnouncementModal(self.db)

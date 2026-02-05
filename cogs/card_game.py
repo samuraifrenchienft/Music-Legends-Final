@@ -7,6 +7,7 @@ from discord.ext.commands import Cog
 from discord import Interaction, app_commands, ui
 from database import DatabaseManager
 from card_data import CardDataManager
+import stripe
 from stripe_payments import stripe_manager
 import random
 import uuid
@@ -14,65 +15,11 @@ from typing import List, Dict
 
 # Import required modules
 from discord_cards import ArtistCard, Pack, CardCollection
-from battle_engine import BattleEngine, BattleHistory, BattleWagerConfig, BattleCard as BattleCardWrapper, PlayerState as PlayerStateWrapper, MatchState as MatchStateWrapper, BattleManager, BattleStatus
 from card_economy import PlayerEconomy, EconomyDisplay
 from youtube_integration import youtube_integration
 from views.song_selection import SongSelectionView
 from services.image_cache import safe_image
 from views.pack_opening import PackOpeningAnimator, open_pack_with_animation
-
-# Battle stats categories (for compatibility with existing code)
-STATS = ["impact", "skill", "longevity", "culture"]
-
-# Battle system functions
-def pick_category_option_a(match):
-    """AI picks category for player A's advantage"""
-    # Simple AI: pick category where player A has advantage
-    return random.choice(STATS)
-
-def resolve_round(card_a, card_b, category, hype_bonus_a, hype_bonus_b):
-    """Resolve a single round of battle"""
-    # Get base stats
-    stat_a = getattr(card_a, category, 0)
-    stat_b = getattr(card_b, category, 0)
-    
-    # Apply rarity multipliers
-    final_a = stat_a * card_a.rarity_multiplier + hype_bonus_a
-    final_b = stat_b * card_b.rarity_multiplier + hype_bonus_b
-    
-    # Critical hit chance (10% + rarity bonus)
-    crit_chance_a = card_a.critical_hit_chance + (card_a.rarity_multiplier - 1.0) * 0.2
-    crit_chance_b = card_b.critical_hit_chance + (card_b.rarity_multiplier - 1.0) * 0.2
-    
-    # Apply critical hits
-    if random.random() < crit_chance_a:
-        final_a *= 1.5  # 50% damage boost
-        debug_a = f"{card_a.name} CRITICAL HIT! "
-    else:
-        debug_a = f"{card_a.name} "
-        
-    if random.random() < crit_chance_b:
-        final_b *= 1.5
-        debug_b = f"{card_b.name} CRITICAL HIT! "
-    else:
-        debug_b = f"{card_b.name} "
-    
-    # Determine winner
-    if final_a > final_b:
-        return "A", f"{debug_a}({final_a:.1f}) vs {debug_b}({final_b:.1f}) - {category}"
-    elif final_b > final_a:
-        return "B", f"{debug_a}({final_a:.1f}) vs {debug_b}({final_b:.1f}) - {category}"
-    else:
-        return "TIE", f"{debug_a}({final_a:.1f}) vs {debug_b}({final_b:.1f}) - {category} - TIE!"
-
-def apply_momentum(winner, loser):
-    """Apply momentum bonuses after winning a round"""
-    winner.momentum += 1
-    winner.hype_bonus += 2  # +2 to next round stat
-    
-    # Reset loser momentum
-    loser.momentum = 0
-    loser.hype_bonus = max(0, loser.hype_bonus - 1)  # -1 penalty
 
 class CardGameCog(Cog):
     def __init__(self, bot):
@@ -81,8 +28,6 @@ class CardGameCog(Cog):
         self.db = DatabaseManager()
         # Economy manager will be created per user
         self.card_manager = CardDataManager(self.db)
-        self.battle_manager = BattleManager()  # New battle management system
-        
         # Dev user IDs from environment
         dev_ids = os.getenv("DEV_USER_IDS", "")
         self.dev_users = [int(id.strip()) for id in dev_ids.split(",") if id.strip().isdigit()]
@@ -134,14 +79,6 @@ class CardGameCog(Cog):
             thumbnail=track.get('thumbnail_url', ''),
             rarity=rarity
         )
-
-    def _convert_to_battle_card(self, card_data: Dict, owner_id: str, owner_name: str) -> BattleCardWrapper:
-        """Convert database card data to BattleCardWrapper object"""
-        # First create an ArtistCard
-        artist_card = self._convert_to_artist_card(card_data)
-        
-        # Then wrap it in a BattleCardWrapper
-        return BattleCardWrapper.from_artist_card(artist_card, owner_id, owner_name)
 
     # Card viewing removed - use /view from gameplay.py
 
@@ -244,184 +181,7 @@ class CardGameCog(Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="battle", description="Challenge someone to a card battle")
-    @app_commands.describe(
-        opponent="User to challenge",
-        wager="Wager level (required)"
-    )
-    @app_commands.choices(wager=[
-        app_commands.Choice(name="Casual (50 gold)", value="casual"),
-        app_commands.Choice(name="Standard (100 gold)", value="standard"),
-        app_commands.Choice(name="High Stakes (250 gold)", value="high"),
-        app_commands.Choice(name="Extreme (500 gold)", value="extreme")
-    ])
-    async def battle_challenge(self, interaction: Interaction, opponent: discord.User, wager: str):
-        # TEMPORARY: Hardcode battle wager config
-        BATTLE_WAGERS = {
-            "casual": {"wager": 50, "win_bonus": 25, "win_xp": 10},
-            "standard": {"wager": 100, "win_bonus": 50, "win_xp": 20},
-            "high": {"wager": 250, "win_bonus": 125, "win_xp": 50},
-            "extreme": {"wager": 500, "win_bonus": 250, "win_xp": 100}
-        }
-        
-        if opponent.id == interaction.user.id:
-            await interaction.response.send_message("You can't challenge yourself!", ephemeral=True)
-            return
-        
-        if opponent.bot:
-            await interaction.response.send_message("You can't battle a bot!", ephemeral=True)
-            return
-
-        # Get wager config
-        wager_config = BATTLE_WAGERS.get(wager, BATTLE_WAGERS["casual"])
-        wager_amount = wager_config["wager"]
-
-        # Check if challenger has enough gold
-        import sqlite3
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (interaction.user.id,))
-            challenger_gold = cursor.fetchone()
-            challenger_gold = challenger_gold[0] if challenger_gold else 0
-            
-            cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (opponent.id,))
-            opponent_gold = cursor.fetchone()
-            opponent_gold = opponent_gold[0] if opponent_gold else 0
-
-        if challenger_gold < wager_amount:
-            await interaction.response.send_message(
-                f"❌ You need {wager_amount} gold to wager! You have {challenger_gold} gold.", 
-                ephemeral=True
-            )
-            return
-
-        # Get both users
-        challenger = self._get_user(interaction.user.id, interaction.user.name, str(interaction.user))
-        challenged = self._get_user(opponent.id, opponent.name, str(opponent))
-
-        # Check if both have at least 1 card (simplified battle)
-        challenger_deck = self.db.get_user_deck(interaction.user.id, 1)
-        challenged_deck = self.db.get_user_deck(opponent.id, 1)
-
-        if len(challenger_deck) < 1:
-            await interaction.response.send_message("You need at least 1 card to battle! Use `/drop` to get cards.", ephemeral=True)
-            return
-
-        if len(challenged_deck) < 1:
-            await interaction.response.send_message(f"{opponent.name} doesn't have any cards to battle with!", ephemeral=True)
-            return
-
-        # Create match with new battle system
-        match_id = str(uuid.uuid4())[:8]
-        match = self.battle_manager.create_match(
-            match_id=match_id,
-            player1_id=interaction.user.id,
-            player1_name=interaction.user.name,
-            player2_id=opponent.id,
-            player2_name=opponent.name,
-            wager_tier=wager
-        )
-
-        embed = discord.Embed(
-            title="⚔️ Battle Challenge!",
-            description=f"{interaction.user.mention} has challenged {opponent.mention} to a card battle!",
-            color=discord.Color.red()
-        )
-        
-        embed.add_field(
-            name="💰 Wager",
-            value=f"**{match.wager_config['name']}**: {match.wager_config['wager_cost']} gold\n"
-                  f"Winner gets: {match.wager_config['winner_gold']} gold + {match.wager_config['winner_xp']} XP\n"
-                  f"Loser gets: {match.wager_config['loser_gold']} gold + {match.wager_config['loser_xp']} XP",
-            inline=False
-        )
-        
-        embed.add_field(name="Match ID", value=f"`{match_id}`", inline=True)
-        
-        # Check if opponent has enough gold
-        if opponent_gold < wager_amount:
-            embed.add_field(
-                name="⚠️ Warning",
-                value=f"{opponent.name} only has {opponent_gold} gold (needs {wager_amount})",
-                inline=False
-            )
-        
-        embed.set_footer(text=f"Use /battle_accept {match_id} to accept the challenge")
-
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="battle_accept", description="Accept a battle challenge")
-    @app_commands.describe(match_id="Match ID to accept")
-    async def battle_accept(self, interaction: Interaction, match_id: str):
-        match = self.battle_manager.get_match(match_id)
-        if not match:
-            await interaction.response.send_message("Match not found!", ephemeral=True)
-            return
-
-        if interaction.user.id not in [match.player1.user_id, match.player2.user_id]:
-            await interaction.response.send_message("You're not part of this match!", ephemeral=True)
-            return
-
-        # Accept the battle
-        both_accepted = match.accept_battle(interaction.user.id)
-        
-        if both_accepted:
-            # Both players accepted - move to card selection
-            await self._start_card_selection(interaction, match)
-        else:
-            await interaction.response.send_message(f"Battle accepted! Waiting for {match.player1.username if interaction.user.id == match.player2.user_id else match.player2.username} to accept...", ephemeral=True)
-
-    async def _start_card_selection(self, interaction: Interaction, match: MatchStateWrapper):
-        """Start card selection phase for both players"""
-        # Get each player's top card
-        challenger_card = self.db.get_user_deck(match.player1.user_id, 1)[0]
-        challenged_card = self.db.get_user_deck(match.player2.user_id, 1)[0]
-        
-        # Convert to battle cards
-        battle_card1 = self._convert_to_battle_card(challenger_card, match.player1.user_id, match.player1.username)
-        battle_card2 = self._convert_to_battle_card(challenged_card, match.player2.user_id, match.player2.username)
-        
-        # Set cards for both players
-        match.set_player_card(match.player1.user_id, battle_card1)
-        match.set_player_card(match.player2.user_id, battle_card2)
-        
-        # Execute the battle
-        await self._execute_battle(interaction, match)
-
-    async def _execute_battle(self, interaction: Interaction, match: MatchStateWrapper):
-        """Execute the battle between two players"""
-        # Get the battle cards
-        card1 = match.player1.card.card
-        card2 = match.player2.card.card
-        
-        # Execute battle using BattleEngine
-        result = BattleEngine.execute_battle(card1, card2, match.wager_tier)
-        
-        # Determine winner
-        if result["winner"] == 1:
-            winner_id = match.player1.user_id
-            is_tie = False
-        elif result["winner"] == 2:
-            winner_id = match.player2.user_id
-            is_tie = False
-        else:
-            winner_id = None
-            is_tie = True
-        
-        # Complete the match
-        match.complete_battle(winner_id, is_tie, result["power_difference"])
-        
-        # Create battle results embed
-        embed = BattleEngine.create_battle_embed(
-            result, 
-            match.player1.username, 
-            match.player2.username
-        )
-        
-        await interaction.response.send_message(embed=embed)
-        
-        # Clean up match
-        self.battle_manager.complete_match(match.match_id)
+    # Battle commands are in cogs/battle_commands.py
 
     # Pack Commands
     @app_commands.command(name="open_pack", description="Open a pack and receive cards")
@@ -753,71 +513,7 @@ class CardGameCog(Cog):
             print(f"❌ Error finalizing pack: {e}")
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
-    @app_commands.command(name="daily", description="Claim your daily reward")
-    async def daily_claim(self, interaction: Interaction):
-        """Claim daily reward with streak bonuses"""
-        await interaction.response.defer()
-        
-        try:
-            # TEMPORARY: Basic daily reward without database
-            embed = discord.Embed(
-                title="🎁 Daily Reward Claimed!",
-                description="**Streak:** 1 day",
-                color=discord.Color.green()
-            )
-            
-            embed.add_field(
-                name="💰 Rewards",
-                value="+100 gold (base)",
-                inline=False
-            )
-            
-            embed.set_footer(text="Database economy coming soon!")
-            
-            await interaction.followup.send(embed=embed)
-                
-        except Exception as e:
-            print(f"Error in daily claim: {e}")
-            await interaction.followup.send("❌ Error claiming daily reward", ephemeral=True)
-
-    @app_commands.command(name="balance", description="Check your gold and tickets")
-    async def check_balance(self, interaction: Interaction):
-        """Check user's balance"""
-        await interaction.response.defer()
-        
-        try:
-            # TEMPORARY: Basic balance without database
-            embed = discord.Embed(
-                title=f"💰 {interaction.user.name}'s Balance",
-                color=discord.Color.gold()
-            )
-            
-            embed.add_field(
-                name="💰 Gold",
-                value="**500**",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="🎫 Tickets",
-                value="**0**",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="🎁 Daily Claim",
-                value="✅ Available!",
-                inline=True
-            )
-            
-            embed.set_footer(text="Database economy coming soon!")
-            
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            print(f"Error checking balance: {e}")
-            await interaction.followup.send("❌ Error checking balance", ephemeral=True)
-
+    # /daily is in cogs/gameplay.py — /balance uses /collection or /rank
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
