@@ -226,7 +226,18 @@ class Bot(commands.Bot):
         
         # Commands should auto-sync, skip manual sync to avoid errors
         print("📋 Commands should auto-register with Discord")
-        
+
+        # Load seed packs (25 genre packs so marketplace always has content)
+        try:
+            from services.seed_packs import seed_packs_into_db
+            result = seed_packs_into_db()
+            if result["inserted"] > 0:
+                print(f"🎵 Seed packs: {result['inserted']} inserted, {result['skipped']} already existed")
+            else:
+                print(f"🎵 Seed packs: all {result['skipped']} already loaded")
+        except Exception as e:
+            print(f"⚠️ Seed pack loading failed (non-critical): {e}")
+
         # Send any pending restart alerts that were queued during startup
         try:
             from services.system_monitor import get_system_monitor
