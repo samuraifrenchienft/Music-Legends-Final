@@ -19,6 +19,20 @@ import uuid
 from pathlib import Path
 from typing import Dict, List
 
+def _get_db_connection():
+    """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        # PostgreSQL on Railway
+        import psycopg2
+        # Convert Railway format if needed
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        return psycopg2.connect(database_url), "postgresql"
+    else:
+        # Local SQLite
+        return sqlite3.connect("music_legends.db"), "sqlite"
+
 # Rarity assignment per card slot (index 0-4 inside each pack)
 SLOT_RARITIES = ["epic", "rare", "rare", "common", "common"]
 
@@ -98,8 +112,11 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
     inserted = 0
     skipped = 0
 
-    with sqlite3.connect(db_path) as conn:
+    conn, db_type = _get_db_connection()
+    try:
         cursor = conn.cursor()
+        # PostgreSQL uses %s placeholders, SQLite uses ?
+        ph = "%s" if db_type == "postgresql" else "?"
 
         for genre, pack_lists in genre_data.items():
             emoji = GENRE_EMOJI.get(genre, "🎵")
@@ -111,7 +128,7 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
 
                 # Check if this seed pack already exists (by ID or by name)
                 cursor.execute(
-                    "SELECT 1 FROM creator_packs WHERE pack_id = ? OR name = ?",
+                    f"SELECT 1 FROM creator_packs WHERE pack_id = {ph} OR name = {ph}",
                     (pack_id, pack_name)
                 )
                 if cursor.fetchone():
@@ -129,43 +146,83 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
                 cards_json = json.dumps(cards)
 
                 # Insert pack as LIVE
-                cursor.execute("""
-                    INSERT INTO creator_packs
-                    (pack_id, creator_id, name, description, pack_size,
-                     status, cards_data, published_at, price_cents, stripe_payment_id)
-                    VALUES (?, 0, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, 0, 'SEED_PACK')
-                """, (
-                    pack_id,
-                    pack_name,
-                    f"Official {genre} pack — Volume {vol}",
-                    len(cards),
-                    cards_json,
-                ))
+                if db_type == "postgresql":
+                    cursor.execute(f"""
+                        INSERT INTO creator_packs
+                        (pack_id, creator_id, name, description, pack_size,
+                         status, cards_data, published_at, price_cents, stripe_payment_id)
+                        VALUES ({ph}, 0, {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP, 0, 'SEED_PACK')
+                    """, (
+                        pack_id,
+                        pack_name,
+                        f"Official {genre} pack — Volume {vol}",
+                        len(cards),
+                        cards_json,
+                    ))
+                else:
+                    cursor.execute("""
+                        INSERT INTO creator_packs
+                        (pack_id, creator_id, name, description, pack_size,
+                         status, cards_data, published_at, price_cents, stripe_payment_id)
+                        VALUES (?, 0, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, 0, 'SEED_PACK')
+                    """, (
+                        pack_id,
+                        pack_name,
+                        f"Official {genre} pack — Volume {vol}",
+                        len(cards),
+                        cards_json,
+                    ))
 
                 # Insert each card into the master cards table
-                for card in cards:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO cards
-                        (card_id, name, title, rarity, impact, skill,
-                         longevity, culture, hype, image_url, youtube_url, type, pack_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'artist', ?)
-                    """, (
-                        card["card_id"],
-                        card["name"],
-                        card["title"],
-                        card["rarity"],
-                        card["impact"],
-                        card["skill"],
-                        card["longevity"],
-                        card["culture"],
-                        card["hype"],
-                        card["image_url"],
-                        card["youtube_url"],
-                        pack_id,
-                    ))
+                # PostgreSQL uses ON CONFLICT, SQLite uses INSERT OR IGNORE
+                if db_type == "postgresql":
+                    for card in cards:
+                        cursor.execute(f"""
+                            INSERT INTO cards
+                            (card_id, name, title, rarity, impact, skill,
+                             longevity, culture, hype, image_url, youtube_url, type, pack_id)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'artist', {ph})
+                            ON CONFLICT (card_id) DO NOTHING
+                        """, (
+                            card["card_id"],
+                            card["name"],
+                            card["title"],
+                            card["rarity"],
+                            card["impact"],
+                            card["skill"],
+                            card["longevity"],
+                            card["culture"],
+                            card["hype"],
+                            card["image_url"],
+                            card["youtube_url"],
+                            pack_id,
+                        ))
+                else:
+                    for card in cards:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO cards
+                            (card_id, name, title, rarity, impact, skill,
+                             longevity, culture, hype, image_url, youtube_url, type, pack_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'artist', ?)
+                        """, (
+                            card["card_id"],
+                            card["name"],
+                            card["title"],
+                            card["rarity"],
+                            card["impact"],
+                            card["skill"],
+                            card["longevity"],
+                            card["culture"],
+                            card["hype"],
+                            card["image_url"],
+                            card["youtube_url"],
+                            pack_id,
+                        ))
 
                 inserted += 1
 
         conn.commit()
+    finally:
+        conn.close()
 
     return {"inserted": inserted, "skipped": skipped}
