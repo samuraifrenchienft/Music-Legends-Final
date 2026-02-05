@@ -614,6 +614,60 @@ class DatabaseManager:
                 )
             """)
             
+            # ===== MISSING TABLES (required by cogs) =====
+
+            # Battle pass progress - used by menu_system.py
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS battle_pass_progress (
+                    user_id INTEGER PRIMARY KEY,
+                    battle_pass_xp INTEGER DEFAULT 0,
+                    current_tier INTEGER DEFAULT 1,
+                    has_premium INTEGER DEFAULT 0,
+                    claimed_free_tiers TEXT DEFAULT '[]',
+                    claimed_premium_tiers TEXT DEFAULT '[]',
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+
+            # Server drop cooldowns - used by drop_system.py
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS server_drop_cooldowns (
+                    server_id INTEGER PRIMARY KEY,
+                    last_drop_time TIMESTAMP,
+                    activity_level INTEGER DEFAULT 1,
+                    drop_count_today INTEGER DEFAULT 0,
+                    last_activity_update TIMESTAMP
+                )
+            """)
+
+            # User inventory - used by card_economy.py, battlepass, gameplay
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_inventory (
+                    user_id INTEGER PRIMARY KEY,
+                    gold INTEGER DEFAULT 500,
+                    dust INTEGER DEFAULT 0,
+                    tickets INTEGER DEFAULT 0,
+                    gems INTEGER DEFAULT 0,
+                    xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 1,
+                    daily_streak INTEGER DEFAULT 0,
+                    last_daily TEXT,
+                    last_daily_claim TEXT,
+                    premium_expires TEXT
+                )
+            """)
+
+            # Season progress - used by battlepass_commands.py
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS season_progress (
+                    user_id INTEGER PRIMARY KEY,
+                    claimed_tiers TEXT DEFAULT '[]',
+                    quest_progress TEXT DEFAULT '{}',
+                    last_quest_reset TEXT
+                )
+            """)
+
             # Add indexes for economy tables
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_economy_gold ON user_economy(gold)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_players ON battle_history(player1_id, player2_id)")
