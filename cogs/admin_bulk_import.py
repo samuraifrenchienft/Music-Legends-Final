@@ -14,7 +14,7 @@ import uuid
 import os
 from typing import List, Dict, Optional
 import asyncio
-from cogs.dev_helpers import check_test_server
+from cogs.dev_helpers import check_and_respond
 
 class AdminBulkImportCog(commands.Cog):
     """Dev-only commands for bulk pack creation (TEST_SERVER only)"""
@@ -39,10 +39,9 @@ class AdminBulkImportCog(commands.Cog):
 
     @app_commands.command(name="import_packs", description="[DEV] Import packs from JSON file")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.check(check_test_server)
     async def import_packs(self, interaction: Interaction, file: discord.Attachment):
         """Import multiple packs from a JSON file
-        
+
         Args:
             file: JSON file containing pack data
         """
@@ -53,22 +52,21 @@ class AdminBulkImportCog(commands.Cog):
         print(f"   Channel: {interaction.channel_id}")
         print(f"   File: {file.filename}")
         print(f"{'='*60}\n")
-        
-        # CRITICAL: Defer IMMEDIATELY before any checks
+
+        # Check authorization BEFORE defer (check_and_respond sends its own error via response)
+        if not await check_and_respond(interaction):
+            print(f"❌ [IMPORT_PACKS] Authorization failed")
+            return
+
+        print(f"✅ [IMPORT_PACKS] Authorization passed")
+
+        # Defer after auth passes
         try:
             await interaction.response.defer(ephemeral=True)
             print(f"✅ [IMPORT_PACKS] Deferred interaction")
         except Exception as e:
             print(f"❌ [IMPORT_PACKS] Failed to defer: {e}")
             return
-        
-        # NOW check authorization AFTER defer
-        from cogs.dev_helpers import check_and_respond
-        if not await check_and_respond(interaction):
-            print(f"❌ [IMPORT_PACKS] Authorization failed")
-            return
-
-        print(f"✅ [IMPORT_PACKS] Authorization passed")
 
         # Validate file size (max 1MB)
         if file.size > 1_048_576:
@@ -233,8 +231,8 @@ class AdminBulkImportCog(commands.Cog):
             errors.append(f"{prefix}: 'cards' must be an array")
             return errors
         
-        if len(pack['cards']) != 5:
-            errors.append(f"{prefix}: Must have exactly 5 cards (has {len(pack['cards'])})")
+        if len(pack['cards']) < 1 or len(pack['cards']) > 25:
+            errors.append(f"{prefix}: Must have 1-25 cards (has {len(pack['cards'])})")
         
         # Validate each card
         for j, card in enumerate(pack['cards']):
@@ -248,8 +246,8 @@ class AdminBulkImportCog(commands.Cog):
         if 'price_cents' in pack and not isinstance(pack['price_cents'], int):
             errors.append(f"{prefix}: 'price_cents' must be an integer")
         
-        if 'pack_size' in pack and pack['pack_size'] != 5:
-            errors.append(f"{prefix}: 'pack_size' must be 5 for this import")
+        if 'pack_size' in pack and (pack['pack_size'] < 1 or pack['pack_size'] > 25):
+            errors.append(f"{prefix}: 'pack_size' must be 1-25")
         
         return errors
     
@@ -280,68 +278,85 @@ class AdminBulkImportCog(commands.Cog):
     
     async def _create_pack_from_data(self, pack_data: dict, importer_user_id: int) -> str:
         """Create a pack from validated JSON data
-        
+
         Args:
             pack_data: Validated pack data dictionary
             importer_user_id: Discord user ID who is importing
-            
+
         Returns:
             pack_id: Created pack ID
         """
+        import random as _rand
+
         # Generate pack ID
         pack_id = str(uuid.uuid4())
-        
+
         # Get creator ID (default to importer)
         creator_id = pack_data.get('creator_id', importer_user_id)
-        
+
         # Get pack details
         name = pack_data['name']
         description = pack_data.get('description', f"Imported pack - {name}")
-        pack_size = 5  # Fixed for this import
+        pack_size = len(pack_data['cards'])
         price_cents = pack_data.get('price_cents', 699)
-        
+
+        # Stat ranges by rarity (for auto-generation when not provided)
+        RARITY_STAT_RANGES = {
+            'common':    (15, 35),
+            'rare':      (30, 50),
+            'epic':      (45, 70),
+            'legendary': (60, 90),
+        }
+
+        # Prepare cards: generate card_ids and stats BEFORE storing JSON
+        for card_data in pack_data['cards']:
+            if 'card_id' not in card_data:
+                card_data['card_id'] = str(uuid.uuid4())
+
+            card_data['pack_id'] = pack_id
+
+            # Auto-generate stats if not provided
+            rarity = card_data.get('rarity', 'common')
+            lo, hi = RARITY_STAT_RANGES.get(rarity, (15, 35))
+            for stat in ['impact', 'skill', 'longevity', 'culture', 'hype']:
+                if stat not in card_data or card_data[stat] == 0:
+                    card_data[stat] = _rand.randint(lo, hi)
+
+        # Now serialize with card_ids and stats included
+        cards_json = json.dumps(pack_data['cards'])
+
         # Create pack in LIVE status (skip payment for admin import)
         import sqlite3
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Initialize creator if not exists
             cursor.execute("""
                 INSERT OR IGNORE INTO creator_pack_limits (creator_id)
                 VALUES (?)
             """, (creator_id,))
-            
-            # Create pack with cards
-            cards_json = json.dumps(pack_data['cards'])
+
             cursor.execute("""
-                INSERT INTO creator_packs 
-                (pack_id, creator_id, name, description, pack_size, status, cards_data, 
+                INSERT INTO creator_packs
+                (pack_id, creator_id, name, description, pack_size, status, cards_data,
                  published_at, price_cents, stripe_payment_id)
                 VALUES (?, ?, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, ?, 'ADMIN_IMPORT')
             """, (pack_id, creator_id, name, description, pack_size, cards_json, price_cents))
-            
+
             # Add cards to master card list
             for card_data in pack_data['cards']:
-                # Generate card ID if not provided
-                if 'card_id' not in card_data:
-                    card_data['card_id'] = str(uuid.uuid4())
-                
-                # Set pack_id
-                card_data['pack_id'] = pack_id
-                
-                # Add to cards table
                 self.db.add_card_to_master(card_data)
-            
+
             # Update creator limits
             cursor.execute("""
-                UPDATE creator_pack_limits 
+                UPDATE creator_pack_limits
                 SET packs_published = packs_published + 1,
                     last_pack_published = strftime('%s', 'now')
                 WHERE creator_id = ?
             """, (creator_id,))
-            
+
             conn.commit()
-        
+
         return pack_id
     
 

@@ -227,12 +227,15 @@ class CardGameCog(Cog):
                         card_data['foil_effect'] = 'rainbow'
                         print(f"✨ Special variant generated: {card_data.get('name')} with {card_data['frame_style']} frame!")
                 
+                # Ensure card has an ID
+                if 'card_id' not in card_data:
+                    card_data['card_id'] = str(uuid.uuid4())
                 # Add to master cards table
-                card_id = self.db.add_card_to_master(card_data)
+                self.db.add_card_to_master(card_data)
                 # Add to user's collection
                 self.db.add_card_to_collection(
                     user_id=interaction.user.id,
-                    card_id=card_id,
+                    card_id=card_data['card_id'],
                     acquired_from='pack_opening'
                 )
                 received_cards.append(card_data)
