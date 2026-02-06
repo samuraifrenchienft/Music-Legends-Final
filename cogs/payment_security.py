@@ -479,7 +479,37 @@ async def process_payment_webhook(
         # Handle specific event types
         if event_type == "payment_intent.succeeded":
             print(f"✅ [WEBHOOK] Payment succeeded: {event_data.get('id')}")
-            
+
+            # Record server revenue share
+            try:
+                from server_revenue import server_revenue
+
+                # Extract metadata from payment intent
+                metadata = event_data.get('metadata', {})
+                server_id = metadata.get('server_id')
+                purchase_type = metadata.get('purchase_type', 'unknown')
+                amount_cents = event_data.get('amount')  # Already in cents
+
+                if server_id and amount_cents:
+                    # Record revenue transaction and calculate splits
+                    revenue_result = server_revenue.record_purchase_revenue(
+                        server_id=int(server_id),
+                        purchase_type=purchase_type,
+                        total_amount_cents=amount_cents,
+                        payment_intent_id=event_data.get('id')
+                    )
+
+                    if revenue_result.get('success'):
+                        print(f"💰 [REVENUE] Server share: ${revenue_result['server_share']:.2f} "
+                              f"({revenue_result['revenue_share_percentage']*100:.0f}%)")
+                    else:
+                        print(f"⚠️  [REVENUE] Failed to record: {revenue_result.get('error')}")
+                else:
+                    print(f"ℹ️  [REVENUE] No server_id in metadata - skipping revenue split")
+
+            except Exception as e:
+                print(f"⚠️  [REVENUE] Error recording revenue: {e}")
+
             security_logger.log_event(
                 "STRIPE_PAYMENT_SUCCEEDED",
                 details={

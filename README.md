@@ -72,6 +72,36 @@ Experience premium audio effects during key moments:
 
 ## 🛠️ **For Server Owners**
 
+### **💰 Server Revenue Sharing (FREE BOT!)**
+
+Music Legends is **completely free** - server owners earn revenue from transactions in their server!
+
+**How It Works:**
+- **10% base revenue share** from all purchases in your server
+- **+10% per NFT** you own (up to 2 NFTs = 30% total max)
+- **Weekly payouts** via Stripe Connect when you reach $25 minimum
+- **Example:** If users spend $100 in your server → you earn $10-$30!
+
+**🎫 To Set Up Revenue Sharing:**
+1. **Join the official Music Legends support server**
+2. **Create a support ticket** in the #tickets channel
+3. **Provide:**
+   - Your server ID
+   - Your Discord username
+   - (Optional) NFT wallet address for bonus share
+4. **Complete Stripe Connect verification** (secure, direct bank payouts)
+5. **Start earning automatically!**
+
+**Why tickets instead of commands?**
+Manual setup via tickets provides better security and ensures proper Stripe verification. This protects both server owners and the platform.
+
+**NFT Bonus System (Optional):**
+- Own 1 eligible NFT → **20% revenue share**
+- Own 2+ eligible NFTs → **30% revenue share (MAX)**
+- NFTs must be verified through support ticket
+
+---
+
 ### **Admin Commands**
 - **📈 Server Analytics:** `/server_analytics`
 - **ℹ️ Server Info:** `/server_info`
@@ -83,7 +113,8 @@ Experience premium audio effects during key moments:
 1. **Add Bot to Server**
 2. **Run `/setup_user_hub`** in your main channel
 3. **Set Up Channel Permissions**
-4. **Players start playing!**
+4. **(Optional) Create ticket for revenue sharing**
+5. **Players start playing!**
 
 ---
 

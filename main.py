@@ -153,8 +153,6 @@ class Bot(commands.Bot):
             'cogs.card_game',                 # Collection and pack creation commands
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
             'cogs.marketplace',               # Marketplace commands
-            'cogs.cosmetic_shop',             # Cosmetic shop and customization
-            'cogs.season_commands',           # Season progression and rewards
             'cogs.admin_bulk_import',         # Dev-only bulk pack import (TEST_SERVER)
             'cogs.admin_commands',            # Admin commands (all servers)
             'cogs.dev_webhook_commands',      # Dev webhook channel commands (TEST_SERVER)

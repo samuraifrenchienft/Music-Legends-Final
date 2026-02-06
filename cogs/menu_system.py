@@ -507,6 +507,22 @@ class UserHubView(discord.ui.View):
             embed.add_field(name="🔥 Streak", value=f"{result.get('streak', 1)} days", inline=True)
             if result.get('tickets', 0) > 0:
                 embed.add_field(name="🎫 Tickets", value=f"+{result['tickets']}", inline=True)
+
+            # Display daily free card
+            if result.get('card'):
+                card = result['card']
+                rarity_emoji = {
+                    'common': '⚪',
+                    'rare': '🔵',
+                    'epic': '🟣',
+                    'legendary': '🟡'
+                }.get(card.get('rarity', 'common'), '⚪')
+                embed.add_field(
+                    name=f"🎴 Daily Card",
+                    value=f"{rarity_emoji} **{card.get('name', 'Unknown')}** ({card.get('rarity', 'common').title()})",
+                    inline=False
+                )
+
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(
@@ -2105,6 +2121,24 @@ class MenuSystemCog(commands.Cog):
             ),
             color=discord.Color.blue()
         )
+
+        # Add server owner revenue sharing info
+        if interaction.guild and interaction.user.id == interaction.guild.owner_id:
+            embed.add_field(
+                name="💰 Server Owner Revenue Sharing (FREE BOT!)",
+                value=(
+                    "**Earn 10-30% of all transactions** in your server!\n\n"
+                    "📍 **To Set Up:**\n"
+                    "1. Join the Music Legends support server\n"
+                    "2. Create a ticket in #tickets\n"
+                    "3. Provide your server ID and Discord username\n"
+                    "4. Complete Stripe Connect verification\n"
+                    "5. Start earning weekly payouts ($25 minimum)!\n\n"
+                    "🎨 **NFT Bonus:** +10% per NFT (up to 30% total)"
+                ),
+                inline=False
+            )
+
         embed.set_footer(text="User Hub • Available to everyone")
         
         # Delete old hub message if exists

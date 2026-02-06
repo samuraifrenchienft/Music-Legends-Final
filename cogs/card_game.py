@@ -554,28 +554,51 @@ class CardGameCog(Cog):
             if owner:
                 embed = discord.Embed(
                     title="🎵 Music Legends Bot Added!",
-                    description="Thanks for adding Music Legends to your server!",
+                    description=(
+                        f"Thanks for adding Music Legends to **{guild.name}**!\n\n"
+                        f"**Your Server ID:** `{guild.id}`"
+                    ),
                     color=discord.Color.blue()
                 )
-                
+
+                # REVENUE SHARING INFO (PRIMARY)
+                embed.add_field(
+                    name="💰 Server Revenue Sharing - FREE BOT!",
+                    value=(
+                        "**Earn 10-30% of ALL transactions in your server!**\n\n"
+                        "📍 **Setup Process (Required for Payouts):**\n"
+                        "1. Join Music Legends support server: [Support Server Link]\n"
+                        "2. Create a ticket in #tickets channel\n"
+                        "3. Provide this info:\n"
+                        f"   • Server ID: `{guild.id}`\n"
+                        f"   • Server Name: `{guild.name}`\n"
+                        "   • Your Discord username\n"
+                        "   • (Optional) NFT wallet for bonus share\n"
+                        "4. Complete Stripe Connect verification\n"
+                        "5. Start earning weekly payouts!\n\n"
+                        "💵 **Revenue Share:**\n"
+                        "• Base: **10%** of all transactions\n"
+                        "• +1 NFT: **20%** total (+10% boost)\n"
+                        "• +2 NFTs: **30%** MAX (+20% boost)\n\n"
+                        "💳 **Payout Info:**\n"
+                        "• Weekly payouts via Stripe\n"
+                        "• $25 minimum threshold\n"
+                        "• PayPal support coming soon!"
+                    ),
+                    inline=False
+                )
+
                 embed.add_field(
                     name="🚀 Getting Started",
-                    value="• `/claimpack` - Get your first free pack\n"
-                          "• `/battle` - Challenge friends to card battles\n"
-                          "• `/help` - See all available commands",
+                    value="• Run `/setup_user_hub` in your main channel\n"
+                          "• Players use `/claimpack` for free starter packs\n"
+                          "• Use `/help` to see all commands",
                     inline=False
                 )
-                
-                embed.add_field(
-                    name="💎 Premium Features",
-                    value="• Custom pack creation\n"
-                          "• Creator economy\n"
-                          "• Advanced analytics\n"
-                          "Use `/premium_subscribe` to upgrade",
-                    inline=False
+
+                embed.set_footer(
+                    text=f"Server ID: {guild.id} | Keep this ID for revenue setup ticket!"
                 )
-                
-                embed.set_footer(text="Type /help to see all commands!")
                 await owner.send(embed=embed)
         except:
             pass  # Owner might have DMs disabled
