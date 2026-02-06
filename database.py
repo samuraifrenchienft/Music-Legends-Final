@@ -1348,6 +1348,143 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_date ON user_quests(quest_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_card_generation_lookup ON card_generation_log(hero_artist, hero_song)")
 
+            # ── Schema migrations for pre-existing tables ──
+            # ADD COLUMN IF NOT EXISTS ensures tables created with old schemas get updated
+            print("🔄 [DATABASE] Running schema migrations for existing tables...")
+
+            # creator_packs — may have been created without these columns
+            for col_def in [
+                "name TEXT DEFAULT ''",
+                "description TEXT",
+                "pack_type TEXT DEFAULT 'creator'",
+                "pack_size INTEGER DEFAULT 10",
+                "status TEXT DEFAULT 'DRAFT'",
+                "published_at TIMESTAMP",
+                "stripe_payment_id TEXT",
+                "price_cents INTEGER DEFAULT 500",
+                "total_purchases INTEGER DEFAULT 0",
+                "cards_data TEXT",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # cards — may be missing newer columns
+            for col_def in [
+                "type TEXT DEFAULT 'artist'",
+                "name TEXT DEFAULT ''",
+                "artist_name TEXT",
+                "title TEXT",
+                "image_url TEXT",
+                "youtube_url TEXT",
+                "rarity TEXT DEFAULT 'Common'",
+                "tier TEXT",
+                "variant TEXT DEFAULT 'Classic'",
+                "era TEXT",
+                "impact INTEGER",
+                "skill INTEGER",
+                "longevity INTEGER",
+                "culture INTEGER",
+                "hype INTEGER",
+                "serial_number TEXT",
+                "print_number INTEGER DEFAULT 1",
+                "quality TEXT DEFAULT 'standard'",
+                "effect_type TEXT",
+                "effect_value TEXT",
+                "pack_id TEXT",
+                "created_by_user_id BIGINT",
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE cards ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # user_inventory — may be missing economy columns
+            for col_def in [
+                "gold INTEGER DEFAULT 500",
+                "dust INTEGER DEFAULT 0",
+                "tickets INTEGER DEFAULT 0",
+                "gems INTEGER DEFAULT 0",
+                "xp INTEGER DEFAULT 0",
+                "level INTEGER DEFAULT 1",
+                "daily_streak INTEGER DEFAULT 0",
+                "last_daily TEXT",
+                "last_daily_claim TEXT",
+                "premium_expires TEXT",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE user_inventory ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # user_cards — may be missing columns
+            for col_def in [
+                "acquired_from TEXT",
+                "is_favorite BOOLEAN DEFAULT FALSE",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # users — may be missing columns
+            for col_def in [
+                "username TEXT",
+                "discord_tag TEXT",
+                "total_battles INTEGER DEFAULT 0",
+                "wins INTEGER DEFAULT 0",
+                "losses INTEGER DEFAULT 0",
+                "packs_opened INTEGER DEFAULT 0",
+                "victory_tokens INTEGER DEFAULT 0",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # battle_history — may be missing columns
+            for col_def in [
+                "wager_tier TEXT DEFAULT 'casual'",
+                "wager_amount INTEGER DEFAULT 50",
+                "player1_gold_reward INTEGER",
+                "player2_gold_reward INTEGER",
+                "player1_xp_reward INTEGER",
+                "player2_xp_reward INTEGER",
+                "player1_critical BOOLEAN DEFAULT FALSE",
+                "player2_critical BOOLEAN DEFAULT FALSE",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE battle_history ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # trades — may be missing columns
+            for col_def in [
+                "dust_from_initiator INTEGER DEFAULT 0",
+                "dust_from_receiver INTEGER DEFAULT 0",
+                "expired_at TIMESTAMP",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE trades ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # audit_log — used by founder_packs_v2
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id SERIAL PRIMARY KEY,
+                    event TEXT,
+                    user_id TEXT,
+                    pack_type TEXT,
+                    cards TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            print("✅ [DATABASE] Schema migrations complete")
+
             conn.commit()
             print("✅ [DATABASE] All PostgreSQL tables created successfully")
         except Exception as e:
