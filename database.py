@@ -2167,6 +2167,232 @@ class DatabaseManager:
             print(f"Error getting available cosmetics: {e}")
             return []
     
+    # ===== TRADE SYSTEM METHODS =====
+
+    def get_trade(self, trade_id: str) -> Optional[Dict]:
+        """Get trade by ID"""
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT * FROM trades WHERE trade_id = {ph}",
+                (trade_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                columns = [desc[0] for desc in cursor.description]
+                return dict(zip(columns, row))
+            return None
+        finally:
+            conn.close()
+
+    def remove_card_from_collection(self, user_id: int, card_id: str) -> bool:
+        """Remove card from user's collection (for trades)"""
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph}",
+                (user_id, card_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error removing card from collection: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def complete_trade(self, trade_id: str) -> bool:
+        """
+        Complete a trade by transferring cards and gold between users.
+        This is an ATOMIC operation - either all transfers succeed or none do.
+        """
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+
+        try:
+            cursor = conn.cursor()
+
+            # Get trade details
+            cursor.execute(
+                f"SELECT * FROM trades WHERE trade_id = {ph}",
+                (trade_id,)
+            )
+            trade_row = cursor.fetchone()
+
+            if not trade_row:
+                print(f"Trade {trade_id} not found")
+                return False
+
+            # Parse trade data
+            columns = [desc[0] for desc in cursor.description]
+            trade = dict(zip(columns, trade_row))
+
+            # Verify trade is pending
+            if trade['status'] != 'pending':
+                print(f"Trade {trade_id} is not pending (status: {trade['status']})")
+                return False
+
+            # Parse card lists from JSON
+            initiator_cards = json.loads(trade['initiator_cards']) if trade['initiator_cards'] else []
+            receiver_cards = json.loads(trade['receiver_cards']) if trade['receiver_cards'] else []
+
+            print(f"🔄 [TRADE] Executing trade {trade_id}")
+            print(f"   Initiator ({trade['initiator_user_id']}) → Receiver ({trade['receiver_user_id']})")
+            print(f"   Cards from initiator: {len(initiator_cards)}")
+            print(f"   Cards from receiver: {len(receiver_cards)}")
+            print(f"   Gold from initiator: {trade['gold_from_initiator']}")
+            print(f"   Gold from receiver: {trade['gold_from_receiver']}")
+
+            # ---- ATOMIC SWAP ----
+
+            # 1. Transfer cards from initiator to receiver
+            for card_id in initiator_cards:
+                # Remove from initiator
+                cursor.execute(
+                    f"DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph}",
+                    (trade['initiator_user_id'], card_id)
+                )
+                # Add to receiver
+                cursor.execute(
+                    f"""INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from, acquired_at)
+                        VALUES ({ph}, {ph}, 'trade', CURRENT_TIMESTAMP)""",
+                    (trade['receiver_user_id'], card_id)
+                )
+                print(f"   ✓ Card {card_id} → User {trade['receiver_user_id']}")
+
+            # 2. Transfer cards from receiver to initiator
+            for card_id in receiver_cards:
+                # Remove from receiver
+                cursor.execute(
+                    f"DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph}",
+                    (trade['receiver_user_id'], card_id)
+                )
+                # Add to initiator
+                cursor.execute(
+                    f"""INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from, acquired_at)
+                        VALUES ({ph}, {ph}, 'trade', CURRENT_TIMESTAMP)""",
+                    (trade['initiator_user_id'], card_id)
+                )
+                print(f"   ✓ Card {card_id} → User {trade['initiator_user_id']}")
+
+            # 3. Transfer gold from initiator to receiver
+            if trade['gold_from_initiator'] > 0:
+                # Deduct from initiator
+                cursor.execute(
+                    f"""UPDATE user_inventory
+                        SET gold = COALESCE(gold, 0) - {ph}
+                        WHERE user_id = {ph}""",
+                    (trade['gold_from_initiator'], trade['initiator_user_id'])
+                )
+                # Add to receiver
+                cursor.execute(
+                    f"""INSERT INTO user_inventory (user_id, gold)
+                        VALUES ({ph}, {ph})
+                        ON CONFLICT(user_id) DO UPDATE SET gold = COALESCE(gold, 0) + {ph}""",
+                    (trade['receiver_user_id'], trade['gold_from_initiator'], trade['gold_from_initiator'])
+                )
+                print(f"   ✓ {trade['gold_from_initiator']} gold → User {trade['receiver_user_id']}")
+
+            # 4. Transfer gold from receiver to initiator
+            if trade['gold_from_receiver'] > 0:
+                # Deduct from receiver
+                cursor.execute(
+                    f"""UPDATE user_inventory
+                        SET gold = COALESCE(gold, 0) - {ph}
+                        WHERE user_id = {ph}""",
+                    (trade['gold_from_receiver'], trade['receiver_user_id'])
+                )
+                # Add to initiator
+                cursor.execute(
+                    f"""INSERT INTO user_inventory (user_id, gold)
+                        VALUES ({ph}, {ph})
+                        ON CONFLICT(user_id) DO UPDATE SET gold = COALESCE(gold, 0) + {ph}""",
+                    (trade['initiator_user_id'], trade['gold_from_receiver'], trade['gold_from_receiver'])
+                )
+                print(f"   ✓ {trade['gold_from_receiver']} gold → User {trade['initiator_user_id']}")
+
+            # 5. Update trade status to completed
+            cursor.execute(
+                f"""UPDATE trades
+                    SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+                    WHERE trade_id = {ph}""",
+                (trade_id,)
+            )
+
+            # 6. Insert into trade_history for permanent record
+            cursor.execute(
+                f"""INSERT INTO trade_history
+                    (trade_id, initiator_user_id, receiver_user_id, initiator_cards, receiver_cards,
+                     gold_from_initiator, gold_from_receiver, trade_date)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, CURRENT_TIMESTAMP)""",
+                (trade_id, trade['initiator_user_id'], trade['receiver_user_id'],
+                 trade['initiator_cards'], trade['receiver_cards'],
+                 trade['gold_from_initiator'], trade['gold_from_receiver'])
+            )
+
+            # Commit all changes atomically
+            conn.commit()
+
+            print(f"✅ [TRADE] Trade {trade_id} completed successfully!")
+            return True
+
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ [TRADE] Error completing trade {trade_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            conn.close()
+
+    def cancel_trade(self, trade_id: str, reason: str = "cancelled") -> bool:
+        """Cancel a pending trade"""
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""UPDATE trades
+                    SET status = 'cancelled', expired_at = CURRENT_TIMESTAMP
+                    WHERE trade_id = {ph} AND status = 'pending'""",
+                (trade_id,)
+            )
+            conn.commit()
+            if cursor.rowcount > 0:
+                print(f"🚫 [TRADE] Trade {trade_id} cancelled: {reason}")
+                return True
+            return False
+        except Exception as e:
+            print(f"Error cancelling trade: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def expire_old_trades(self) -> int:
+        """Expire all pending trades that are past their expiration time"""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE trades
+                SET status = 'expired', expired_at = CURRENT_TIMESTAMP
+                WHERE status = 'pending' AND created_at < datetime('now', '-5 minutes')
+            """)
+            conn.commit()
+            count = cursor.rowcount
+            if count > 0:
+                print(f"⏰ [TRADE] Expired {count} old trades")
+            return count
+        except Exception as e:
+            print(f"Error expiring trades: {e}")
+            return 0
+        finally:
+            conn.close()
+
     def close(self):
         """Close database connection"""
         pass  # SQLite connections are closed automatically
