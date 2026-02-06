@@ -30,10 +30,8 @@ class DatabaseManager:
     
     def init_database(self):
         """Initialize all database tables"""
-        # For PostgreSQL, tables are managed by seed_packs.py and migrations
-        # Only run full init for SQLite
         if self._database_url:
-            print("✅ [DATABASE] Using PostgreSQL - skipping SQLite table creation")
+            self._init_postgresql()
             return
 
         with sqlite3.connect(self.db_path) as conn:
@@ -705,10 +703,574 @@ class DatabaseManager:
             
             conn.commit()
     
+    def _init_postgresql(self):
+        """Initialize all tables in PostgreSQL."""
+        print("🗄️ [DATABASE] Creating PostgreSQL tables...")
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # -- Core tables --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    discord_tag TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    total_battles INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
+                    packs_opened INTEGER DEFAULT 0,
+                    victory_tokens INTEGER DEFAULT 0
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS creator_packs (
+                    pack_id TEXT PRIMARY KEY,
+                    creator_id BIGINT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    pack_type TEXT DEFAULT 'creator',
+                    pack_size INTEGER DEFAULT 10,
+                    status TEXT DEFAULT 'DRAFT',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    published_at TIMESTAMP,
+                    stripe_payment_id TEXT,
+                    price_cents INTEGER DEFAULT 500,
+                    total_purchases INTEGER DEFAULT 0,
+                    cards_data TEXT
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cards (
+                    card_id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL DEFAULT 'artist',
+                    name TEXT NOT NULL,
+                    artist_name TEXT,
+                    title TEXT,
+                    image_url TEXT,
+                    youtube_url TEXT,
+                    rarity TEXT NOT NULL,
+                    tier TEXT,
+                    variant TEXT DEFAULT 'Classic',
+                    era TEXT,
+                    impact INTEGER,
+                    skill INTEGER,
+                    longevity INTEGER,
+                    culture INTEGER,
+                    hype INTEGER,
+                    serial_number TEXT,
+                    print_number INTEGER DEFAULT 1,
+                    quality TEXT DEFAULT 'standard',
+                    effect_type TEXT,
+                    effect_value TEXT,
+                    pack_id TEXT,
+                    created_by_user_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_cards (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    card_id TEXT,
+                    acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    acquired_from TEXT,
+                    is_favorite BOOLEAN DEFAULT FALSE,
+                    UNIQUE(user_id, card_id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_inventory (
+                    user_id BIGINT PRIMARY KEY,
+                    gold INTEGER DEFAULT 500,
+                    dust INTEGER DEFAULT 0,
+                    tickets INTEGER DEFAULT 0,
+                    gems INTEGER DEFAULT 0,
+                    xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 1,
+                    daily_streak INTEGER DEFAULT 0,
+                    last_daily TEXT,
+                    last_daily_claim TEXT,
+                    premium_expires TEXT
+                )
+            """)
+
+            # -- Battle system --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS battle_history (
+                    battle_id TEXT PRIMARY KEY,
+                    player1_id BIGINT,
+                    player2_id BIGINT,
+                    player1_card_id TEXT,
+                    player2_card_id TEXT,
+                    winner INTEGER,
+                    player1_power INTEGER,
+                    player2_power INTEGER,
+                    player1_critical BOOLEAN DEFAULT FALSE,
+                    player2_critical BOOLEAN DEFAULT FALSE,
+                    wager_tier TEXT DEFAULT 'casual',
+                    wager_amount INTEGER DEFAULT 50,
+                    player1_gold_reward INTEGER,
+                    player2_gold_reward INTEGER,
+                    player1_xp_reward INTEGER,
+                    player2_xp_reward INTEGER,
+                    battle_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_battle_stats (
+                    user_id BIGINT PRIMARY KEY,
+                    total_battles INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
+                    ties INTEGER DEFAULT 0,
+                    total_gold_won INTEGER DEFAULT 0,
+                    total_gold_lost INTEGER DEFAULT 0,
+                    total_xp_earned INTEGER DEFAULT 0,
+                    current_win_streak INTEGER DEFAULT 0,
+                    best_win_streak INTEGER DEFAULT 0,
+                    last_battle_date TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS matches (
+                    match_id TEXT PRIMARY KEY,
+                    player_a_id BIGINT,
+                    player_b_id BIGINT,
+                    winner_id BIGINT,
+                    final_score_a INTEGER,
+                    final_score_b INTEGER,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    match_type TEXT DEFAULT 'casual'
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS match_rounds (
+                    id SERIAL PRIMARY KEY,
+                    match_id TEXT,
+                    round_number INTEGER,
+                    player_a_card_id TEXT,
+                    player_b_card_id TEXT,
+                    category TEXT,
+                    winner TEXT,
+                    player_a_power INTEGER,
+                    player_b_power INTEGER,
+                    player_a_hype_bonus INTEGER,
+                    player_b_hype_bonus INTEGER,
+                    tiebreak_method TEXT
+                )
+            """)
+
+            # -- Battle pass --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS battle_pass_progress (
+                    user_id BIGINT PRIMARY KEY,
+                    battle_pass_xp INTEGER DEFAULT 0,
+                    current_tier INTEGER DEFAULT 1,
+                    has_premium INTEGER DEFAULT 0,
+                    claimed_free_tiers TEXT DEFAULT '[]',
+                    claimed_premium_tiers TEXT DEFAULT '[]',
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS season_progress (
+                    user_id BIGINT PRIMARY KEY,
+                    claimed_tiers TEXT DEFAULT '[]',
+                    quest_progress TEXT DEFAULT '{}',
+                    last_quest_reset TEXT
+                )
+            """)
+
+            # -- Economy / marketplace --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pack_purchases (
+                    purchase_id TEXT PRIMARY KEY,
+                    pack_id TEXT,
+                    buyer_id BIGINT,
+                    purchase_amount_cents INTEGER,
+                    platform_revenue_cents INTEGER,
+                    creator_revenue_cents INTEGER,
+                    stripe_payment_id TEXT,
+                    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    cards_received TEXT
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pack_openings (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    pack_type TEXT,
+                    cards_received TEXT,
+                    opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    cost_tokens INTEGER DEFAULT 0
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace (
+                    id SERIAL PRIMARY KEY,
+                    pack_id TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    stock TEXT DEFAULT 'unlimited'
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS market_listings (
+                    listing_id TEXT PRIMARY KEY,
+                    seller_user_id BIGINT,
+                    card_id TEXT,
+                    asking_gold INTEGER,
+                    asking_dust INTEGER,
+                    status TEXT DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    buyer_user_id BIGINT,
+                    sold_at TIMESTAMP
+                )
+            """)
+
+            # -- Trading --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    trade_id TEXT PRIMARY KEY,
+                    initiator_user_id BIGINT,
+                    receiver_user_id BIGINT,
+                    initiator_cards TEXT,
+                    receiver_cards TEXT,
+                    gold_from_initiator INTEGER DEFAULT 0,
+                    gold_from_receiver INTEGER DEFAULT 0,
+                    dust_from_initiator INTEGER DEFAULT 0,
+                    dust_from_receiver INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    expired_at TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trade_history (
+                    trade_id TEXT PRIMARY KEY,
+                    initiator_user_id BIGINT,
+                    receiver_user_id BIGINT,
+                    initiator_cards TEXT,
+                    receiver_cards TEXT,
+                    gold_from_initiator INTEGER DEFAULT 0,
+                    gold_from_receiver INTEGER DEFAULT 0,
+                    dust_from_initiator INTEGER DEFAULT 0,
+                    dust_from_receiver INTEGER DEFAULT 0,
+                    trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # -- Revenue / creator --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS creator_revenue (
+                    id SERIAL PRIMARY KEY,
+                    creator_id BIGINT,
+                    pack_id TEXT,
+                    purchase_id TEXT,
+                    revenue_type TEXT,
+                    gross_amount_cents INTEGER,
+                    net_amount_cents INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS revenue_ledger (
+                    ledger_id SERIAL PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    pack_id TEXT,
+                    creator_user_id BIGINT,
+                    buyer_user_id BIGINT,
+                    amount_gross_cents INTEGER,
+                    platform_amount_cents INTEGER,
+                    creator_amount_cents INTEGER,
+                    currency TEXT DEFAULT 'USD',
+                    status TEXT DEFAULT 'pending',
+                    stripe_payment_intent_id TEXT,
+                    stripe_transfer_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS creator_balances (
+                    creator_user_id BIGINT PRIMARY KEY,
+                    available_balance_cents INTEGER DEFAULT 0,
+                    pending_balance_cents INTEGER DEFAULT 0,
+                    lifetime_earned_cents INTEGER DEFAULT 0,
+                    last_payout_requested TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS creator_stripe_accounts (
+                    creator_user_id BIGINT PRIMARY KEY,
+                    stripe_account_id TEXT,
+                    stripe_account_status TEXT DEFAULT 'pending',
+                    onboarding_completed TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS creator_pack_limits (
+                    creator_id BIGINT PRIMARY KEY,
+                    current_live_pack_id TEXT,
+                    last_pack_published TIMESTAMP,
+                    packs_published INTEGER DEFAULT 0
+                )
+            """)
+
+            # -- Server / analytics --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS servers (
+                    server_id BIGINT PRIMARY KEY,
+                    server_name TEXT,
+                    server_owner_id BIGINT,
+                    subscription_tier TEXT DEFAULT 'free',
+                    subscription_status TEXT DEFAULT 'active',
+                    subscription_id TEXT,
+                    subscription_started TIMESTAMP,
+                    subscription_ends TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS server_usage (
+                    usage_id SERIAL PRIMARY KEY,
+                    server_id BIGINT,
+                    metric_type TEXT,
+                    metric_value INTEGER,
+                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS server_activity (
+                    id SERIAL PRIMARY KEY,
+                    server_id BIGINT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    activity_type TEXT DEFAULT 'message'
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS server_drop_cooldowns (
+                    server_id BIGINT PRIMARY KEY,
+                    last_drop_time TIMESTAMP,
+                    activity_level INTEGER DEFAULT 1,
+                    drop_count_today INTEGER DEFAULT 0,
+                    last_activity_update TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_daily_stats (
+                    stat_id SERIAL PRIMARY KEY,
+                    date DATE NOT NULL UNIQUE,
+                    packs_added INTEGER DEFAULT 0,
+                    packs_sold INTEGER DEFAULT 0,
+                    total_revenue_cents INTEGER DEFAULT 0,
+                    new_creators INTEGER DEFAULT 0,
+                    top_pack_id TEXT,
+                    top_pack_sales INTEGER DEFAULT 0,
+                    top_creator_id BIGINT,
+                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # -- Quests --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_quests (
+                    quest_id TEXT PRIMARY KEY,
+                    user_id BIGINT,
+                    quest_type TEXT,
+                    progress INTEGER DEFAULT 0,
+                    requirement INTEGER DEFAULT 1,
+                    completed BOOLEAN DEFAULT FALSE,
+                    gold_reward INTEGER DEFAULT 0,
+                    xp_reward INTEGER DEFAULT 0,
+                    quest_date DATE DEFAULT CURRENT_DATE,
+                    completed_at TIMESTAMP
+                )
+            """)
+
+            # -- Cosmetics --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_cosmetics (
+                    user_id TEXT NOT NULL,
+                    cosmetic_id TEXT NOT NULL,
+                    cosmetic_type TEXT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    source TEXT,
+                    PRIMARY KEY (user_id, cosmetic_id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cosmetics_catalog (
+                    cosmetic_id TEXT PRIMARY KEY,
+                    cosmetic_type TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    rarity TEXT,
+                    unlock_method TEXT,
+                    price_gold INTEGER,
+                    price_tickets INTEGER,
+                    image_url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_cosmetics (
+                    user_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    frame_style TEXT,
+                    foil_effect TEXT,
+                    badge_override TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, card_id)
+                )
+            """)
+
+            # -- Relational schema --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS youtube_videos (
+                    video_id VARCHAR PRIMARY KEY,
+                    title VARCHAR,
+                    thumbnail_url VARCHAR,
+                    view_count INTEGER DEFAULT 0,
+                    like_count INTEGER DEFAULT 0,
+                    channel_title VARCHAR,
+                    channel_id VARCHAR,
+                    fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_definitions (
+                    card_def_id SERIAL PRIMARY KEY,
+                    source_video_id VARCHAR,
+                    card_name VARCHAR NOT NULL,
+                    rarity VARCHAR DEFAULT 'Common',
+                    power INTEGER DEFAULT 50,
+                    attributes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_instances (
+                    instance_id SERIAL PRIMARY KEY,
+                    card_def_id INTEGER,
+                    owner_user_id VARCHAR,
+                    serial_number VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS packs (
+                    pack_id SERIAL PRIMARY KEY,
+                    creator_id VARCHAR,
+                    main_hero_instance_id INTEGER,
+                    pack_type VARCHAR DEFAULT 'gold',
+                    status VARCHAR DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pack_contents (
+                    pack_id INTEGER,
+                    instance_id INTEGER,
+                    position INTEGER,
+                    PRIMARY KEY (pack_id, instance_id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_items (
+                    item_id SERIAL PRIMARY KEY,
+                    pack_id INTEGER,
+                    price DECIMAL(10,2) DEFAULT 9.99,
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    stock VARCHAR DEFAULT 'unlimited'
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS transactions (
+                    tx_id SERIAL PRIMARY KEY,
+                    item_id INTEGER,
+                    buyer_id VARCHAR,
+                    seller_id VARCHAR,
+                    tx_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    price DECIMAL(10,2)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_generation_log (
+                    id SERIAL PRIMARY KEY,
+                    hero_artist TEXT NOT NULL,
+                    hero_song TEXT NOT NULL,
+                    generated_youtube_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # -- Indexes --
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_server_activity_lookup ON server_activity(server_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_card_instances_owner ON card_instances(owner_user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_pack_contents_pack ON pack_contents(pack_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_marketplace_active ON marketplace_items(is_active)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_buyer ON transactions(buyer_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_inventory_gold ON user_inventory(gold)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_players ON battle_history(player1_id, player2_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_date ON battle_history(battle_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_user ON user_quests(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_date ON user_quests(quest_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_card_generation_lookup ON card_generation_log(hero_artist, hero_song)")
+
+            conn.commit()
+            print("✅ [DATABASE] All PostgreSQL tables created successfully")
+        except Exception as e:
+            print(f"❌ [DATABASE] PostgreSQL table creation error: {e}")
+            import traceback
+            traceback.print_exc()
+            conn.rollback()
+        finally:
+            conn.close()
+
     def check_database_integrity(self) -> Dict[str, any]:
         """
         Check database integrity and validate critical data
-        
+
         Returns:
             Dict with integrity check results
         """
@@ -719,11 +1281,45 @@ class DatabaseManager:
             "tables_checked": 0,
             "json_validated": 0
         }
-        
+
         try:
+            # PostgreSQL integrity check
+            if self._database_url:
+                conn = self._get_connection()
+                try:
+                    cursor = conn.cursor()
+                    critical_tables = ['users', 'cards', 'creator_packs', 'user_cards']
+                    for table in critical_tables:
+                        results["tables_checked"] += 1
+                        cursor.execute("""
+                            SELECT EXISTS (
+                                SELECT FROM information_schema.tables
+                                WHERE table_name = %s
+                            )
+                        """, (table,))
+                        if not cursor.fetchone()[0]:
+                            results["valid"] = False
+                            results["errors"].append(f"Critical table missing: {table}")
+
+                    # Validate JSON in creator_packs if table exists
+                    if results["valid"]:
+                        cursor.execute("SELECT pack_id, cards_data FROM creator_packs WHERE cards_data IS NOT NULL")
+                        for pack_id, cards_data_json in cursor.fetchall():
+                            try:
+                                cards = json.loads(cards_data_json)
+                                if isinstance(cards, list):
+                                    results["json_validated"] += 1
+                            except json.JSONDecodeError as e:
+                                results["valid"] = False
+                                results["errors"].append(f"Pack {pack_id}: Invalid JSON - {e}")
+                finally:
+                    conn.close()
+                return results
+
+            # SQLite integrity check
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Check database file integrity
                 cursor.execute("PRAGMA integrity_check")
                 integrity_result = cursor.fetchone()
@@ -731,11 +1327,11 @@ class DatabaseManager:
                     results["valid"] = False
                     results["errors"].append(f"Database integrity check failed: {integrity_result[0]}")
                     return results
-                
+
                 # Check critical tables exist
                 critical_tables = ['users', 'cards', 'creator_packs', 'user_cards']
                 cursor.execute("""
-                    SELECT name FROM sqlite_master 
+                    SELECT name FROM sqlite_master
                     WHERE type='table' AND name IN (?, ?, ?, ?)
                 """, critical_tables)
                 existing_tables = {row[0] for row in cursor.fetchall()}
@@ -785,14 +1381,16 @@ class DatabaseManager:
             # Try to get existing user
             cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
             user = cursor.fetchone()
-            
+
             if user:
+                # Get columns before UPDATE (which clears cursor.description)
+                columns = [desc[0] for desc in cursor.description]
+
                 # Update last active
                 cursor.execute(
                     "UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE user_id = ?",
                     (user_id,)
                 )
-                columns = [desc[0] for desc in cursor.description]
                 return dict(zip(columns, user))
             else:
                 # Create new user
@@ -1769,11 +2367,12 @@ class DatabaseManager:
             return False
     
     def claim_daily_reward(self, user_id: int) -> Dict:
-        """Process daily reward claim"""
+        """Process daily reward claim - NOW WITH FREE CARD!"""
         from datetime import datetime, timedelta
-        
+        import random
+
         economy = self.get_user_economy(user_id)
-        
+
         # Check if can claim
         if economy['last_daily_claim']:
             last_claim = datetime.fromisoformat(economy['last_daily_claim'])
@@ -1784,7 +2383,7 @@ class DatabaseManager:
                     "error": "Already claimed today",
                     "time_until": timedelta(hours=24) - time_since
                 }
-        
+
         # Calculate streak
         if economy['last_daily_claim']:
             time_since_claim = datetime.now() - last_claim
@@ -1794,26 +2393,39 @@ class DatabaseManager:
                 new_streak = 1
         else:
             new_streak = 1
-        
+
         # Calculate rewards
         base_gold = 100
         bonus_gold = 0
         tickets = 0
-        
+
         streak_bonuses = {
             3: {"gold": 50, "tickets": 0},
             7: {"gold": 200, "tickets": 1},
             14: {"gold": 500, "tickets": 2},
             30: {"gold": 1000, "tickets": 5},
         }
-        
+
         if new_streak in streak_bonuses:
             bonus = streak_bonuses[new_streak]
             bonus_gold = bonus["gold"]
             tickets = bonus["tickets"]
-        
+
         total_gold = base_gold + bonus_gold
-        
+
+        # === NEW: DAILY FREE CARD ===
+        # Rarity weights: 70% common, 25% rare, 5% epic
+        daily_card = self._get_random_daily_card()
+
+        if daily_card:
+            # Add card to user's collection
+            self.add_card_to_collection(
+                user_id=user_id,
+                card_id=daily_card['card_id'],
+                acquired_from='daily_claim'
+            )
+            print(f"[DAILY] User {user_id} received {daily_card['rarity']} card: {daily_card['name']}")
+
         # Update economy - uses user_inventory table
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -1824,15 +2436,70 @@ class DatabaseManager:
                 WHERE user_id = ?
             """, (total_gold, tickets, new_streak, user_id))
             conn.commit()
-        
+
         return {
             "success": True,
             "gold": total_gold,
             "base_gold": base_gold,
             "bonus_gold": bonus_gold,
             "tickets": tickets,
-            "streak": new_streak
+            "streak": new_streak,
+            "card": daily_card  # NEW: Include card in response
         }
+
+    def _get_random_daily_card(self) -> Optional[Dict]:
+        """
+        Get a random card for daily claim using rarity-weighted selection.
+
+        Rarity Distribution:
+        - 70% Common (most frequent, encourages trading)
+        - 25% Rare (nice bonus)
+        - 5% Epic (exciting when you get it)
+        - 0% Legendary (too valuable for free daily)
+
+        Returns random card or None if no cards available.
+        """
+        import random
+
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Determine rarity based on weighted random
+            rand = random.random()
+            if rand < 0.70:
+                rarity = 'common'
+            elif rand < 0.95:
+                rarity = 'rare'
+            else:
+                rarity = 'epic'
+
+            # Get all cards of this rarity
+            cursor.execute(
+                "SELECT * FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1",
+                (rarity,)
+            )
+            row = cursor.fetchone()
+
+            if row:
+                columns = [desc[0] for desc in cursor.description]
+                card = dict(zip(columns, row))
+                return card
+
+            # Fallback: get any card if specific rarity not found
+            cursor.execute("SELECT * FROM cards ORDER BY RANDOM() LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                columns = [desc[0] for desc in cursor.description]
+                return dict(zip(columns, row))
+
+            return None
+
+        except Exception as e:
+            print(f"Error getting random daily card: {e}")
+            return None
+        finally:
+            conn.close()
     
     def record_battle(self, battle_data: Dict) -> bool:
         """Record battle result and update stats"""
