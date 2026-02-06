@@ -115,7 +115,7 @@ class DatabaseSetup:
                 CREATE TABLE IF NOT EXISTS creator_packs (
                     pack_id TEXT PRIMARY KEY,
                     creator_id INTEGER,
-                    pack_name TEXT NOT NULL,
+                    name TEXT NOT NULL,
                     description TEXT,
                     pack_size INTEGER DEFAULT 5,
                     status TEXT DEFAULT 'draft',

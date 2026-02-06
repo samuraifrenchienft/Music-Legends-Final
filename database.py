@@ -1352,9 +1352,45 @@ class DatabaseManager:
             # ADD COLUMN IF NOT EXISTS ensures tables created with old schemas get updated
             print("🔄 [DATABASE] Running schema migrations for existing tables...")
 
+            # CRITICAL: Fix column name mismatch — setup_database.py created
+            # 'pack_name' but all runtime code uses 'name'
+            try:
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'creator_packs' AND column_name = 'pack_name'
+                """)
+                has_pack_name = cursor.fetchone() is not None
+
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'creator_packs' AND column_name = 'name'
+                """)
+                has_name = cursor.fetchone() is not None
+
+                if has_pack_name and has_name:
+                    # Both columns exist — copy data then drop old
+                    print("🔄 [DATABASE] Migrating pack_name -> name in creator_packs...")
+                    cursor.execute("UPDATE creator_packs SET name = pack_name WHERE name IS NULL OR name = ''")
+                    cursor.execute("ALTER TABLE creator_packs DROP COLUMN pack_name")
+                    print("✅ [DATABASE] Dropped old pack_name column")
+                elif has_pack_name and not has_name:
+                    # Only old column — rename it
+                    print("🔄 [DATABASE] Renaming pack_name -> name in creator_packs...")
+                    cursor.execute("ALTER TABLE creator_packs RENAME COLUMN pack_name TO name")
+                    print("✅ [DATABASE] Renamed pack_name to name")
+                # else: 'name' already correct, nothing to do
+            except Exception as e:
+                print(f"⚠️ [DATABASE] pack_name migration note: {e}")
+
+            # Also fix NOT NULL on name column if it was added with DEFAULT ''
+            try:
+                cursor.execute("ALTER TABLE creator_packs ALTER COLUMN name SET NOT NULL")
+            except Exception:
+                pass
+
             # creator_packs — may have been created without these columns
             for col_def in [
-                "name TEXT DEFAULT ''",
+                "name TEXT NOT NULL DEFAULT ''",
                 "description TEXT",
                 "pack_type TEXT DEFAULT 'creator'",
                 "pack_size INTEGER DEFAULT 10",
