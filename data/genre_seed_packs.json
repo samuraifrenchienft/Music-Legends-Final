@@ -4,34 +4,49 @@
         ["Flume", "Odesza", "Tycho", "Mura Masa", "Tourist"],
         ["Deadmau5", "Claude VonStroke", "Fisher", "John Summit", "Chris Lake"],
         ["ZHU", "Claptone", "Duke Dumont", "Disclosure", "Moby"],
-        ["Griz", "Pretty Lights", "Big Gigantic", "Gramatik", "Bassnectar"]
+        ["Griz", "Pretty Lights", "Big Gigantic", "Gramatik", "Bassnectar"],
+        ["Skrillex", "Calvin Harris", "Martin Garrix", "Illenium", "Porter Robinson"],
+        ["Diplo", "Avicii", "Eric Prydz", "Kaskade", "Disclosure"],
+        ["RL Grime", "Seven Lions", "Above & Beyond", "Alesso", "Tiesto"]
     ],
     "Rock Classics": [
         ["Cream", "Jimi Hendrix", "Jefferson Airplane", "The Kinks", "Creedence Clearwater Revival"],
         ["Grateful Dead", "The Allman Brothers", "Deep Purple", "Lynyrd Skynyrd", "Blue Öyster Cult"],
         ["Heart", "Styx", "Boston", "Kansas", "REO Speedwagon"],
         ["The Moody Blues", "Procol Harum", "Yes", "King Crimson", "Genesis"],
-        ["Steely Dan", "Dire Straits", "The Cars", "Talking Heads", "Foreigner"]
+        ["Steely Dan", "Dire Straits", "The Cars", "Talking Heads", "Foreigner"],
+        ["Led Zeppelin", "Pink Floyd", "The Rolling Stones", "The Who", "Queen"],
+        ["Fleetwood Mac", "Eagles", "Aerosmith", "AC/DC", "Rush"],
+        ["Yes", "Creedence Clearwater Revival", "Santana", "Boston", "Lynyrd Skynyrd"]
     ],
     "R&B Soul Pack": [
         ["Earth, Wind & Fire", "Chaka Khan", "Commodores", "The Isley Brothers", "Kool & The Gang"],
         ["Gladys Knight", "Teddy Pendergrass", "Barry White", "Dionne Warwick", "The Stylistics"],
         ["Maze featuring Frankie Beverly", "Harold Melvin & The Blue Notes", "The Dramatics", "The Chi-Lites", "The Delfonics"],
         ["Sade", "Anita Baker", "Teena Marie", "Phyllis Hyman", "Jeffrey Osborne"],
-        ["Chic", "Sister Sledge", "George Benson", "Roberta Flack", "The Spinners"]
+        ["Chic", "Sister Sledge", "George Benson", "Roberta Flack", "The Spinners"],
+        ["Stevie Wonder", "Al Green", "Aretha Franklin", "The Isley Brothers", "Smokey Robinson"],
+        ["Curtis Mayfield", "Anita Baker", "Luther Vandross", "Donny Hathaway", "The O'Jays"],
+        ["Gladys Knight", "Teddy Pendergrass", "Erykah Badu", "D'Angelo", "Bill Withers"]
     ],
     "Pop Hits 2024": [
         ["Demi Lovato", "Lauv", "Charlie Puth", "Zara Larsson", "Bebe Rexha"],
         ["Ava Max", "Lorde", "Julia Michaels", "Troye Sivan", "Alessia Cara"],
         ["Lewis Capaldi", "Years & Years", "Sigrid", "AJ Mitchell", "LANY"],
         ["James Arthur", "Dean Lewis", "Anne-Marie", "Bastille", "Ellie Goulding"],
-        ["Tove Lo", "Mabel", "George Ezra", "Lewis Capaldi", "Zedd"]
+        ["Tove Lo", "Mabel", "George Ezra", "Lewis Capaldi", "Zedd"],
+        ["Taylor Swift", "Ariana Grande", "The Weeknd", "Billie Eilish", "Sabrina Carpenter"],
+        ["Olivia Rodrigo", "Harry Styles", "Doja Cat", "Post Malone", "Halsey"],
+        ["Bebe Rexha", "Tate McRae", "RAYE", "Sam Smith", "Justin Bieber"]
     ],
     "Hip Hop Legends Vol. 1": [
         ["Ja Rule", "DMX", "Fat Joe", "Mobb Deep", "Big Pun"],
         ["Cam'ron", "Jadakiss", "Styles P", "Dipset", "The LOX"],
         ["Ice-T", "Cypress Hill", "House of Pain", "MC Eiht", "Big L"],
         ["Juvenile", "Cash Money Millionaires", "Master P", "C-Murder", "Mystikal"],
-        ["Three 6 Mafia", "Bone Thugs-n-Harmony", "Tech N9ne", "Brotha Lynch Hung", "Lil' Flip"]
+        ["Three 6 Mafia", "Bone Thugs-n-Harmony", "Tech N9ne", "Brotha Lynch Hung", "Lil' Flip"],
+        ["The Notorious B.I.G.", "2Pac", "Wu-Tang Clan", "OutKast", "A Tribe Called Quest"],
+        ["Scarface", "Ice Cube", "Snoop Dogg", "Rakim", "Public Enemy"],
+        ["Big Daddy Kane", "LL Cool J", "UGK", "Mobb Deep", "Kool G Rap"]
     ]
 }
