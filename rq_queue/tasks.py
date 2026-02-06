@@ -220,7 +220,7 @@ def _is_duplicate_job(action: str, *args) -> bool:
 def _get_trade_data(trade_id: str) -> dict:
     """Get trade data from database"""
     # This would need to be implemented based on your trade system
-    with sqlite3.connect(db.db_path) as conn:
+    with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM trades WHERE trade_id = ?", (trade_id,))
         result = cursor.fetchone()
@@ -242,13 +242,12 @@ def _process_trade_transfer(trade_data: dict) -> dict:
 
 def _update_trade_status(trade_id: str, status: str):
     """Update trade status in database"""
-    with sqlite3.connect(db.db_path) as conn:
+    with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE trades SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE trade_id = ?",
             (status, trade_id)
         )
-        conn.commit()
 
 def _increment_card_cap(artist_name: str, tier: str):
     """Increment card cap in database"""

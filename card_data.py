@@ -218,13 +218,11 @@ class CardDataManager:
     
     def get_card_by_id(self, card_id: str) -> Dict:
         """Get card data by ID"""
-        import sqlite3
-        conn = sqlite3.connect(self.db.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM cards WHERE card_id = ?", (card_id,))
-        card = cursor.fetchone()
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        conn.close()
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM cards WHERE card_id = ?", (card_id,))
+            card = cursor.fetchone()
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
 
         if card:
             return dict(zip(columns, card))
@@ -232,25 +230,21 @@ class CardDataManager:
     
     def get_all_cards(self) -> List[Dict]:
         """Get all cards from database"""
-        import sqlite3
-        conn = sqlite3.connect(self.db.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM cards ORDER BY rarity DESC, name")
-        cards = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        conn.close()
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM cards ORDER BY rarity DESC, name")
+            cards = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
 
         return [dict(zip(columns, card)) for card in cards]
     
     def get_cards_by_rarity(self, rarity: str) -> List[Dict]:
         """Get cards filtered by rarity"""
-        import sqlite3
-        conn = sqlite3.connect(self.db.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM cards WHERE rarity = ? ORDER BY name", (rarity,))
-        cards = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        conn.close()
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM cards WHERE rarity = ? ORDER BY name", (rarity,))
+            cards = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
 
         return [dict(zip(columns, card)) for card in cards]
     

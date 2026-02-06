@@ -43,7 +43,7 @@ def create_battle_pass_embed(user_id: int, db: DatabaseManager) -> discord.Embed
     bp_manager = BattlePassManager()
     
     # Get user's battle pass progress
-    with sqlite3.connect(db.db_path) as conn:
+    with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT battle_pass_xp, current_tier, has_premium, claimed_free_tiers, claimed_premium_tiers
@@ -116,7 +116,7 @@ def create_vip_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
     
     if is_vip:
         # Get subscription details
-        with sqlite3.connect(db.db_path) as conn:
+        with db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT expires_at, total_months FROM vip_subscriptions WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
@@ -264,7 +264,7 @@ def create_collection_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
 def create_stats_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
     """Create user stats embed"""
     # Get user stats
-    with sqlite3.connect(db.db_path) as conn:
+    with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = cursor.fetchone()
@@ -311,7 +311,7 @@ def create_stats_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
 
 def create_leaderboard_embed(db: DatabaseManager) -> discord.Embed:
     """Create leaderboard embed"""
-    with sqlite3.connect(db.db_path) as conn:
+    with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT user_id, username, wins FROM users 
@@ -342,7 +342,7 @@ def create_leaderboard_embed(db: DatabaseManager) -> discord.Embed:
 
 def create_bot_stats_embed(db: DatabaseManager) -> discord.Embed:
     """Create bot statistics embed for devs"""
-    with sqlite3.connect(db.db_path) as conn:
+    with db._get_connection() as conn:
         cursor = conn.cursor()
         
         cursor.execute("SELECT COUNT(*) FROM users")
@@ -1466,7 +1466,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     continue
             
             # Publish pack
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE creator_packs 
@@ -1944,7 +1944,7 @@ class GiveCurrencyModal(discord.ui.Modal, title="Give Currency"):
             target_id = int(self.user_id.value.replace('<@', '').replace('>', '').replace('!', ''))
             amt = int(self.amount.value)
             
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Ensure user exists
@@ -1986,7 +1986,7 @@ class UserLookupModal(discord.ui.Modal, title="User Lookup"):
         try:
             target_id = int(self.user_id.value.replace('<@', '').replace('>', '').replace('!', ''))
             
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("SELECT * FROM users WHERE user_id = ?", (target_id,))

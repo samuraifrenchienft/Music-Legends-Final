@@ -4,6 +4,7 @@ Duplicate Protection and Quantity Tracking System
 Handles card duplicates, quantity tracking, and dust rewards
 """
 
+import os
 import sqlite3
 from typing import Dict, Optional, Tuple
 from datetime import datetime
@@ -11,7 +12,7 @@ from datetime import datetime
 
 class DuplicateManager:
     """Manages card duplicates and quantity tracking"""
-    
+
     # Dust rewards for duplicate cards by rarity
     DUST_REWARDS = {
         'common': 10,
@@ -20,37 +21,58 @@ class DuplicateManager:
         'legendary': 100,
         'mythic': 250
     }
-    
+
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
+        self._database_url = os.getenv("DATABASE_URL")
         self._ensure_schema()
+
+    def _get_connection(self):
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        if self._database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            url = self._database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return _PgConnectionWrapper(psycopg2.connect(url))
+        else:
+            return sqlite3.connect(self.db_path)
     
     def _ensure_schema(self):
         """Ensure duplicate protection schema exists"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 # Check if quantity column exists
-                cursor.execute("PRAGMA table_info(user_cards)")
-                columns = [col[1] for col in cursor.fetchall()]
-                
+                if self._database_url:
+                    # PostgreSQL: query information_schema
+                    cursor.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'user_cards'
+                    """)
+                    columns = [col[0] for col in cursor.fetchall()]
+                else:
+                    cursor.execute("PRAGMA table_info(user_cards)")
+                    columns = [col[1] for col in cursor.fetchall()]
+
                 if 'quantity' not in columns:
                     try:
                         cursor.execute("ALTER TABLE user_cards ADD COLUMN quantity INTEGER DEFAULT 1")
-                    except sqlite3.OperationalError as e:
-                        print(f"⚠️ Could not add quantity column: {e}")
-                
+                    except Exception as e:
+                        print(f"Warning: Could not add quantity column: {e}")
+
                 if 'first_acquired_at' not in columns:
                     try:
                         cursor.execute("ALTER TABLE user_cards ADD COLUMN first_acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-                    except sqlite3.OperationalError as e:
-                        print(f"⚠️ Could not add first_acquired_at column: {e}")
-                
+                    except Exception as e:
+                        print(f"Warning: Could not add first_acquired_at column: {e}")
+
                 # Update existing records
                 try:
                     cursor.execute("UPDATE user_cards SET quantity = 1 WHERE quantity IS NULL")
-                except sqlite3.OperationalError:
+                except Exception:
                     pass
                 
                 # Create dust table
@@ -81,10 +103,10 @@ class DuplicateManager:
                 # Create index (skip if already exists)
                 try:
                     cursor.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_user_cards_lookup 
+                        CREATE INDEX IF NOT EXISTS idx_user_cards_lookup
                         ON user_cards(user_id, card_id)
                     """)
-                except sqlite3.OperationalError:
+                except Exception:
                     # Index or constraint already exists, skip
                     pass
                 
@@ -103,7 +125,7 @@ class DuplicateManager:
         Returns:
             Tuple of (is_duplicate, current_quantity)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT quantity FROM user_cards
@@ -138,7 +160,7 @@ class DuplicateManager:
         """
         is_duplicate, current_quantity = self.check_duplicate(user_id, card_id)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             if is_duplicate:
@@ -180,7 +202,7 @@ class DuplicateManager:
     
     def _add_dust(self, user_id: int, amount: int, transaction_type: str, card_id: str = None):
         """Add dust to user's account"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Create dust account if doesn't exist
@@ -208,7 +230,7 @@ class DuplicateManager:
     
     def get_user_dust(self, user_id: int) -> Dict:
         """Get user's dust balance"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT dust_amount, total_dust_earned, total_dust_spent
@@ -233,7 +255,7 @@ class DuplicateManager:
     
     def get_card_quantity(self, user_id: int, card_id: str) -> int:
         """Get quantity of a specific card user owns"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT quantity FROM user_cards
@@ -245,7 +267,7 @@ class DuplicateManager:
     
     def get_duplicate_stats(self, user_id: int) -> Dict:
         """Get user's duplicate statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Total unique cards

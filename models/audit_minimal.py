@@ -1,11 +1,30 @@
 # models/audit_minimal.py
 # Minimal audit logging model for Music Legends
 
+import os
 import uuid
 import json
 import sqlite3
 from datetime import datetime
 from typing import Optional, Dict, Any
+
+
+def _get_audit_connection():
+    """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+    database_url = os.getenv("DATABASE_URL")
+    if database_url and ("postgresql://" in database_url or "postgres://" in database_url):
+        import psycopg2
+        from database import _PgConnectionWrapper
+        url = database_url
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return _PgConnectionWrapper(psycopg2.connect(url))
+    else:
+        db_path = database_url or "music_legends.db"
+        if db_path.startswith("sqlite:///"):
+            db_path = db_path[10:]
+        return sqlite3.connect(db_path)
+
 
 class AuditLog:
     """Minimal audit logging system"""
@@ -36,12 +55,9 @@ class AuditLog:
         payload = json.dumps(payload_data) if payload_data else None
         
         # Get database connection
-        db_path = os.getenv("DATABASE_URL", "sqlite:///music_legends.db")
-        if db_path.startswith("sqlite:///"):
-            db_path = db_path[10:]
-        conn = sqlite3.connect(db_path)
+        conn = _get_audit_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Insert audit log
             cursor.execute("""
@@ -124,12 +140,9 @@ class AuditLog:
         Returns:
             list: Audit log records
         """
-        db_path = os.getenv("DATABASE_URL", "sqlite:///music_legends.db")
-        if db_path.startswith("sqlite:///"):
-            db_path = db_path[10:]
-        conn = sqlite3.connect(db_path)
+        conn = _get_audit_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute("""
                 SELECT id, event, user_id, target_id, payload, created_at
@@ -170,12 +183,9 @@ class AuditLog:
         Returns:
             list: Legendary creation records
         """
-        db_path = os.getenv("DATABASE_URL", "sqlite:///music_legends.db")
-        if db_path.startswith("sqlite:///"):
-            db_path = db_path[10:]
-        conn = sqlite3.connect(db_path)
+        conn = _get_audit_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute("""
                 SELECT id, event, user_id, target_id, payload, created_at

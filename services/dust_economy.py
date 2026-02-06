@@ -4,6 +4,7 @@ Hybrid Dust Economy System
 Supports crafting, pack purchase, stat boosting, and cosmetics
 """
 
+import os
 import sqlite3
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime
@@ -12,7 +13,7 @@ import random
 
 class DustEconomy:
     """Manages dust economy - crafting, boosting, packs, cosmetics"""
-    
+
     # Dust earning rates (from duplicates)
     DUST_REWARDS = {
         'common': 10,
@@ -21,7 +22,7 @@ class DustEconomy:
         'legendary': 100,
         'mythic': 250
     }
-    
+
     # Card crafting costs
     CRAFT_COSTS = {
         'common': 50,
@@ -30,14 +31,14 @@ class DustEconomy:
         'legendary': 500,
         'mythic': 1000
     }
-    
+
     # Pack purchase costs
     PACK_COSTS = {
         'community': 500,
         'gold': 1000,
         'premium': 2000
     }
-    
+
     # Stat boosting costs
     BOOST_COSTS = {
         'small': 100,   # +5 to one stat
@@ -45,7 +46,7 @@ class DustEconomy:
         'large': 500,   # +15 to one stat
         'reroll': 150   # Reroll all stats
     }
-    
+
     # Cosmetic costs
     COSMETIC_COSTS = {
         'animated_border': 200,
@@ -54,13 +55,26 @@ class DustEconomy:
         'signature': 2000,
         'foil': 300
     }
-    
+
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
+        self._database_url = os.getenv("DATABASE_URL")
+
+    def _get_connection(self):
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        if self._database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            url = self._database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return _PgConnectionWrapper(psycopg2.connect(url))
+        else:
+            return sqlite3.connect(self.db_path)
     
     def get_dust_balance(self, user_id: int) -> int:
         """Get user's current dust balance"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT dust_amount FROM user_dust WHERE user_id = ?
@@ -86,7 +100,7 @@ class DustEconomy:
         if current_balance < amount:
             return False
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Deduct dust
@@ -123,7 +137,7 @@ class DustEconomy:
         cost = self.CRAFT_COSTS.get(card_rarity.lower(), 100)
         
         # Check if user already has this card
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT quantity FROM user_cards
@@ -140,7 +154,7 @@ class DustEconomy:
             return (False, f"❌ Insufficient dust! Need {cost}, you have {current}")
         
         # Add card to collection
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Add to master cards if doesn't exist
@@ -213,7 +227,7 @@ class DustEconomy:
         boost_amount = {'small': 5, 'medium': 10, 'large': 15}.get(boost_level, 5)
         
         # Check if user owns the card
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT uc.id FROM user_cards uc
@@ -229,7 +243,7 @@ class DustEconomy:
             return (False, f"❌ Insufficient dust! Need {cost}, you have {current}")
         
         # Boost the stat
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get current stat value
@@ -263,7 +277,7 @@ class DustEconomy:
         cost = self.BOOST_COSTS['reroll']
         
         # Check ownership
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT uc.id FROM user_cards uc
@@ -298,7 +312,7 @@ class DustEconomy:
         }
         
         # Update card stats
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE cards
@@ -329,7 +343,7 @@ class DustEconomy:
         cost = self.COSMETIC_COSTS.get(cosmetic_type, 200)
         
         # Check ownership
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT uc.id FROM user_cards uc
@@ -360,7 +374,7 @@ class DustEconomy:
     
     def get_dust_stats(self, user_id: int) -> Dict:
         """Get comprehensive dust statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get dust balance

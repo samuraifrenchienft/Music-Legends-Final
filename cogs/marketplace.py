@@ -6,37 +6,28 @@ import sqlite3
 import json
 import uuid
 import os
+from database import DatabaseManager
 
 class MarketplaceCommands(commands.Cog):
     """Marketplace commands for buying/selling cards"""
 
     def __init__(self, bot):
         self.bot = bot
-        self.db_path = "music_legends.db"
-
-    def _get_db_connection(self):
-        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
-        database_url = os.getenv("DATABASE_URL")
-        if database_url:
-            import psycopg2
-            if database_url.startswith("postgres://"):
-                database_url = database_url.replace("postgres://", "postgresql://", 1)
-            return psycopg2.connect(database_url), "postgresql", "%s"
-        else:
-            return sqlite3.connect(self.db_path), "sqlite", "?"
+        self.db = DatabaseManager()
 
     @app_commands.command(name="sell", description="List a card for sale")
     @app_commands.describe(card_id="Card ID to sell", price="Price in gold")
     async def sell_command(self, interaction: Interaction, card_id: str, price: int):
         """List a card for sale in the marketplace"""
 
-        conn, db_type, ph = self._get_db_connection()
+        conn = self.db._get_connection()
+        db_type = self.db._db_type
         try:
             cursor = conn.cursor()
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT c.name, c.rarity FROM cards c
                 JOIN user_cards uc ON c.card_id = uc.card_id
-                WHERE c.card_id = {ph} AND uc.user_id = {ph}
+                WHERE c.card_id = ? AND uc.user_id = ?
             """, (card_id, interaction.user.id))
             card = cursor.fetchone()
 
@@ -50,21 +41,18 @@ class MarketplaceCommands(commands.Cog):
             # List the card - use correct table name and columns
             listing_id = f"listing_{uuid.uuid4().hex[:8]}"
 
-            # PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
-            timestamp_sql = "CURRENT_TIMESTAMP" if db_type == "postgresql" else "datetime('now')"
-
             if db_type == "postgresql":
-                cursor.execute(f"""
+                cursor.execute("""
                     INSERT INTO market_listings
                     (listing_id, card_id, seller_user_id, asking_gold, status, created_at)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, 'active', CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
                     ON CONFLICT (listing_id) DO UPDATE SET asking_gold = EXCLUDED.asking_gold
                 """, (listing_id, card_id, interaction.user.id, price))
             else:
-                cursor.execute(f"""
+                cursor.execute("""
                     INSERT OR REPLACE INTO market_listings
                     (listing_id, card_id, seller_user_id, asking_gold, status, created_at)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, 'active', datetime('now'))
+                    VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
                 """, (listing_id, card_id, interaction.user.id, price))
             conn.commit()
         finally:
@@ -98,17 +86,18 @@ class MarketplaceCommands(commands.Cog):
     async def buy_command(self, interaction: Interaction, card_id: str):
         """Purchase a card from the marketplace"""
 
-        conn, db_type, ph = self._get_db_connection()
+        conn = self.db._get_connection()
+        db_type = self.db._db_type
         try:
             cursor = conn.cursor()
 
             # Check if card is listed - use correct table and column names
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT c.card_id, c.name, c.rarity, c.image_url,
                        m.asking_gold, m.seller_user_id, m.status, m.listing_id
                 FROM cards c
                 JOIN market_listings m ON c.card_id = m.card_id
-                WHERE c.card_id = {ph} AND m.status = 'active'
+                WHERE c.card_id = ? AND m.status = 'active'
             """, (card_id,))
             listing = cursor.fetchone()
 
@@ -132,16 +121,16 @@ class MarketplaceCommands(commands.Cog):
                 return
 
             # Check if user has enough gold - from user_inventory table
-            cursor.execute(f"""
-                SELECT gold FROM user_inventory WHERE user_id = {ph}
+            cursor.execute("""
+                SELECT gold FROM user_inventory WHERE user_id = ?
             """, (interaction.user.id,))
             user_result = cursor.fetchone()
 
             if not user_result:
                 # Create user inventory if not exists
-                cursor.execute(f"""
+                cursor.execute("""
                     INSERT INTO user_inventory (user_id, gold, dust, tickets, gems, xp, level)
-                    VALUES ({ph}, 500, 0, 0, 0, 0, 1)
+                    VALUES (?, 500, 0, 0, 0, 0, 1)
                 """, (interaction.user.id,))
                 conn.commit()
                 user_gold = 500
@@ -159,40 +148,39 @@ class MarketplaceCommands(commands.Cog):
             # Process purchase
             try:
                 # Transfer card ownership
-                cursor.execute(f"""
-                    DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph}
+                cursor.execute("""
+                    DELETE FROM user_cards WHERE user_id = ? AND card_id = ?
                 """, (seller_id, card_id))
 
-                timestamp_sql = "CURRENT_TIMESTAMP" if db_type == "postgresql" else "datetime('now')"
-                cursor.execute(f"""
+                cursor.execute("""
                     INSERT INTO user_cards (user_id, card_id, acquired_from, acquired_at)
-                    VALUES ({ph}, {ph}, 'marketplace', {timestamp_sql})
+                    VALUES (?, ?, 'marketplace', CURRENT_TIMESTAMP)
                 """, (interaction.user.id, card_id))
 
                 # Transfer gold - use user_inventory table
-                cursor.execute(f"""
-                    UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph}
+                cursor.execute("""
+                    UPDATE user_inventory SET gold = gold - ? WHERE user_id = ?
                 """, (price, interaction.user.id))
 
                 # Ensure seller has inventory record (PostgreSQL vs SQLite syntax)
                 if db_type == "postgresql":
-                    cursor.execute(f"""
+                    cursor.execute("""
                         INSERT INTO user_inventory (user_id, gold)
-                        VALUES ({ph}, {ph})
+                        VALUES (?, ?)
                         ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
                     """, (seller_id, price))
                 else:
-                    cursor.execute(f"""
+                    cursor.execute("""
                         INSERT INTO user_inventory (user_id, gold)
-                        VALUES ({ph}, {ph})
-                        ON CONFLICT(user_id) DO UPDATE SET gold = gold + {ph}
+                        VALUES (?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
                     """, (seller_id, price, price))
 
                 # Update listing status
-                cursor.execute(f"""
+                cursor.execute("""
                     UPDATE market_listings
-                    SET status = 'sold', buyer_user_id = {ph}, sold_at = {timestamp_sql}
-                    WHERE listing_id = {ph}
+                    SET status = 'sold', buyer_user_id = ?, sold_at = CURRENT_TIMESTAMP
+                    WHERE listing_id = ?
                 """, (interaction.user.id, listing_id))
 
                 conn.commit()
@@ -245,8 +233,7 @@ class MarketplaceCommands(commands.Cog):
             color=discord.Color.gold()
         )
 
-        conn, db_type, ph = self._get_db_connection()
-        try:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT c.card_id, c.name, c.rarity, m.asking_gold, m.seller_user_id
@@ -257,8 +244,6 @@ class MarketplaceCommands(commands.Cog):
                 LIMIT 20
             """)
             listings = cursor.fetchall()
-        finally:
-            conn.close()
 
         if listings:
             for card_id, card_name, rarity, price, seller_id in listings:
@@ -289,19 +274,16 @@ class MarketplaceCommands(commands.Cog):
         )
 
         # Get user's packs
-        conn, db_type, ph = self._get_db_connection()
-        try:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT pack_id, name, status, created_at, cards_data
                 FROM creator_packs
-                WHERE creator_id = {ph} AND status = 'LIVE'
+                WHERE creator_id = ? AND status = 'LIVE'
                 ORDER BY created_at DESC
                 LIMIT 10
             """, (interaction.user.id,))
             packs = cursor.fetchall()
-        finally:
-            conn.close()
 
         if packs:
             for pack in packs:
@@ -333,8 +315,7 @@ class MarketplaceCommands(commands.Cog):
         )
 
         # Get all live packs
-        conn, db_type, ph = self._get_db_connection()
-        try:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT pack_id, name, creator_id, description, created_at, cards_data
@@ -351,7 +332,7 @@ class MarketplaceCommands(commands.Cog):
                     cards = json.loads(cards_data) if cards_data else []
 
                     # Get creator name
-                    cursor.execute(f"SELECT username FROM users WHERE user_id = {ph}", (creator_id,))
+                    cursor.execute("SELECT username FROM users WHERE user_id = ?", (creator_id,))
                     creator_result = cursor.fetchone()
                     creator_name = creator_result[0] if creator_result else f"User {creator_id}"
 
@@ -367,8 +348,6 @@ class MarketplaceCommands(commands.Cog):
                     value="No packs in marketplace yet. Be the first to create one!",
                     inline=False
                 )
-        finally:
-            conn.close()
 
         embed.set_footer(text="Marketplace • Use /create_pack to add your pack")
         await interaction.response.send_message(embed=embed)
@@ -378,14 +357,14 @@ class MarketplaceCommands(commands.Cog):
     async def unlist_command(self, interaction: Interaction, card_id: str):
         """Remove a card listing from the marketplace"""
 
-        conn, db_type, ph = self._get_db_connection()
+        conn = self.db._get_connection()
         try:
             cursor = conn.cursor()
 
             # Check if user owns this listing
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT listing_id, asking_gold FROM market_listings
-                WHERE card_id = {ph} AND seller_user_id = {ph} AND status = 'active'
+                WHERE card_id = ? AND seller_user_id = ? AND status = 'active'
             """, (card_id, interaction.user.id))
             listing = cursor.fetchone()
 
@@ -400,8 +379,8 @@ class MarketplaceCommands(commands.Cog):
             listing_id, price = listing
 
             # Remove listing
-            cursor.execute(f"""
-                UPDATE market_listings SET status = 'cancelled' WHERE listing_id = {ph}
+            cursor.execute("""
+                UPDATE market_listings SET status = 'cancelled' WHERE listing_id = ?
             """, (listing_id,))
             conn.commit()
         finally:

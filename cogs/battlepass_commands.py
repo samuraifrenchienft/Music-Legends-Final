@@ -34,7 +34,7 @@ class BattlePassCommands(commands.Cog):
 
     def _get_user_bp_data(self, user_id: int) -> dict:
         """Return battle-pass relevant data from DB"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
 
             # XP from user_inventory
@@ -73,7 +73,7 @@ class BattlePassCommands(commands.Cog):
 
     def _save_claimed_tiers(self, user_id: int, claimed: list):
         import json
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO season_progress (user_id, claimed_tiers)
@@ -83,7 +83,7 @@ class BattlePassCommands(commands.Cog):
             conn.commit()
 
     def _ensure_season_table(self):
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS season_progress (
@@ -197,7 +197,7 @@ class BattlePassCommands(commands.Cog):
             rtype = reward.get('type', '')
             if rtype == 'gold':
                 amt = reward.get('amount', 0)
-                with sqlite3.connect(self.db.db_path) as conn:
+                with self.db._get_connection() as conn:
                     conn.cursor().execute("""
                         INSERT INTO user_inventory (user_id, gold) VALUES (?, ?)
                         ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
@@ -206,7 +206,7 @@ class BattlePassCommands(commands.Cog):
                 rewards_given.append(f"💰 {amt:,} Gold")
             elif rtype == 'tickets':
                 amt = reward.get('amount', 0)
-                with sqlite3.connect(self.db.db_path) as conn:
+                with self.db._get_connection() as conn:
                     conn.cursor().execute("""
                         INSERT INTO user_inventory (user_id, tickets) VALUES (?, ?)
                         ON CONFLICT(user_id) DO UPDATE SET tickets = COALESCE(tickets,0) + ?

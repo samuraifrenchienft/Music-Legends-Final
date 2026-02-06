@@ -32,7 +32,18 @@ class NFTVerifier:
         self.db_path = db_path
         self.alchemy_api_key = os.getenv('ALCHEMY_API_KEY')
         self.moralis_api_key = os.getenv('MORALIS_API_KEY')
-    
+
+    def _get_connection(self):
+        import os
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            conn = psycopg2.connect(database_url)
+            return _PgConnectionWrapper(conn)
+        import sqlite3
+        return sqlite3.connect(self.db_path)
+
     async def verify_nft_ownership(self, wallet_address: str, collection_key: str) -> Dict:
         """
         Verify NFT ownership via blockchain API
@@ -161,7 +172,7 @@ class NFTVerifier:
             }
         
         # Store in database
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get first token ID
@@ -190,15 +201,17 @@ class NFTVerifier:
                     'verification_method': verification.get('verification_method')
                 }
                 
-            except sqlite3.IntegrityError:
-                return {
-                    'success': False,
-                    'error': 'This NFT is already registered to another server'
-                }
+            except Exception as e:
+                if 'UNIQUE' in str(e).upper() or 'IntegrityError' in type(e).__name__:
+                    return {
+                        'success': False,
+                        'error': 'This NFT is already registered to another server'
+                    }
+                raise
     
     def get_server_nfts(self, server_id: int) -> List[Dict]:
         """Get all verified NFTs for a server"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -226,7 +239,7 @@ class NFTVerifier:
     
     def remove_nft(self, server_id: int, nft_token_id: str) -> Dict:
         """Remove an NFT from server holdings"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""

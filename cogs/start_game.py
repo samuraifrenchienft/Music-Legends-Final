@@ -17,17 +17,6 @@ class StartGameCog(commands.Cog):
         self.db = DatabaseManager()
         self.economy = get_economy_manager()
 
-    def _get_db_connection(self):
-        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
-        database_url = os.getenv("DATABASE_URL")
-        if database_url:
-            import psycopg2
-            if database_url.startswith("postgres://"):
-                database_url = database_url.replace("postgres://", "postgresql://", 1)
-            return psycopg2.connect(database_url), "postgresql"
-        else:
-            return sqlite3.connect(self.db.db_path), "sqlite"
-
     @app_commands.command(name="start_game", description="🎮 Start Music Legends in this server!")
     async def start_game(self, interaction: Interaction):
         """Initialize Music Legends - announces the game and shows available packs"""
@@ -42,22 +31,18 @@ class StartGameCog(commands.Cog):
         await interaction.response.defer()
 
         # Check how many seed packs exist
-        conn, db_type = self._get_db_connection()
-        ph = "%s" if db_type == "postgresql" else "?"
-        try:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
             pack_count = cursor.fetchone()[0]
 
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT name, pack_size FROM creator_packs
                 WHERE status = 'LIVE'
                 ORDER BY name
                 LIMIT 10
             """)
             sample_packs = cursor.fetchall()
-        finally:
-            conn.close()
 
         if pack_count == 0:
             # No packs - seed packs may not have loaded

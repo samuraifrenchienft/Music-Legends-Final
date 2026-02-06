@@ -1,6 +1,5 @@
 # services/rewards.py
 import logging
-import sqlite3
 from datetime import datetime, timedelta
 from database import DatabaseManager
 from card_economy import CardEconomyManager
@@ -15,7 +14,7 @@ class RewardsService:
         """Reset all daily rewards"""
         logging.info("Resetting all daily rewards")
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Reset daily claim status for all users
@@ -46,7 +45,7 @@ class RewardsService:
         """Grant daily reward to specific user"""
         logging.info(f"Granting daily reward to user {user_id}")
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Check if already claimed
@@ -79,7 +78,7 @@ class RewardsService:
     
     def get_daily_status(self, user_id: int) -> dict:
         """Get daily reward status for user"""
-        with sqlite3.connect(self.db.path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT last_daily FROM user_inventory WHERE user_id = ?
@@ -110,7 +109,6 @@ class RewardsService:
 
 # services/drops.py
 import logging
-import sqlite3
 import random
 from datetime import datetime, timedelta
 from database import DatabaseManager
@@ -127,7 +125,7 @@ class DropsService:
         logging.info("Checking for activity-based drops")
         
         # Get active servers with recent activity
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get servers with activity in last hour
@@ -171,7 +169,6 @@ class DropsService:
 
 # services/trades.py
 import logging
-import sqlite3
 from datetime import datetime, timedelta
 from database import DatabaseManager
 
@@ -183,7 +180,7 @@ class TradesService:
         """Expire old trades"""
         logging.info("Expiring old trades")
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Find trades older than 10 minutes
@@ -207,7 +204,7 @@ class TradesService:
         """Finalize a trade"""
         logging.info(f"Finalizing trade {trade_id}")
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get trade details
@@ -235,7 +232,6 @@ class TradesService:
 
 # services/seasons.py
 import logging
-import sqlite3
 from datetime import datetime
 from database import DatabaseManager
 from card_economy import CardEconomyManager
@@ -250,7 +246,7 @@ class SeasonsService:
         """Enforce card printing caps"""
         logging.info("Checking and enforcing card caps")
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # This would check season caps and prevent overprinting
@@ -298,7 +294,6 @@ class SeasonsService:
 
 # services/data.py
 import logging
-import sqlite3
 from datetime import datetime, timedelta
 from database import DatabaseManager
 
@@ -312,7 +307,7 @@ class DataService:
         
         total_deleted = 0
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Helper function to safely delete from table if it exists
@@ -323,7 +318,7 @@ class DataService:
                         WHERE {time_column} < ?
                     """, (cutoff_time.isoformat(),))
                     return cursor.rowcount
-                except sqlite3.OperationalError:
+                except Exception:
                     # Table doesn't exist, skip
                     return 0
             

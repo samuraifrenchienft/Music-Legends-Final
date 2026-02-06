@@ -50,10 +50,21 @@ class NFTEntitlementManager:
         self.db_path = db_path
         self.alchemy_api_key = os.getenv('ALCHEMY_API_KEY')
         self.init_entitlement_tables()
-    
+
+    def _get_connection(self):
+        import os
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            conn = psycopg2.connect(database_url)
+            return _PgConnectionWrapper(conn)
+        import sqlite3
+        return sqlite3.connect(self.db_path)
+
     def init_entitlement_tables(self):
         """Initialize entitlement tracking tables"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Wallet linking (one-time)
@@ -148,7 +159,7 @@ class NFTEntitlementManager:
             }
         
         # Store wallet link
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             try:
@@ -173,11 +184,13 @@ class NFTEntitlementManager:
                     'message': 'Wallet linked successfully - NFT snapshot will run within 24 hours'
                 }
                 
-            except sqlite3.IntegrityError:
-                return {
-                    'success': False,
-                    'error': 'This wallet is already linked to another Discord account'
-                }
+            except Exception as e:
+                if 'UNIQUE' in str(e).upper() or 'IntegrityError' in type(e).__name__:
+                    return {
+                        'success': False,
+                        'error': 'This wallet is already linked to another Discord account'
+                    }
+                raise
     
     async def snapshot_nft_ownership(self, discord_user_id: int) -> Dict:
         """
@@ -186,7 +199,7 @@ class NFTEntitlementManager:
         """
         
         # Get wallet address
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT wallet_address FROM wallet_links
@@ -214,7 +227,7 @@ class NFTEntitlementManager:
                 total_nfts += nft_count
         
         # Store snapshots
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Clear old snapshots for this user
@@ -301,7 +314,7 @@ class NFTEntitlementManager:
         Get cached entitlement for purchase-time use
         CRITICAL: NO BLOCKCHAIN CALLS HERE
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""

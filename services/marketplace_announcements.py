@@ -5,7 +5,6 @@ Generates and posts daily marketplace statistics and updates
 """
 
 import discord
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from database import DatabaseManager
@@ -21,7 +20,7 @@ class MarketplaceAnnouncementService:
         """Record a new pack creation for today's stats"""
         today = datetime.now().date()
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Initialize today's record if it doesn't exist
@@ -43,7 +42,7 @@ class MarketplaceAnnouncementService:
         """Record a pack purchase for today's stats"""
         today = datetime.now().date()
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Initialize today's record if it doesn't exist
@@ -67,7 +66,7 @@ class MarketplaceAnnouncementService:
         if date is None:
             date = (datetime.now() - timedelta(days=1)).date()
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get daily stats

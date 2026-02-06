@@ -141,7 +141,7 @@ class BattleCommands(commands.Cog):
 
     def _ensure_user(self, user: discord.User):
         """Make sure user row exists"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?, ?, ?)",
@@ -150,14 +150,14 @@ class BattleCommands(commands.Cog):
             conn.commit()
 
     def _get_gold(self, user_id: int) -> int:
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
             return row[0] if row and row[0] else 0
 
     def _add_gold(self, user_id: int, amount: int):
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO user_inventory (user_id, gold)
@@ -170,7 +170,7 @@ class BattleCommands(commands.Cog):
         gold = self._get_gold(user_id)
         if gold < amount:
             return False
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ?",
@@ -180,7 +180,7 @@ class BattleCommands(commands.Cog):
         return True
 
     def _add_xp(self, user_id: int, xp: int):
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO user_inventory (user_id, xp)
@@ -190,7 +190,7 @@ class BattleCommands(commands.Cog):
             conn.commit()
 
     def _update_battle_stats(self, winner_id: int, loser_id: int):
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE users SET total_battles = total_battles + 1, wins = wins + 1 WHERE user_id = ?",
@@ -370,7 +370,7 @@ class BattleCommands(commands.Cog):
             self._update_battle_stats(opponent.id, interaction.user.id)
         else:
             # Tie — just increment total_battles for both
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN (?, ?)",
                                (interaction.user.id, opponent.id))

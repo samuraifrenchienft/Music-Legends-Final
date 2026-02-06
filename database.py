@@ -6,6 +6,92 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
+
+class _PgCursorWrapper:
+    """Wraps a psycopg2 cursor to translate ? placeholders to %s."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, query, params=None):
+        # Translate SQLite syntax to PostgreSQL
+        query = query.replace('?', '%s')
+
+        # INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
+        if 'INSERT OR IGNORE' in query:
+            query = query.replace('INSERT OR IGNORE', 'INSERT')
+            if 'ON CONFLICT' not in query:
+                # Append ON CONFLICT DO NOTHING before any trailing whitespace
+                query = query.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
+
+        # INSERT OR REPLACE → just INSERT (caller should use ON CONFLICT DO UPDATE)
+        if 'INSERT OR REPLACE' in query:
+            query = query.replace('INSERT OR REPLACE', 'INSERT')
+
+        if params:
+            self._cursor.execute(query, params)
+        else:
+            self._cursor.execute(query)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    @property
+    def description(self):
+        return self._cursor.description
+
+
+class _PgConnectionWrapper:
+    """Wraps a psycopg2 connection so existing SQLite code works unchanged.
+
+    - cursor() returns a _PgCursorWrapper (auto-translates ? to %s)
+    - Context manager commits on success, rolls back on error (matches SQLite)
+    - execute() is forwarded through the wrapper
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return _PgCursorWrapper(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def execute(self, query, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 class DatabaseManager:
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
@@ -14,13 +100,18 @@ class DatabaseManager:
         self.init_database()
 
     def _get_connection(self):
-        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite.
+
+        PostgreSQL connections are wrapped so that ? placeholders are
+        automatically translated to %s and the context-manager commits
+        on success (matching SQLite behaviour).
+        """
         if self._database_url:
             import psycopg2
             url = self._database_url
             if url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql://", 1)
-            return psycopg2.connect(url)
+            return _PgConnectionWrapper(psycopg2.connect(url))
         else:
             return sqlite3.connect(self.db_path)
 
@@ -34,7 +125,7 @@ class DatabaseManager:
             self._init_postgresql()
             return
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.cursor()
             
@@ -1317,7 +1408,7 @@ class DatabaseManager:
                 return results
 
             # SQLite integrity check
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Check database file integrity
@@ -1375,7 +1466,7 @@ class DatabaseManager:
     
     def get_or_create_user(self, user_id: int, username: str, discord_tag: str) -> Dict:
         """Get existing user or create new one"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Try to get existing user
@@ -1410,7 +1501,7 @@ class DatabaseManager:
     def add_card_to_master(self, card_data: Dict) -> bool:
         """Add a card to the master card list with flexible field mapping"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Generate default battle stats if not provided
@@ -1548,7 +1639,7 @@ class DatabaseManager:
     def record_match(self, match_data: Dict) -> bool:
         """Record a completed match"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Insert match
@@ -1588,7 +1679,7 @@ class DatabaseManager:
     def record_pack_opening(self, user_id: int, pack_type: str, cards_received: List[str], cost_tokens: int = 0) -> bool:
         """Record a pack opening"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Record pack opening
@@ -1618,7 +1709,7 @@ class DatabaseManager:
     
     def get_user_stats(self, user_id: int) -> Dict:
         """Get comprehensive user statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -1651,7 +1742,7 @@ class DatabaseManager:
         if metric not in valid_metrics:
             metric = 'wins'
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             if metric == 'win_rate':
@@ -1693,7 +1784,7 @@ class DatabaseManager:
         import uuid
         pack_id = str(uuid.uuid4())
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO creator_packs 
@@ -1712,7 +1803,7 @@ class DatabaseManager:
     
     def get_creator_draft_pack(self, creator_id: int) -> Optional[Dict]:
         """Get current draft pack for creator"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM creator_packs 
@@ -1729,7 +1820,7 @@ class DatabaseManager:
     
     def add_card_to_pack(self, pack_id: str, card_data: Dict) -> bool:
         """Add a card to pack's cards_data JSON"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get current cards
@@ -1758,7 +1849,7 @@ class DatabaseManager:
     
     def validate_pack_rules(self, pack_id: str) -> Dict:
         """Validate pack against creation rules"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT p.*, c.last_pack_published, c.packs_published
@@ -1825,7 +1916,7 @@ class DatabaseManager:
     
     def publish_pack(self, pack_id: str, stripe_payment_id: str) -> bool:
         """Publish pack after payment confirmation"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Update pack status
@@ -1887,7 +1978,7 @@ class DatabaseManager:
         """
         results = {'success': [], 'failed': []}
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             for pack in packs_data:
@@ -1953,7 +2044,7 @@ class DatabaseManager:
         # Calculate revenue split
         revenue_split = stripe_manager.calculate_revenue_split(amount_cents)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get pack data and creator
@@ -2018,7 +2109,7 @@ class DatabaseManager:
     
     def _update_creator_balance(self, creator_id: int, amount_cents: int, balance_type: str):
         """Update creator balance (pending or available)"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get current balance or create new record
@@ -2062,7 +2153,7 @@ class DatabaseManager:
     
     def get_creator_balance(self, creator_id: int) -> Dict:
         """Get creator balance information"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM creator_balances WHERE creator_user_id = ?", (creator_id,))
             balance = cursor.fetchone()
@@ -2082,7 +2173,7 @@ class DatabaseManager:
     
     def get_creator_earnings(self, creator_id: int) -> Dict:
         """Get detailed creator earnings from ledger"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get total earnings
@@ -2120,7 +2211,7 @@ class DatabaseManager:
     
     def store_creator_stripe_account(self, creator_id: int, stripe_account_id: str):
         """Store creator's Stripe Connect account ID"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO creator_stripe_accounts 
@@ -2131,7 +2222,7 @@ class DatabaseManager:
     
     def get_creator_stripe_account(self, creator_id: int) -> Dict:
         """Get creator's Stripe Connect account info"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM creator_stripe_accounts WHERE creator_user_id = ?", (creator_id,))
             account = cursor.fetchone()
@@ -2144,7 +2235,7 @@ class DatabaseManager:
     
     def register_server(self, server_id: int, server_name: str, owner_id: int):
         """Register a new server that added the bot"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO servers 
@@ -2155,7 +2246,7 @@ class DatabaseManager:
     
     def get_server_info(self, server_id: int) -> Dict:
         """Get server subscription and usage info"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM servers WHERE server_id = ?", (server_id,))
             server = cursor.fetchone()
@@ -2168,7 +2259,7 @@ class DatabaseManager:
     
     def update_server_subscription(self, server_id: int, subscription_id: str, tier: str):
         """Update server subscription info"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE servers 
@@ -2180,7 +2271,7 @@ class DatabaseManager:
     
     def cancel_server_subscription(self, server_id: int):
         """Cancel server subscription"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE servers 
@@ -2201,7 +2292,7 @@ class DatabaseManager:
     
     def record_server_usage(self, server_id: int, metric_type: str, value: int):
         """Record server usage metrics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO server_usage (server_id, metric_type, metric_value)
@@ -2211,7 +2302,7 @@ class DatabaseManager:
     
     def get_server_analytics(self, server_id: int, days: int = 30) -> Dict:
         """Get server usage analytics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get usage stats for the last N days
@@ -2242,7 +2333,7 @@ class DatabaseManager:
                     'legendary': 'legendary', 'mythic': 'legendary'}
         tier = card_data.get('tier') or tier_map.get(rarity, 'community')
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR IGNORE INTO cards
@@ -2281,7 +2372,7 @@ class DatabaseManager:
     
     def get_all_artists(self, limit: int = 100) -> List[Dict]:
         """Get all unique artists from the cards table"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT DISTINCT name, image_url
@@ -2317,7 +2408,7 @@ class DatabaseManager:
     
     def get_user_economy(self, user_id: int) -> Dict:
         """Get user's economy data (gold, tickets, daily streak) - uses user_inventory table"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT user_id, gold, tickets, last_daily_claim, daily_streak
@@ -2347,7 +2438,7 @@ class DatabaseManager:
     def update_user_economy(self, user_id: int, gold_change: int = 0, tickets_change: int = 0) -> bool:
         """Update user's gold and tickets - uses user_inventory table"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # Ensure user exists first
                 cursor.execute("""
@@ -2427,7 +2518,7 @@ class DatabaseManager:
             print(f"[DAILY] User {user_id} received {daily_card['rarity']} card: {daily_card['name']}")
 
         # Update economy - uses user_inventory table
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_inventory
@@ -2504,7 +2595,7 @@ class DatabaseManager:
     def record_battle(self, battle_data: Dict) -> bool:
         """Record battle result and update stats"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Insert battle record
@@ -2601,7 +2692,7 @@ class DatabaseManager:
     
     def get_user_battle_stats(self, user_id: int) -> Dict:
         """Get user's battle statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT total_battles, wins, losses, ties, total_gold_won, total_gold_lost,
@@ -2633,7 +2724,7 @@ class DatabaseManager:
     def add_cosmetic_to_catalog(self, cosmetic_data: Dict) -> bool:
         """Add a cosmetic to the catalog"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO cosmetics_catalog
@@ -2660,7 +2751,7 @@ class DatabaseManager:
     def unlock_cosmetic_for_user(self, user_id: str, cosmetic_id: str, source: str = 'purchase') -> bool:
         """Unlock a cosmetic for a user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Get cosmetic type from catalog
@@ -2686,7 +2777,7 @@ class DatabaseManager:
     def get_user_cosmetics(self, user_id: str, cosmetic_type: str = None) -> List[Dict]:
         """Get all cosmetics unlocked by a user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 if cosmetic_type:
@@ -2725,7 +2816,7 @@ class DatabaseManager:
     def apply_cosmetic_to_card(self, user_id: str, card_id: str, cosmetic_data: Dict) -> bool:
         """Apply cosmetics to a specific card"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO card_cosmetics
@@ -2782,7 +2873,7 @@ class DatabaseManager:
     def get_card_cosmetics(self, user_id: str, card_id: str) -> Optional[Dict]:
         """Get cosmetics applied to a specific card"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT frame_style, foil_effect, badge_override
@@ -2804,7 +2895,7 @@ class DatabaseManager:
     def get_available_cosmetics(self, unlock_method: str = None) -> List[Dict]:
         """Get cosmetics from catalog"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 if unlock_method:

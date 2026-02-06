@@ -92,13 +92,21 @@ class DatabaseManager:
     async def create_marketplace_table(self):
         """Create marketplace table if it doesn't exist"""
         import sqlite3
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            db_path = "music_legends.db"  # Working directory
-        else:
-            db_path = "music_legends.db"
-        
+        database_url = os.getenv("DATABASE_URL")
+
         try:
-            with sqlite3.connect(db_path) as conn:
+            if database_url and ("postgresql://" in database_url or "postgres://" in database_url):
+                import psycopg2
+                from database import _PgConnectionWrapper
+                url = database_url
+                if url.startswith("postgres://"):
+                    url = url.replace("postgres://", "postgresql://", 1)
+                conn = _PgConnectionWrapper(psycopg2.connect(url))
+            else:
+                db_path = "music_legends.db"
+                conn = sqlite3.connect(db_path)
+
+            with conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS marketplace_listings (
@@ -106,17 +114,17 @@ class DatabaseManager:
                         seller_id INTEGER NOT NULL,
                         price INTEGER NOT NULL,
                         status TEXT DEFAULT 'active',
-                        listed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         buyer_id INTEGER,
-                        sold_at DATETIME,
+                        sold_at TIMESTAMP,
                         FOREIGN KEY (seller_id) REFERENCES users(user_id),
                         FOREIGN KEY (buyer_id) REFERENCES users(user_id)
                     )
                 """)
                 conn.commit()
-                print("✅ Marketplace table created/verified")
+                print("Marketplace table created/verified")
         except Exception as e:
-            print(f"❌ Error creating marketplace table: {e}")
+            print(f"Error creating marketplace table: {e}")
             # Don't crash the bot - continue without marketplace
 
     async def close(self):

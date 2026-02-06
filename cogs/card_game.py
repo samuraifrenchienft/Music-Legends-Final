@@ -192,7 +192,7 @@ class CardGameCog(Cog):
         
         try:
             # Get pack details
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT pack_id, name, creator_id, pack_size, cards_data
@@ -458,7 +458,7 @@ class CardGameCog(Cog):
             
             # Update pack status to LIVE and add cards data
             print(f"🔥 DEBUG: Updating pack {pack_id} status to LIVE with {len(cards_created)} cards")
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE creator_packs 

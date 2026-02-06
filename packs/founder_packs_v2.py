@@ -50,7 +50,7 @@ class FounderPacksV2:
     
     def next_serial(self, artist_name: str, tier: str) -> int:
         """Get next serial number for artist/tier"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT COUNT(*) FROM cards 
@@ -99,7 +99,7 @@ class FounderPacksV2:
         }
         
         # Save to database
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Add card to database
@@ -126,10 +126,8 @@ class FounderPacksV2:
     def open_pack(self, user_id: str, pack_type: str, genre: str = None):
         """Main entry called from queue task"""
         with user_lock(user_id):
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 try:
-                    conn.execute("BEGIN TRANSACTION")
-                    
                     if pack_type == PACK_BLACK:
                         cards = self._open_black(user_id, genre)
                     elif pack_type == PACK_SILVER:
@@ -185,24 +183,12 @@ class FounderPacksV2:
     
     def _record_audit_log(self, user_id: str, pack_type: str, cards: list):
         """Record pack opening audit log"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Create audit log table if not exists
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS audit_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event TEXT,
-                    user_id TEXT,
-                    pack_type TEXT,
-                    cards TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
+
             # Record the pack opening
             cursor.execute("""
-                INSERT INTO audit_log 
+                INSERT INTO audit_log
                 (event, user_id, pack_type, cards)
                 VALUES (?, ?, ?, ?)
             """, (
@@ -211,8 +197,6 @@ class FounderPacksV2:
                 pack_type,
                 str([c['serial_number'] for c in cards])
             ))
-            
-            conn.commit()
 
 # Global instance
 founder_packs_v2 = FounderPacksV2()

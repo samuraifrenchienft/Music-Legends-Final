@@ -49,10 +49,13 @@ class HealthChecker:
             if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
                 # PostgreSQL check
                 import psycopg2
-                conn = psycopg2.connect(db_url, connect_timeout=HEALTH_CHECKS["db_connection_timeout"])
+                from database import _PgConnectionWrapper
+                url = db_url
+                if url.startswith("postgres://"):
+                    url = url.replace("postgres://", "postgresql://", 1)
+                conn = _PgConnectionWrapper(psycopg2.connect(url, connect_timeout=HEALTH_CHECKS["db_connection_timeout"]))
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1")
-                cursor.close()
                 conn.close()
             else:
                 # SQLite check

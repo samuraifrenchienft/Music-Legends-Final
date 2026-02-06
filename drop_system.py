@@ -23,7 +23,7 @@ class DropTimer:
         
     def can_drop(self, server_id: int) -> bool:
         """Check if server can drop based on cooldown"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT last_drop_time, activity_level FROM server_drop_cooldowns 
@@ -46,7 +46,7 @@ class DropTimer:
     
     def update_cooldown(self, server_id: int):
         """Update server cooldown after drop"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO server_drop_cooldowns 

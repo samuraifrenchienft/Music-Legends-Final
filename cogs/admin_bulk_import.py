@@ -332,7 +332,7 @@ class AdminBulkImportCog(commands.Cog):
 
         # Create pack in LIVE status (skip payment for admin import)
         import sqlite3
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
 
             # Initialize creator if not exists
@@ -366,4 +366,9 @@ class AdminBulkImportCog(commands.Cog):
     
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(AdminBulkImportCog(bot))
+    # IMPORT COMMAND REMOVED - Use CLI script instead
+    # See cli_scripts/cli_import_packs.py
+    #
+    # This cog is disabled. Uncomment below to re-enable if needed.
+    # await bot.add_cog(AdminBulkImportCog(bot))
+    pass

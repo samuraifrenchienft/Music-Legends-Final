@@ -1,5 +1,4 @@
 # season_system.py
-import sqlite3
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -28,7 +27,7 @@ class SeasonManager:
         
     def initialize_season_tables(self):
         """Create season-related database tables"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Seasons table
@@ -125,7 +124,7 @@ class SeasonManager:
     
     def ensure_season_exists(self):
         """Ensure at least one season exists, create Season 1 if needed"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM seasons")
             count = cursor.fetchone()[0]
@@ -158,7 +157,7 @@ class SeasonManager:
     
     def create_new_season(self, season_name: str, theme: str = None) -> Dict:
         """Create a new season"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get current season number
@@ -201,7 +200,7 @@ class SeasonManager:
     
     def _reset_season_caps(self, new_season_id: int):
         """Reset card printing caps for new season"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get unique artists from existing cards
@@ -235,7 +234,7 @@ class SeasonManager:
     
     def _generate_season_rewards(self, season_id: int):
         """Generate rewards for the season"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             rewards = [
@@ -276,7 +275,7 @@ class SeasonManager:
     
     def get_current_season(self) -> Optional[Dict]:
         """Get the currently active season"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM seasons 
@@ -298,7 +297,7 @@ class SeasonManager:
         if not current_season:
             return {'error': 'No active season'}
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM player_season_progress 
@@ -333,7 +332,7 @@ class SeasonManager:
         if not current_season:
             return
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get current progress
@@ -391,7 +390,7 @@ class SeasonManager:
     
     def _add_season_xp(self, user_id: int, season_id: int, xp_amount: int):
         """Add XP to player and check for level ups"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get current XP and level
@@ -421,7 +420,7 @@ class SeasonManager:
     
     def _update_season_rank(self, user_id: int, season_id: int):
         """Update player's season rank based on XP and level"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -460,7 +459,7 @@ class SeasonManager:
         if not current_season:
             return {'can_print': True, 'remaining': 999}
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT max_prints, current_prints, is_hard_cap 
@@ -489,7 +488,7 @@ class SeasonManager:
         if not current_season:
             return
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE season_card_caps 
@@ -508,7 +507,7 @@ class SeasonManager:
         progress = self.get_player_season_progress(user_id)
         claimed_rewards = json.loads(progress['claimed_rewards']) if progress['claimed_rewards'] else []
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM season_rewards 
@@ -551,7 +550,7 @@ class SeasonManager:
         if not current_season:
             return {'success': False, 'error': 'No active season'}
 
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             # BEGIN IMMEDIATE acquires a write lock, preventing race conditions
             cursor.execute("BEGIN IMMEDIATE")
@@ -644,7 +643,7 @@ class SeasonManager:
         if not current_season:
             return []
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT p.*, u.username, u.discord_tag 
@@ -679,7 +678,7 @@ class SeasonManager:
     
     def end_season(self, season_id: int) -> Dict:
         """End a season and calculate final rewards"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Mark season as inactive
@@ -735,7 +734,7 @@ class SeasonManager:
     
     def _award_season_prestige(self, season_id: int):
         """Award prestige points to cards from the season"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get all cards from the season

@@ -26,7 +26,7 @@ class AdminCommandsCog(commands.Cog):
         
         try:
             import sqlite3
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 
                 # Check if pack exists

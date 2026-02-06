@@ -473,7 +473,7 @@ async def finalize_pack_creation_lastfm(
                 continue
         
         # Publish pack
-        with sqlite3.connect(db.db_path) as conn:
+        with db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE creator_packs 

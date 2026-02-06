@@ -3,30 +3,44 @@
 Server-Based Revenue Sharing System
 10% base + NFT boosts (max 30%)
 """
+import os
 import sqlite3
 from typing import Dict, Optional
 from datetime import datetime
 
 class ServerRevenueManager:
     """Manages server-based revenue sharing"""
-    
+
     # Revenue share rates
     BASE_SHARE = 0.10  # 10% base
     NFT_BOOST = 0.10   # +10% per NFT
     MAX_SHARE = 0.30   # 30% cap
     MAX_NFTS = 2       # Max 2 NFTs counted
-    
+
     # Payout thresholds
     MIN_PAYOUT_CENTS = 2500  # $25.00 minimum weekly payout
     PAYOUT_FREQUENCY_DAYS = 7  # Weekly payouts
-    
+
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
+        self._database_url = os.getenv("DATABASE_URL")
         self.init_revenue_tables()
+
+    def _get_connection(self):
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        if self._database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            url = self._database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return _PgConnectionWrapper(psycopg2.connect(url))
+        else:
+            return sqlite3.connect(self.db_path)
     
     def init_revenue_tables(self):
         """Initialize revenue tracking tables"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Server owner registration
@@ -102,7 +116,7 @@ class ServerRevenueManager:
     
     def register_server_owner(self, server_id: int, owner_user_id: int, owner_discord_tag: str) -> Dict:
         """Register a server owner for revenue sharing"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -122,7 +136,7 @@ class ServerRevenueManager:
     
     def calculate_revenue_share(self, server_id: int) -> Dict:
         """Calculate revenue share percentage based on NFT holdings"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get NFT count
@@ -160,7 +174,7 @@ class ServerRevenueManager:
     def record_purchase_revenue(self, server_id: int, purchase_type: str, 
                                total_amount_cents: int, payment_intent_id: str) -> Dict:
         """Record revenue from a purchase and calculate splits"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Get server owner info
@@ -216,7 +230,7 @@ class ServerRevenueManager:
     
     def get_server_revenue_status(self, server_id: int) -> Optional[Dict]:
         """Get revenue status for a server"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -263,7 +277,7 @@ class ServerRevenueManager:
     
     def get_servers_ready_for_payout(self) -> list:
         """Get all servers with pending payout >= $25"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""

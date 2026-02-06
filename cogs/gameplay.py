@@ -129,7 +129,7 @@ class GameplayCommands(commands.Cog):
         cards = self.db.get_user_collection(target_user.id)
         
         # Get inventory separately
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM user_inventory WHERE user_id = ?", (target_user.id,))
             inventory = cursor.fetchone()
@@ -245,7 +245,7 @@ class GameplayCommands(commands.Cog):
     async def view_command(self, interaction: Interaction, card_identifier: str):
         """View detailed information about a specific card with full visual display"""
         # Find card by card_id or serial_number in user's collection
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             # Get column names for proper dict conversion
             cursor.execute("""
@@ -411,7 +411,7 @@ class GameplayCommands(commands.Cog):
     @app_commands.describe(card_id="Card ID to preview")
     async def card_preview_command(self, interaction: Interaction, card_id: str):
         """Preview any card in the database (not just owned ones)"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM cards WHERE card_id = ?", (card_id,))
             row = cursor.fetchone()
@@ -513,7 +513,7 @@ class GameplayCommands(commands.Cog):
     @app_commands.command(name="lookup", description="Lookup cards by artist name")
     async def lookup_command(self, interaction: Interaction, artist_name: str):
         """Lookup all cards for a specific artist in the database"""
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             # Search in both name and artist_name columns (with safe defaults for missing columns)
             cursor.execute("""
@@ -614,7 +614,7 @@ class GameplayCommands(commands.Cog):
             return
         
         # Create upgrade view for card selection
-        view = CardUpgradeView(self.economy, interaction.user.id, upgrade_type)
+        view = CardUpgradeView(self.economy, interaction.user.id, upgrade_type, db=self.db)
         
         embed = discord.Embed(
             title="⬆️ Card Upgrade",
@@ -626,65 +626,23 @@ class GameplayCommands(commands.Cog):
 
     @app_commands.command(name="daily", description="Claim daily rewards")
     async def daily_command(self, interaction: Interaction):
-        """Claim daily rewards with streak bonuses and audio feedback"""
-        from config.economy import get_daily_reward, RANKS, get_rank
+        """Claim daily rewards with streak bonuses, free card, and audio feedback"""
         from pathlib import Path
-        
-        with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Get user's current streak and last daily claim
-            cursor.execute("""
-                SELECT last_daily, daily_streak, gold, tickets 
-                FROM user_inventory WHERE user_id = ?
-            """, (interaction.user.id,))
-            result = cursor.fetchone()
-            
-            today = datetime.now().date()
-            current_streak = 1
-            current_gold = 0
-            current_tickets = 0
-            
-            if result:
-                last_daily_str, streak, current_gold, current_tickets = result
-                current_gold = current_gold or 0
-                current_tickets = current_tickets or 0
-                
-                if last_daily_str:
-                    last_daily = datetime.fromisoformat(last_daily_str).date()
-                    
-                    # Already claimed today
-                    if last_daily >= today:
-                        await interaction.response.send_message("⏰ You already claimed your daily reward! Come back tomorrow.", ephemeral=True)
-                        return
-                    
-                    # Check if streak continues (claimed yesterday)
-                    yesterday = today - timedelta(days=1)
-                    if last_daily == yesterday:
-                        current_streak = (streak or 0) + 1
-                    else:
-                        current_streak = 1  # Streak broken
-                else:
-                    current_streak = 1
-            
-            # Get rewards based on streak
-            rewards = get_daily_reward(current_streak)
-            gold_reward = rewards["gold"]
-            ticket_reward = rewards["tickets"]
-            
-            # Update user inventory with new rewards and streak
-            cursor.execute("""
-                INSERT INTO user_inventory (user_id, gold, tickets, last_daily, daily_streak)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    gold = gold + ?,
-                    tickets = tickets + ?,
-                    last_daily = CURRENT_TIMESTAMP,
-                    daily_streak = ?
-            """, (interaction.user.id, gold_reward, ticket_reward, current_streak,
-                  gold_reward, ticket_reward, current_streak))
-            
-            conn.commit()
+
+        # Use the new database method that includes free card
+        result = self.db.claim_daily_reward(interaction.user.id)
+
+        if not result.get('success'):
+            await interaction.response.send_message(
+                f"❌ {result.get('error', 'Already claimed today!')}",
+                ephemeral=True
+            )
+            return
+
+        gold_reward = result.get('gold', 0)
+        ticket_reward = result.get('tickets', 0)
+        current_streak = result.get('streak', 1)
+        daily_card = result.get('card')
         
         # Check for audio file
         audio_path = Path('assets/sounds/daily_claim.mp3')
@@ -709,18 +667,27 @@ class GameplayCommands(commands.Cog):
         rewards_text = f"💰 Gold: +{gold_reward}"
         if ticket_reward > 0:
             rewards_text += f"\n🎫 Tickets: +{ticket_reward}"
-        
+
         embed.add_field(
             name="Today's Rewards",
             value=rewards_text,
-            inline=True
+            inline=False
         )
-        
-        embed.add_field(
-            name="💵 New Balance",
-            value=f"Gold: {current_gold + gold_reward}\nTickets: {current_tickets + ticket_reward}",
-            inline=True
-        )
+
+        # Display daily free card if received
+        if daily_card:
+            rarity_emoji = {
+                'common': '⚪',
+                'rare': '🔵',
+                'epic': '🟣',
+                'legendary': '🟡'
+            }.get(daily_card.get('rarity', 'common'), '⚪')
+
+            embed.add_field(
+                name="🎴 Daily Card",
+                value=f"{rarity_emoji} **{daily_card.get('name', 'Unknown')}** ({daily_card.get('rarity', 'common').title()})",
+                inline=False
+            )
         
         # Show next milestone
         next_milestones = {3: "Day 3: 150 gold", 7: "Day 7: 300 gold + 1 ticket", 
@@ -815,7 +782,7 @@ class GameplayCommands(commands.Cog):
         
         target_user = user or interaction.user
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT xp, gold, tickets FROM user_inventory WHERE user_id = ?
@@ -897,7 +864,7 @@ class GameplayCommands(commands.Cog):
         """Instantly sell a card for gold (marketplace /sell lists for other players)"""
         from config.economy import get_card_sell_price, CARD_SELL_PRICES
         
-        with sqlite3.connect(self.db.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             
             # Find the card in user's collection (match by serial_number or card_id)
@@ -969,9 +936,10 @@ class CardUpgradeView(ui.View):
         'platinum_to_legendary': ('epic', 'legendary'),
     }
 
-    def __init__(self, economy_manager: CardEconomyManager, user_id: int, upgrade_type: str):
+    def __init__(self, economy_manager: CardEconomyManager, user_id: int, upgrade_type: str, db: DatabaseManager = None):
         super().__init__(timeout=180)
         self.economy = economy_manager
+        self.db = db
         self.user_id = user_id
         self.upgrade_type = upgrade_type
         self.selected_cards = []
@@ -1013,7 +981,7 @@ class CardUpgradeView(ui.View):
 
     def _load_eligible_cards(self) -> list:
         try:
-            with sqlite3.connect(self.economy.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT c.card_id, c.name, c.rarity
@@ -1039,7 +1007,7 @@ class CardUpgradeView(ui.View):
                 f"Select {self.required} cards first.", ephemeral=True)
 
         # Remove consumed cards
-        with sqlite3.connect(self.economy.db_path) as conn:
+        with self.db._get_connection() as conn:
             cursor = conn.cursor()
             for cid in self.selected_cards:
                 cursor.execute(

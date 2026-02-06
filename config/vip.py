@@ -511,8 +511,19 @@ def get_vip_manager() -> VIPManager:
 def is_user_vip(user_id: int, db_path: str = "music_legends.db") -> bool:
     """Check if a user has active VIP subscription"""
     import sqlite3
+    import os
     try:
-        with sqlite3.connect(db_path) as conn:
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            url = database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            conn = _PgConnectionWrapper(psycopg2.connect(url))
+        else:
+            conn = sqlite3.connect(db_path)
+        with conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT status, expires_at FROM vip_subscriptions 

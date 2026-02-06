@@ -13,13 +13,25 @@ from pathlib import Path
 class DatabaseSetup:
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
+        self._database_url = os.getenv("DATABASE_URL")
         print(f"🗄️ Database Setup for Music Legends Bot")
         print(f"📁 Database Path: {db_path}")
         print("=" * 50)
-    
+
+    def _get_connection(self):
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        if self._database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            url = self._database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return _PgConnectionWrapper(psycopg2.connect(url))
+        return sqlite3.connect(self.db_path)
+
     def create_all_tables(self):
         """Create all database tables"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             print("📋 Creating database tables...")
@@ -201,7 +213,7 @@ class DatabaseSetup:
     
     def create_indexes(self):
         """Create database indexes for better performance"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             print("🔍 Creating database indexes...")
@@ -228,7 +240,7 @@ class DatabaseSetup:
     
     def insert_default_data(self):
         """Insert default/initial data"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             print("📊 Inserting default data...")
@@ -307,7 +319,7 @@ class DatabaseSetup:
     
     def verify_setup(self):
         """Verify that all tables were created correctly"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             print("🔍 Verifying database setup...")

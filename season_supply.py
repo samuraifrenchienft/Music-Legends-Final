@@ -25,10 +25,21 @@ class SeasonSupply:
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
         self.init_supply_tracking()
-    
+
+    def _get_connection(self):
+        import os
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            import psycopg2
+            from database import _PgConnectionWrapper
+            conn = psycopg2.connect(database_url)
+            return _PgConnectionWrapper(conn)
+        import sqlite3
+        return sqlite3.connect(self.db_path)
+
     def init_supply_tracking(self):
         """Initialize supply tracking table"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Global supply tracking
@@ -67,7 +78,7 @@ class SeasonSupply:
     
     def can_mint(self, tier: str, artist_id: Optional[str] = None, season: int = 1) -> Dict:
         """Check if a card can be minted within supply caps"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             # Check global cap
@@ -114,9 +125,9 @@ class SeasonSupply:
     
     def record_mint(self, tier: str, artist_id: Optional[str] = None, season: int = 1) -> bool:
         """Record a card mint with atomic cap check to prevent oversupply"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("BEGIN IMMEDIATE")
+            # Transaction is managed by context manager
 
             try:
                 # Check global cap inside transaction
@@ -165,7 +176,7 @@ class SeasonSupply:
     
     def get_supply_status(self, season: int = 1) -> Dict:
         """Get current supply status for a season"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""

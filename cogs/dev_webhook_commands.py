@@ -345,7 +345,7 @@ class DevWebhookCommandsCog(commands.Cog):
                     continue
             
             # Publish pack
-            with sqlite3.connect(self.db.db_path) as conn:
+            with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE creator_packs 
@@ -442,4 +442,12 @@ class DevWebhookCommandsCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(DevWebhookCommandsCog(bot))
+    # DEV COMMANDS REMOVED - Use CLI scripts instead
+    # See cli_scripts/ folder for:
+    #   - cli_announcement.py (replaces /dev_announcement)
+    #   - cli_create_pack.py (replaces /dev_create_community_pack and /dev_create_gold_pack)
+    #   - cli_restart_bot.py (replaces /dev_restart)
+    #
+    # This cog is disabled. Uncomment below to re-enable if needed.
+    # await bot.add_cog(DevWebhookCommandsCog(bot))
+    pass

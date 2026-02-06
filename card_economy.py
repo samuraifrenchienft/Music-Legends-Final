@@ -477,10 +477,11 @@ class CardEconomyManager:
         """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
         if self._database_url:
             import psycopg2
+            from database import _PgConnectionWrapper
             url = self._database_url
             if url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql://", 1)
-            return psycopg2.connect(url), "postgresql", "%s"
+            return _PgConnectionWrapper(psycopg2.connect(url)), "postgresql", "?"
         else:
             return sqlite3.connect(self.db_path), "sqlite", "?"
 
@@ -489,7 +490,7 @@ class CardEconomyManager:
     # ------------------------------------------------------------------
     def initialize_economy_tables(self):
         """Ensure user_inventory and related tables exist"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection()[0] as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user_inventory (
@@ -512,7 +513,7 @@ class CardEconomyManager:
     # Balance helpers
     # ------------------------------------------------------------------
     def get_balance(self, user_id: int) -> int:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection()[0] as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
@@ -649,7 +650,7 @@ class CardEconomyManager:
 
     def burn_card_for_dust(self, user_id: int, serial_number: str) -> dict:
         """Burn a card and give the user dust"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection()[0] as conn:
             cursor = conn.cursor()
 
             # Find card owned by user
@@ -685,7 +686,7 @@ class CardEconomyManager:
 
     def create_card(self, card_data: dict) -> dict:
         """Insert a new card into the database with all required columns"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_connection()[0] as conn:
             cursor = conn.cursor()
             card_id = card_data.get('card_id', f"card_{uuid.uuid4().hex[:8]}")
 
