@@ -68,20 +68,37 @@ def _deterministic_uuid(genre: str, vol: int, artist: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"musiclegends:{genre}:{vol}:{artist}"))
 
 
+def _rarity_to_tier(rarity: str) -> str:
+    """Map rarity to tier"""
+    return {
+        "common": "community",
+        "rare": "gold",
+        "epic": "platinum",
+        "legendary": "legendary",
+        "mythic": "legendary",
+    }.get(rarity.lower(), "community")
+
+
 def _build_card(artist_name: str, rarity: str, genre: str, vol: int) -> Dict:
     lo, hi = RARITY_STAT_RANGES[rarity]
+    card_id = _deterministic_uuid(genre, vol, artist_name)
     return {
-        "card_id":    _deterministic_uuid(genre, vol, artist_name),
-        "name":       artist_name,
-        "title":      "",
-        "rarity":     rarity,
-        "impact":     _deterministic_stat(artist_name, "impact",    lo, hi),
-        "skill":      _deterministic_stat(artist_name, "skill",     lo, hi),
-        "longevity":  _deterministic_stat(artist_name, "longevity", lo, hi),
-        "culture":    _deterministic_stat(artist_name, "culture",   lo, hi),
-        "hype":       _deterministic_stat(artist_name, "hype",      lo, hi),
-        "image_url":  "",
-        "youtube_url":"",
+        "card_id":       card_id,
+        "name":          artist_name,
+        "artist_name":   artist_name,           # ADD: alias for display
+        "title":         "",
+        "rarity":        rarity,
+        "tier":          _rarity_to_tier(rarity), # ADD: mapped from rarity
+        "serial_number": card_id,               # ADD: use card_id as serial
+        "print_number":  1,                     # ADD: print sequence
+        "quality":       "standard",            # ADD: card quality
+        "impact":        _deterministic_stat(artist_name, "impact",    lo, hi),
+        "skill":         _deterministic_stat(artist_name, "skill",     lo, hi),
+        "longevity":     _deterministic_stat(artist_name, "longevity", lo, hi),
+        "culture":       _deterministic_stat(artist_name, "culture",   lo, hi),
+        "hype":          _deterministic_stat(artist_name, "hype",      lo, hi),
+        "image_url":     "",
+        "youtube_url":   "",
     }
 
 
@@ -186,15 +203,22 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
                     for card in cards:
                         cursor.execute(f"""
                             INSERT INTO cards
-                            (card_id, name, title, rarity, impact, skill,
-                             longevity, culture, hype, image_url, youtube_url, type, pack_id)
-                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'artist', {ph})
+                            (card_id, name, artist_name, title, rarity, tier, serial_number,
+                             print_number, quality, impact, skill, longevity, culture, hype,
+                             image_url, youtube_url, type, pack_id)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
+                                    {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'artist', {ph})
                             ON CONFLICT (card_id) DO NOTHING
                         """, (
                             card["card_id"],
                             card["name"],
+                            card.get("artist_name", card["name"]),
                             card["title"],
                             card["rarity"],
+                            card.get("tier", _rarity_to_tier(card["rarity"])),
+                            card.get("serial_number", card["card_id"]),
+                            card.get("print_number", 1),
+                            card.get("quality", "standard"),
                             card["impact"],
                             card["skill"],
                             card["longevity"],
@@ -208,14 +232,20 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
                     for card in cards:
                         cursor.execute("""
                             INSERT OR IGNORE INTO cards
-                            (card_id, name, title, rarity, impact, skill,
-                             longevity, culture, hype, image_url, youtube_url, type, pack_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'artist', ?)
+                            (card_id, name, artist_name, title, rarity, tier, serial_number,
+                             print_number, quality, impact, skill, longevity, culture, hype,
+                             image_url, youtube_url, type, pack_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'artist', ?)
                         """, (
                             card["card_id"],
                             card["name"],
+                            card.get("artist_name", card["name"]),
                             card["title"],
                             card["rarity"],
+                            card.get("tier", _rarity_to_tier(card["rarity"])),
+                            card.get("serial_number", card["card_id"]),
+                            card.get("print_number", 1),
+                            card.get("quality", "standard"),
                             card["impact"],
                             card["skill"],
                             card["longevity"],

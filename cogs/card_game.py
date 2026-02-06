@@ -411,12 +411,22 @@ class CardGameCog(Cog):
                         'hype': base_stat + random.randint(-5, 10)  # Add hype stat
                     }
                     
-                    # Convert to database format - only include fields that exist in DB
+                    # Map rarity to tier
+                    tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                                'legendary': 'legendary', 'mythic': 'legendary'}
+                    tier = tier_map.get(rarity.lower(), 'community')
+
+                    # Convert to database format - include all required fields
                     card_data = {
                         'card_id': artist_card.card_id,
                         'name': artist_card.artist,
+                        'artist_name': artist_card.artist,  # ADD: alias for display
                         'title': artist_card.song,
                         'rarity': artist_card.rarity,
+                        'tier': tier,                       # ADD: mapped from rarity
+                        'serial_number': artist_card.card_id,  # ADD: use card_id as serial
+                        'print_number': 1,                  # ADD: print sequence
+                        'quality': 'standard',              # ADD: card quality
                         'youtube_url': artist_card.youtube_url,
                         'image_url': artist_card.thumbnail,
                         'view_count': artist_card.view_count,

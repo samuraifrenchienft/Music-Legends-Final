@@ -546,11 +546,13 @@ class CardEconomyManager:
             cards.append({
                 'card_id': row[0],
                 'artist_name': row[1],
+                'name': row[1],  # Include name for consistency
                 'title': row[2] or '',
                 'tier': tier_map.get(rarity, 'community'),
                 'rarity': rarity,
-                'serial_number': row[0],
-                'quality': rarity,
+                'serial_number': row[0],  # Use card_id as serial_number
+                'print_number': 1,
+                'quality': 'standard',
                 'image_url': row[4] or '',
             })
 
@@ -654,18 +656,32 @@ class CardEconomyManager:
         return {'success': True, 'dust_earned': dust, 'card_id': card_id}
 
     def create_card(self, card_data: dict) -> dict:
-        """Insert a new card into the database"""
+        """Insert a new card into the database with all required columns"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             card_id = card_data.get('card_id', f"card_{uuid.uuid4().hex[:8]}")
+
+            # Map rarity to tier
+            rarity = card_data.get('rarity', 'common').lower()
+            tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                        'legendary': 'legendary', 'mythic': 'legendary'}
+            tier = card_data.get('tier', tier_map.get(rarity, 'community'))
+
             cursor.execute("""
-                INSERT OR IGNORE INTO cards (card_id, name, title, rarity, image_url, type)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO cards
+                (card_id, name, artist_name, title, rarity, tier, serial_number,
+                 print_number, quality, image_url, type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 card_id,
                 card_data.get('name', 'Unknown'),
+                card_data.get('artist_name', card_data.get('name', 'Unknown')),
                 card_data.get('title', ''),
-                card_data.get('rarity', 'common'),
+                rarity,
+                tier,
+                card_data.get('serial_number', card_id),
+                card_data.get('print_number', 1),
+                card_data.get('quality', 'standard'),
                 card_data.get('image_url', ''),
                 card_data.get('type', 'artist'),
             ))

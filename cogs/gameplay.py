@@ -252,8 +252,8 @@ class GameplayCommands(commands.Cog):
                 SELECT c.*, uc.acquired_at, uc.acquired_from, uc.is_favorite
                 FROM cards c
                 JOIN user_cards uc ON c.card_id = uc.card_id
-                WHERE (c.card_id = ? OR c.serial_number = ?) AND uc.user_id = ?
-            """, (card_identifier, card_identifier, interaction.user.id))
+                WHERE (c.card_id = ? OR c.serial_number = ? OR c.name LIKE ?) AND uc.user_id = ?
+            """, (card_identifier, card_identifier, f"%{card_identifier}%", interaction.user.id))
             row = cursor.fetchone()
             
             if row:
@@ -392,9 +392,10 @@ class GameplayCommands(commands.Cog):
         
         # Acquisition info
         acq_date = acquired_at[:10] if acquired_at and len(acquired_at) >= 10 else 'Unknown'
+        serial = card.get('serial_number') or card.get('card_id', 'Unknown')
         embed.add_field(
             name="📅 **ACQUISITION**",
-            value=f"**Date:** {acq_date}\n**Source:** {acquired_from.replace('_', ' ').title()}\n**Serial:** {card.get('serial_number', 'Unknown')}",
+            value=f"**Date:** {acq_date}\n**Source:** {acquired_from.replace('_', ' ').title()}\n**Serial:** {serial}",
             inline=False
         )
         
@@ -514,15 +515,24 @@ class GameplayCommands(commands.Cog):
         """Lookup all cards for a specific artist in the database"""
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
-            # Search in both name and artist_name columns
+            # Search in both name and artist_name columns (with safe defaults for missing columns)
             cursor.execute("""
-                SELECT c.card_id, c.name, c.rarity, c.tier, c.serial_number, c.print_number, 
-                       c.quality, c.artist_name,
+                SELECT c.card_id, c.name, c.rarity,
+                       COALESCE(c.tier, CASE
+                           WHEN LOWER(c.rarity) = 'common' THEN 'community'
+                           WHEN LOWER(c.rarity) = 'rare' THEN 'gold'
+                           WHEN LOWER(c.rarity) = 'epic' THEN 'platinum'
+                           ELSE 'legendary'
+                       END) as tier,
+                       COALESCE(c.serial_number, c.card_id) as serial_number,
+                       COALESCE(c.print_number, 1) as print_number,
+                       COALESCE(c.quality, 'standard') as quality,
+                       COALESCE(c.artist_name, c.name) as artist_name,
                        CASE WHEN uc.user_id = ? THEN 1 ELSE 0 END as owned
                 FROM cards c
                 LEFT JOIN user_cards uc ON c.card_id = uc.card_id AND uc.user_id = ?
                 WHERE c.name LIKE ? OR c.artist_name LIKE ?
-                ORDER BY c.tier DESC, c.print_number ASC
+                ORDER BY tier DESC, print_number ASC
                 LIMIT 50
             """, (interaction.user.id, interaction.user.id, f"%{artist_name}%", f"%{artist_name}%"))
             cards = cursor.fetchall()
@@ -890,13 +900,13 @@ class GameplayCommands(commands.Cog):
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.cursor()
             
-            # Find the card in user's collection
+            # Find the card in user's collection (match by serial_number or card_id)
             cursor.execute("""
                 SELECT c.card_id, c.name, c.rarity, uc.user_id
                 FROM cards c
                 JOIN user_cards uc ON c.card_id = uc.card_id
-                WHERE c.serial_number = ? AND uc.user_id = ?
-            """, (serial_number, interaction.user.id))
+                WHERE (c.serial_number = ? OR c.card_id = ?) AND uc.user_id = ?
+            """, (serial_number, serial_number, interaction.user.id))
             card = cursor.fetchone()
             
             if not card:

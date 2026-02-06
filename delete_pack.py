@@ -37,15 +37,20 @@ def delete_pack(pack_id: str, owner_id: int = None):
 
             # Cascading delete - remove marketplace listings that reference cards from this pack
             # This is a basic cascade since the schema doesn't have foreign keys
+            # Also delete cards that belong to this pack
             cursor.execute("""
-                DELETE FROM marketplace_listings
+                DELETE FROM market_listings
                 WHERE card_id IN (
-                    SELECT card_id FROM user_inventory
-                    WHERE acquisition_source = 'creator_pack'
-                    AND acquisition_metadata LIKE ?
+                    SELECT card_id FROM cards WHERE pack_id = ?
                 )
-            """, (f'%{pack_id}%',))
+            """, (pack_id,))
             cascade_deleted = cursor.rowcount
+
+            # Delete cards associated with this pack
+            cursor.execute("DELETE FROM cards WHERE pack_id = ?", (pack_id,))
+            cards_deleted = cursor.rowcount
+            if cards_deleted > 0:
+                print(f"   Deleted {cards_deleted} cards from pack")
 
             conn.commit()
 

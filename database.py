@@ -38,10 +38,12 @@ class DatabaseManager:
                     card_id TEXT PRIMARY KEY,
                     type TEXT NOT NULL DEFAULT 'artist', -- 'artist' or 'song'
                     name TEXT NOT NULL,
+                    artist_name TEXT,           -- alias for display (maps to name)
                     title TEXT,
                     image_url TEXT,
                     youtube_url TEXT,
                     rarity TEXT NOT NULL,
+                    tier TEXT,                  -- mapped from rarity (community/gold/platinum/legendary)
                     variant TEXT DEFAULT 'Classic',
                     era TEXT,
                     impact INTEGER,
@@ -49,6 +51,9 @@ class DatabaseManager:
                     longevity INTEGER,
                     culture INTEGER,
                     hype INTEGER,
+                    serial_number TEXT,         -- unique instance ID (defaults to card_id)
+                    print_number INTEGER DEFAULT 1, -- print sequence
+                    quality TEXT DEFAULT 'standard', -- card quality
                     effect_type TEXT, -- for song cards
                     effect_value TEXT, -- for song cards
                     pack_id TEXT,
@@ -64,6 +69,16 @@ class DatabaseManager:
             card_columns = {row[1] for row in cursor.fetchall()}
             if "era" not in card_columns:
                 cursor.execute("ALTER TABLE cards ADD COLUMN era TEXT")
+            if "artist_name" not in card_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN artist_name TEXT")
+            if "tier" not in card_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN tier TEXT")
+            if "serial_number" not in card_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT")
+            if "print_number" not in card_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN print_number INTEGER DEFAULT 1")
+            if "quality" not in card_columns:
+                cursor.execute("ALTER TABLE cards ADD COLUMN quality TEXT DEFAULT 'standard'")
             
             # Server activity tracking (for auto-drops)
             cursor.execute("""
@@ -538,20 +553,9 @@ class DatabaseManager:
             """)
             
             # ===== ECONOMY SYSTEM =====
-            
-            # User economy - gold, tickets, daily claims
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_economy (
-                    user_id INTEGER PRIMARY KEY,
-                    gold INTEGER DEFAULT 500,
-                    tickets INTEGER DEFAULT 0,
-                    last_daily_claim TIMESTAMP,
-                    daily_streak INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id)
-                )
-            """)
+
+            # NOTE: user_economy table REMOVED - all economy data consolidated into user_inventory
+            # user_inventory table is created below in the "MISSING TABLES" section
             
             # Battle history - track all battles
             cursor.execute("""
@@ -669,7 +673,7 @@ class DatabaseManager:
             """)
 
             # Add indexes for economy tables
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_economy_gold ON user_economy(gold)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_inventory_gold ON user_inventory(gold)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_players ON battle_history(player1_id, player2_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_date ON battle_history(battle_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_user ON user_quests(user_id)")
@@ -786,7 +790,7 @@ class DatabaseManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Generate default battle stats if not provided
                 # If 'power' is provided but not individual stats, derive them
                 if 'power' in card_data and not card_data.get('impact'):
@@ -795,29 +799,50 @@ class DatabaseManager:
                     card_data['skill'] = base_stat
                     card_data['longevity'] = base_stat
                     card_data['culture'] = base_stat
-                
+
                 # Default hype to average of other stats if not provided
                 if not card_data.get('hype'):
                     avg_stat = (
-                        card_data.get('impact', 0) + 
-                        card_data.get('skill', 0) + 
-                        card_data.get('longevity', 0) + 
+                        card_data.get('impact', 0) +
+                        card_data.get('skill', 0) +
+                        card_data.get('longevity', 0) +
                         card_data.get('culture', 0)
                     ) // 4
                     card_data['hype'] = avg_stat
-                
+
+                # Map rarity to tier if not provided
+                rarity = card_data.get('rarity', 'common').lower()
+                if not card_data.get('tier'):
+                    tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                                'legendary': 'legendary', 'mythic': 'legendary'}
+                    card_data['tier'] = tier_map.get(rarity, 'community')
+
+                # Set serial_number to card_id if not provided
+                if not card_data.get('serial_number'):
+                    card_data['serial_number'] = card_data['card_id']
+
+                # Set artist_name to name if not provided
+                if not card_data.get('artist_name'):
+                    card_data['artist_name'] = card_data['name']
+
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO cards
-                    (card_id, name, title, rarity, era, variant, impact, skill,
-                     longevity, culture, hype, image_url, youtube_url, type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (card_id, name, artist_name, title, rarity, tier, serial_number, print_number,
+                     quality, era, variant, impact, skill, longevity, culture, hype,
+                     image_url, youtube_url, type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         card_data['card_id'],
                         card_data['name'],
+                        card_data.get('artist_name', card_data['name']),
                         card_data.get('title', ''),
                         card_data['rarity'],
+                        card_data.get('tier'),
+                        card_data.get('serial_number', card_data['card_id']),
+                        card_data.get('print_number', 1),
+                        card_data.get('quality', 'standard'),
                         card_data.get('era'),
                         card_data.get('variant'),
                         card_data.get('impact', 0),
@@ -1301,7 +1326,7 @@ class DatabaseManager:
             received_cards = []
             for card_data in cards_data:
                 card_id = self.add_card_to_master_list(card_data)
-                self.add_card_to_user_collection(buyer_id, card_id, 'pack')
+                self.add_card_to_collection(buyer_id, card_id, 'pack')
                 received_cards.append(card_id)
             
             # Record purchase with revenue split
@@ -1627,42 +1652,48 @@ class DatabaseManager:
     # ===== ECONOMY METHODS =====
     
     def get_user_economy(self, user_id: int) -> Dict:
-        """Get user's economy data (gold, tickets, daily streak)"""
+        """Get user's economy data (gold, tickets, daily streak) - uses user_inventory table"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT user_id, gold, tickets, last_daily_claim, daily_streak, created_at, updated_at
-                FROM user_economy 
+                SELECT user_id, gold, tickets, last_daily_claim, daily_streak
+                FROM user_inventory
                 WHERE user_id = ?
             """, (user_id,))
-            
+
             result = cursor.fetchone()
             if not result:
                 # Create new economy record for user
                 cursor.execute("""
-                    INSERT INTO user_economy (user_id, gold, tickets)
-                    VALUES (?, 500, 0)
+                    INSERT INTO user_inventory (user_id, gold, tickets, dust, gems, xp, level, daily_streak)
+                    VALUES (?, 500, 0, 0, 0, 0, 1, 0)
                 """, (user_id,))
                 conn.commit()
-                
+
                 cursor.execute("""
-                    SELECT user_id, gold, tickets, last_daily_claim, daily_streak, created_at, updated_at
-                    FROM user_economy 
+                    SELECT user_id, gold, tickets, last_daily_claim, daily_streak
+                    FROM user_inventory
                     WHERE user_id = ?
                 """, (user_id,))
                 result = cursor.fetchone()
-            
-            columns = ['user_id', 'gold', 'tickets', 'last_daily_claim', 'daily_streak', 'created_at', 'updated_at']
-            return dict(zip(columns, result))
+
+            columns = ['user_id', 'gold', 'tickets', 'last_daily_claim', 'daily_streak']
+            return dict(zip(columns, result)) if result else {'user_id': user_id, 'gold': 500, 'tickets': 0, 'last_daily_claim': None, 'daily_streak': 0}
     
     def update_user_economy(self, user_id: int, gold_change: int = 0, tickets_change: int = 0) -> bool:
-        """Update user's gold and tickets"""
+        """Update user's gold and tickets - uses user_inventory table"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                # Ensure user exists first
                 cursor.execute("""
-                    UPDATE user_economy 
-                    SET gold = gold + ?, tickets = tickets + ?, updated_at = CURRENT_TIMESTAMP
+                    INSERT INTO user_inventory (user_id, gold, tickets)
+                    VALUES (?, 500, 0)
+                    ON CONFLICT(user_id) DO NOTHING
+                """, (user_id,))
+                cursor.execute("""
+                    UPDATE user_inventory
+                    SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?
                     WHERE user_id = ?
                 """, (gold_change, tickets_change, user_id))
                 conn.commit()
@@ -1717,13 +1748,13 @@ class DatabaseManager:
         
         total_gold = base_gold + bonus_gold
         
-        # Update economy
+        # Update economy - uses user_inventory table
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE user_economy 
-                SET gold = gold + ?, tickets = tickets + ?, 
-                    last_daily_claim = CURRENT_TIMESTAMP, daily_streak = ?, updated_at = CURRENT_TIMESTAMP
+                UPDATE user_inventory
+                SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?,
+                    last_daily_claim = CURRENT_TIMESTAMP, daily_streak = ?
                 WHERE user_id = ?
             """, (total_gold, tickets, new_streak, user_id))
             conn.commit()

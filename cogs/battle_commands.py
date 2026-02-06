@@ -394,13 +394,38 @@ class BattleCommands(commands.Cog):
 
         await interaction.followup.send(embed=result_embed)
 
+        # Record to battle_history table
+        try:
+            import uuid
+            battle_id = f"battle_{uuid.uuid4().hex[:8]}"
+            self.db.record_battle({
+                'battle_id': battle_id,
+                'player1_id': interaction.user.id,
+                'player2_id': opponent.id,
+                'player1_card_id': c_card_data.get('card_id', ''),
+                'player2_card_id': o_card_data.get('card_id', ''),
+                'winner': result['winner'],  # 0=tie, 1=player1, 2=player2
+                'player1_power': p1['final_power'],
+                'player2_power': p2['final_power'],
+                'player1_critical': p1.get('critical', False),
+                'player2_critical': p2.get('critical', False),
+                'wager_tier': tier_key,
+                'wager_amount': wager_cost,
+                'player1_gold_reward': p1['gold_reward'],
+                'player2_gold_reward': p2['gold_reward'],
+                'player1_xp_reward': p1['xp_reward'],
+                'player2_xp_reward': p2['xp_reward'],
+            })
+        except Exception as e:
+            print(f"Warning: could not record battle history: {e}")
+
         # Log to changelog
         try:
             from services.changelog_manager import log_user_action
             log_user_action(
                 f"battle_{tier_key}",
-                challenger_id,
-                {'opponent': opponent_id, 'winner': winner_id, 'tier': tier_key}
+                interaction.user.id,
+                {'opponent': opponent.id, 'winner': winner_id, 'tier': tier_key}
             )
         except Exception:
             pass
