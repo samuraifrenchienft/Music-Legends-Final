@@ -6,12 +6,13 @@ a baseline catalogue of packs.  Packs are idempotent — if a seed pack
 already exists in the DB it is skipped, so this is safe to call every boot.
 
 Each genre has 15 artists. For each artist:
-- Fetch 5 songs from YouTube API
+- Attempt to fetch 5 songs from Last.fm / YouTube / AudioDB APIs
+- If APIs fail or are unavailable, use placeholder song names
 - Create 1 pack per artist with 5 song cards
 - Card rarities per pack: 1 epic, 2 rare, 2 common
-- Stats are scaled based on tier (community vs gold)
-- Images and metadata from YouTube
-Result: 15 packs per genre
+- Stats are deterministic (hash-based) so they never change
+- Each pack is committed individually so partial failures don't lose data
+Result: 15 packs per genre = 75 total
 """
 
 import json
@@ -54,6 +55,85 @@ GENRE_EMOJI = {
     "R&B Soul Pack":         "🎷",
     "Pop Hits 2024":         "🎤",
     "Hip Hop Legends":       "🎙️",
+}
+
+# Fallback song names when APIs are unavailable
+FALLBACK_SONGS = {
+    "Disclosure": ["Latch", "White Noise", "Omen", "When a Fire Starts to Burn", "Magnets"],
+    "Eric Prydz": ["Call on Me", "Pjanoo", "Every Day", "Opus", "Generate"],
+    "Bonobo": ["Kerala", "Cirrus", "Kong", "Black Sands", "Sapphire"],
+    "Rüfüs Du Sol": ["Innerbloom", "Alive", "No Place", "Underwater", "On My Knees"],
+    "Lane 8": ["Rise", "No Captain", "Fingerprint", "Little by Little", "Brightest Lights"],
+    "Flume": ["Never Be Like You", "Say It", "Holdin On", "Sleepless", "Rushing Back"],
+    "Odesza": ["A Moment Apart", "Say My Name", "Loyal", "Line of Sight", "Higher Ground"],
+    "Deadmau5": ["Strobe", "Ghosts n Stuff", "I Remember", "The Veldt", "Raise Your Weapon"],
+    "Calvin Harris": ["Feel So Close", "Summer", "This Is What You Came For", "Outside", "Sweet Nothing"],
+    "Skrillex": ["Bangarang", "Scary Monsters and Nice Sprites", "Cinema", "First of the Year", "Make It Bun Dem"],
+    "Martin Garrix": ["Animals", "Scared to Be Lonely", "In the Name of Love", "Tremor", "High on Life"],
+    "Tiesto": ["Adagio for Strings", "Red Lights", "Traffic", "Elements of Life", "The Business"],
+    "Avicii": ["Levels", "Wake Me Up", "Hey Brother", "Waiting for Love", "The Nights"],
+    "Diplo": ["Revolution", "Lean On", "Get It Right", "Express Yourself", "Set It Off"],
+    "Porter Robinson": ["Language", "Shelter", "Divinity", "Sad Machine", "Goodbye to a World"],
+    "Led Zeppelin": ["Stairway to Heaven", "Kashmir", "Whole Lotta Love", "Black Dog", "Rock and Roll"],
+    "Pink Floyd": ["Comfortably Numb", "Wish You Were Here", "Money", "Time", "Another Brick in the Wall"],
+    "The Rolling Stones": ["Paint It Black", "Satisfaction", "Sympathy for the Devil", "Gimme Shelter", "Start Me Up"],
+    "Queen": ["Bohemian Rhapsody", "We Will Rock You", "Don't Stop Me Now", "Somebody to Love", "Under Pressure"],
+    "AC/DC": ["Back in Black", "Thunderstruck", "Highway to Hell", "T.N.T.", "You Shook Me All Night Long"],
+    "Jimi Hendrix": ["Purple Haze", "All Along the Watchtower", "Voodoo Child", "Hey Joe", "The Wind Cries Mary"],
+    "The Who": ["Baba O'Riley", "My Generation", "Won't Get Fooled Again", "Pinball Wizard", "Behind Blue Eyes"],
+    "Fleetwood Mac": ["Dreams", "The Chain", "Go Your Own Way", "Everywhere", "Rhiannon"],
+    "Eagles": ["Hotel California", "Take It Easy", "Desperado", "Life in the Fast Lane", "Heartache Tonight"],
+    "Aerosmith": ["Dream On", "Walk This Way", "Sweet Emotion", "I Don't Want to Miss a Thing", "Crazy"],
+    "Rush": ["Tom Sawyer", "Limelight", "The Spirit of Radio", "Closer to the Heart", "2112"],
+    "Deep Purple": ["Smoke on the Water", "Highway Star", "Child in Time", "Hush", "Black Night"],
+    "Cream": ["Sunshine of Your Love", "White Room", "Crossroads", "Badge", "Strange Brew"],
+    "The Doors": ["Light My Fire", "Riders on the Storm", "Break On Through", "People Are Strange", "L.A. Woman"],
+    "Santana": ["Black Magic Woman", "Smooth", "Oye Como Va", "Maria Maria", "Evil Ways"],
+    "Stevie Wonder": ["Superstition", "Isn't She Lovely", "I Just Called to Say I Love You", "Sir Duke", "Signed Sealed Delivered"],
+    "Aretha Franklin": ["Respect", "Natural Woman", "Chain of Fools", "Think", "I Say a Little Prayer"],
+    "Marvin Gaye": ["What's Going On", "Let's Get It On", "Sexual Healing", "Ain't No Mountain High Enough", "I Heard It Through the Grapevine"],
+    "Al Green": ["Let's Stay Together", "Tired of Being Alone", "Love and Happiness", "I'm Still in Love with You", "Here I Am"],
+    "Luther Vandross": ["Never Too Much", "Here and Now", "Dance with My Father", "Always and Forever", "A House Is Not a Home"],
+    "Earth, Wind & Fire": ["September", "Boogie Wonderland", "Shining Star", "Let's Groove", "Fantasy"],
+    "The Isley Brothers": ["Shout", "It's Your Thing", "Between the Sheets", "Twist and Shout", "That Lady"],
+    "Chaka Khan": ["I'm Every Woman", "Through the Fire", "Ain't Nobody", "I Feel for You", "Tell Me Something Good"],
+    "Anita Baker": ["Sweet Love", "Giving You the Best That I Got", "Caught Up in the Rapture", "Angel", "Body and Soul"],
+    "Sade": ["Smooth Operator", "No Ordinary Love", "By Your Side", "Sweetest Taboo", "Kiss of Life"],
+    "D'Angelo": ["Untitled", "Brown Sugar", "Really Love", "Cruisin'", "Lady"],
+    "Erykah Badu": ["On & On", "Tyrone", "Bag Lady", "Window Seat", "Didn't Cha Know"],
+    "Lauryn Hill": ["Doo Wop (That Thing)", "Everything Is Everything", "Ex-Factor", "Lost Ones", "To Zion"],
+    "Whitney Houston": ["I Will Always Love You", "I Wanna Dance with Somebody", "Greatest Love of All", "How Will I Know", "Run to You"],
+    "Prince": ["Purple Rain", "When Doves Cry", "Kiss", "1999", "Little Red Corvette"],
+    "Taylor Swift": ["Shake It Off", "Love Story", "Anti-Hero", "Blank Space", "Cruel Summer"],
+    "Ariana Grande": ["Thank U Next", "7 Rings", "Positions", "No Tears Left to Cry", "Into You"],
+    "The Weeknd": ["Blinding Lights", "Starboy", "Can't Feel My Face", "Save Your Tears", "The Hills"],
+    "Billie Eilish": ["Bad Guy", "Happier Than Ever", "Lovely", "Everything I Wanted", "Ocean Eyes"],
+    "Olivia Rodrigo": ["Drivers License", "Good 4 U", "Vampire", "Deja Vu", "Brutal"],
+    "Harry Styles": ["As It Was", "Watermelon Sugar", "Sign of the Times", "Adore You", "Late Night Talking"],
+    "Doja Cat": ["Say So", "Kiss Me More", "Need to Know", "Woman", "Streets"],
+    "Post Malone": ["Circles", "Rockstar", "Sunflower", "Congratulations", "Better Now"],
+    "Dua Lipa": ["Levitating", "Don't Start Now", "New Rules", "Physical", "One Kiss"],
+    "Bruno Mars": ["Uptown Funk", "Just the Way You Are", "24K Magic", "Grenade", "Locked Out of Heaven"],
+    "Ed Sheeran": ["Shape of You", "Thinking Out Loud", "Perfect", "Castle on the Hill", "Photograph"],
+    "Justin Bieber": ["Peaches", "Stay", "Sorry", "Love Yourself", "Baby"],
+    "Sabrina Carpenter": ["Espresso", "Nonsense", "Feather", "Because I Liked a Boy", "Fast Times"],
+    "Tate McRae": ["Greedy", "You Broke Me First", "She's All I Wanna Be", "Exes", "Feel Like"],
+    "SZA": ["Kill Bill", "Good Days", "Kiss Me More", "Love Galore", "Snooze"],
+    "The Notorious B.I.G.": ["Juicy", "Big Poppa", "Hypnotize", "Mo Money Mo Problems", "Sky's the Limit"],
+    "2Pac": ["Changes", "California Love", "Dear Mama", "Hit Em Up", "Ambitionz Az a Ridah"],
+    "Jay-Z": ["Empire State of Mind", "99 Problems", "Hard Knock Life", "Run This Town", "Dirt Off Your Shoulder"],
+    "Nas": ["N.Y. State of Mind", "If I Ruled the World", "One Mic", "The World Is Yours", "Illmatic"],
+    "Wu-Tang Clan": ["C.R.E.A.M.", "Protect Ya Neck", "Triumph", "Da Mystery of Chessboxin'", "Method Man"],
+    "Snoop Dogg": ["Gin and Juice", "Drop It Like It's Hot", "Still D.R.E.", "Who Am I", "Beautiful"],
+    "Dr. Dre": ["Still D.R.E.", "Nuthin' but a G Thang", "Forgot About Dre", "The Next Episode", "I Need a Doctor"],
+    "Eminem": ["Lose Yourself", "Stan", "Without Me", "The Real Slim Shady", "Not Afraid"],
+    "OutKast": ["Hey Ya!", "Ms. Jackson", "Roses", "So Fresh So Clean", "The Way You Move"],
+    "Kendrick Lamar": ["HUMBLE.", "DNA.", "Alright", "Swimming Pools", "Money Trees"],
+    "Kanye West": ["Stronger", "Gold Digger", "Heartless", "Runaway", "Power"],
+    "Ice Cube": ["It Was a Good Day", "Check Yo Self", "Friday", "No Vaseline", "You Can Do It"],
+    "A Tribe Called Quest": ["Can I Kick It?", "Scenario", "Electric Relaxation", "Award Tour", "Check the Rhime"],
+    "Public Enemy": ["Fight the Power", "Bring the Noise", "911 Is a Joke", "Don't Believe the Hype", "Black Steel in the Hour of Chaos"],
+    "Rakim": ["Paid in Full", "I Ain't No Joke", "Follow the Leader", "Microphone Fiend", "Know the Ledge"],
 }
 
 
@@ -99,8 +179,77 @@ def load_seed_data() -> Dict[str, List[List[str]]]:
         return json.load(f)
 
 
+def _get_songs_for_artist(artist_name, yt, lastfm, audiodb):
+    """Try APIs for song data, fall back to hardcoded songs if unavailable."""
+    songs = []
+    artist_info = None
+    artist_videos = []
+
+    # Try AudioDB for images
+    if audiodb:
+        try:
+            artist_results = audiodb.search_artist(artist_name, limit=1)
+            if artist_results:
+                artist_info = artist_results[0]
+                artist_id = artist_info.get('id')
+                if artist_id:
+                    artist_videos = audiodb.get_music_videos(artist_id)
+        except Exception:
+            pass
+
+    # Try Last.fm for track names
+    tracks = []
+    if lastfm:
+        try:
+            tracks = lastfm.get_top_tracks(artist_name, limit=5)
+        except Exception:
+            tracks = []
+
+    # Build song list from API data
+    for idx, track in enumerate(tracks[:5]):
+        song_name = track.get('name', '')
+        song_data = {
+            'title': f"{artist_name} - {song_name}",
+            'song_name': song_name,
+            'thumbnail_url': '',
+            'youtube_url': ''
+        }
+        if artist_videos and idx < len(artist_videos):
+            song_data['thumbnail_url'] = artist_videos[idx].get('thumbnail', '')
+
+        if yt and song_name:
+            try:
+                videos = yt.search_music_video(artist_name, song_name, limit=1)
+                if videos:
+                    if not song_data['thumbnail_url']:
+                        song_data['thumbnail_url'] = videos[0].get('thumbnail_url', '')
+                    song_data['youtube_url'] = videos[0].get('youtube_url', '')
+            except Exception:
+                pass
+
+        songs.append(song_data)
+
+    # Fill remaining slots from fallback list
+    if len(songs) < 5:
+        fallback = FALLBACK_SONGS.get(artist_name, [f"Song {i+1}" for i in range(5)])
+        fallback_image = artist_info.get('thumb', '') if artist_info else ''
+        for i in range(len(songs), 5):
+            song_name = fallback[i] if i < len(fallback) else f"Song {i+1}"
+            songs.append({
+                'title': f"{artist_name} - {song_name}",
+                'song_name': song_name,
+                'thumbnail_url': fallback_image,
+                'youtube_url': ''
+            })
+
+    return songs[:5]
+
+
 def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = False) -> Dict[str, int]:
     """Insert seed packs into the database. Skips packs that already exist.
+
+    Each pack is committed individually so API failures for one artist
+    don't prevent other packs from being created.
 
     Args:
         db_path: Path to SQLite database (ignored if DATABASE_URL is set)
@@ -120,6 +269,7 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
 
     inserted = 0
     skipped = 0
+    failed = 0
 
     try:
         conn, db_type = _get_db_connection()
@@ -157,9 +307,15 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     stripe_payment_id TEXT,
                     price_cents INTEGER DEFAULT 500,
                     total_purchases INTEGER DEFAULT 0,
-                    cards_data TEXT
+                    cards_data TEXT,
+                    genre TEXT
                 )
             """)
+            # Ensure genre column exists on old tables
+            try:
+                cursor.execute("ALTER TABLE creator_packs ADD COLUMN IF NOT EXISTS genre TEXT")
+            except Exception:
+                pass
             # Ensure cards table exists
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cards (
@@ -191,30 +347,24 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
             """)
             conn.commit()
 
-        # Initialize all 3 APIs: Last.fm (metadata) + TheAudioDB (images) + YouTube (URLs)
+        # Initialize APIs — these are optional, packs will be created regardless
         youtube_api_key = os.getenv("YOUTUBE_API_KEY")
         lastfm_api_key = os.getenv("LASTFM_API_KEY")
-        audiodb_api_key = os.getenv("AUDIODB_API_KEY", "1")  # Default public key
 
-        if not youtube_api_key:
-            print("⚠️ [SEED_PACKS] No YouTube API key - video URLs will be limited")
-        if not lastfm_api_key:
-            print("⚠️ [SEED_PACKS] No Last.fm API key - song metadata will be limited")
+        yt = None
+        lastfm = None
+        audiodb = None
 
-        # Import all integrations
         try:
             from youtube_integration import YouTubeIntegration
             from lastfm_integration import LastFmIntegration
             from audiodb_integration import AudioDBIntegration
             yt = YouTubeIntegration(youtube_api_key) if youtube_api_key else None
             lastfm = LastFmIntegration() if lastfm_api_key else None
-            audiodb = AudioDBIntegration()  # Always available with public key
-            print("✅ [SEED_PACKS] API integrations loaded: Last.fm, TheAudioDB, YouTube")
+            audiodb = AudioDBIntegration()
+            print("✅ [SEED_PACKS] API integrations loaded")
         except Exception as e:
-            print(f"⚠️ [SEED_PACKS] API integration unavailable: {e}")
-            yt = None
-            lastfm = None
-            audiodb = None
+            print(f"⚠️ [SEED_PACKS] API integration unavailable (will use fallbacks): {e}")
 
         for genre, artist_list in genre_data.items():
             emoji = GENRE_EMOJI.get(genre, "🎵")
@@ -233,208 +383,151 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     skipped += 1
                     continue
 
-                # Step 1: Get artist info from TheAudioDB for high-quality images
-                artist_info = None
-                artist_videos = []
-                if audiodb:
-                    try:
-                        print(f"🎨 Fetching artist info for {artist_name} from TheAudioDB...")
-                        artist_results = audiodb.search_artist(artist_name, limit=1)
-                        if artist_results:
-                            artist_info = artist_results[0]
-                            artist_id = artist_info.get('id')
-                            # Get music videos for high-quality thumbnails
-                            if artist_id:
-                                artist_videos = audiodb.get_music_videos(artist_id)
-                                print(f"✅ Found {len(artist_videos)} music videos from TheAudioDB")
-                    except Exception as e:
-                        print(f"⚠️ TheAudioDB fetch failed for {artist_name}: {e}")
+                # Wrap each pack in its own try/except so one failure
+                # doesn't prevent the remaining 74 packs from inserting
+                try:
+                    songs = _get_songs_for_artist(artist_name, yt, lastfm, audiodb)
 
-                # Step 2: Get top 5 tracks from Last.fm (metadata)
-                tracks = []
-                if lastfm:
-                    try:
-                        print(f"🎵 Fetching top tracks for {artist_name} from Last.fm...")
-                        tracks = lastfm.get_top_tracks(artist_name, limit=5)
-                        print(f"✅ Found {len(tracks)} tracks from Last.fm")
-                    except Exception as e:
-                        print(f"⚠️ Last.fm fetch failed for {artist_name}: {e}")
-                        tracks = []
+                    # Build 5 cards (1 per song) with rarities from SLOT_RARITIES
+                    cards = []
+                    for slot_idx, song in enumerate(songs[:5]):
+                        rarity = SLOT_RARITIES[slot_idx]
+                        lo, hi = RARITY_STAT_RANGES[rarity]
+                        song_title = song.get('title', f"{artist_name} - Song {slot_idx+1}")
+                        card_id = _deterministic_uuid(genre, artist_idx, song_title)
 
-                # Step 3: Combine data from all APIs
-                songs = []
-                for idx, track in enumerate(tracks[:5]):
-                    song_name = track.get('name', '')
-                    song_data = {
-                        'title': f"{artist_name} - {song_name}",
-                        'song_name': song_name,
-                        'playcount': track.get('playcount', 0),
-                        'listeners': track.get('listeners', 0),
-                        'thumbnail_url': '',
-                        'youtube_url': ''
-                    }
-
-                    # Try to get matching music video thumbnail from TheAudioDB
-                    if artist_videos and idx < len(artist_videos):
-                        video = artist_videos[idx]
-                        song_data['thumbnail_url'] = video.get('thumbnail', '')
-
-                    # Get YouTube URL for playback
-                    if yt and song_name:
-                        try:
-                            videos = yt.search_music_video(artist_name, song_name, limit=1)
-                            if videos:
-                                # Use YouTube thumbnail if TheAudioDB didn't provide one
-                                if not song_data['thumbnail_url']:
-                                    song_data['thumbnail_url'] = videos[0].get('thumbnail_url', '')
-                                song_data['youtube_url'] = videos[0].get('youtube_url', '')
-                        except Exception as e:
-                            print(f"⚠️ YouTube fetch failed for {song_name}: {e}")
-
-                    songs.append(song_data)
-
-                # If we don't have 5 songs, create placeholders
-                if len(songs) < 5:
-                    print(f"⚠️ Using {5 - len(songs)} placeholder songs for {artist_name}")
-                    # Use artist image from TheAudioDB for placeholders if available
-                    fallback_image = artist_info.get('thumb', '') if artist_info else ''
-                    for i in range(len(songs), 5):
-                        songs.append({
-                            'title': f"{artist_name} - Song {i+1}",
-                            'song_name': f"Song {i+1}",
-                            'playcount': 0,
-                            'listeners': 0,
-                            'thumbnail_url': fallback_image,
-                            'youtube_url': ''
+                        cards.append({
+                            "card_id":       card_id,
+                            "name":          song_title,
+                            "artist_name":   artist_name,
+                            "title":         song_title,
+                            "rarity":        rarity,
+                            "tier":          _rarity_to_tier(rarity),
+                            "serial_number": card_id,
+                            "print_number":  slot_idx + 1,
+                            "quality":       "standard",
+                            "impact":        _deterministic_stat(song_title, "impact", lo, hi),
+                            "skill":         _deterministic_stat(song_title, "skill", lo, hi),
+                            "longevity":     _deterministic_stat(song_title, "longevity", lo, hi),
+                            "culture":       _deterministic_stat(song_title, "culture", lo, hi),
+                            "hype":          _deterministic_stat(song_title, "hype", lo, hi),
+                            "image_url":     song.get('thumbnail_url', ''),
+                            "youtube_url":   song.get('youtube_url', ''),
+                            "pack_id":       pack_id,
                         })
 
-                # Build 5 cards (1 per song) with rarities from SLOT_RARITIES
-                cards = []
-                for slot_idx, song in enumerate(songs[:5]):
-                    rarity = SLOT_RARITIES[slot_idx]
-                    lo, hi = RARITY_STAT_RANGES[rarity]
-                    song_title = song.get('title', f"{artist_name} - Song {slot_idx+1}")
-                    card_id = _deterministic_uuid(genre, artist_idx, song_title)
+                    cards_json = json.dumps(cards)
 
-                    cards.append({
-                        "card_id":       card_id,
-                        "name":          song_title,
-                        "artist_name":   artist_name,
-                        "title":         song_title,
-                        "rarity":        rarity,
-                        "tier":          _rarity_to_tier(rarity),
-                        "serial_number": card_id,
-                        "print_number":  slot_idx + 1,
-                        "quality":       "standard",
-                        "impact":        _deterministic_stat(song_title, "impact", lo, hi),
-                        "skill":         _deterministic_stat(song_title, "skill", lo, hi),
-                        "longevity":     _deterministic_stat(song_title, "longevity", lo, hi),
-                        "culture":       _deterministic_stat(song_title, "culture", lo, hi),
-                        "hype":          _deterministic_stat(song_title, "hype", lo, hi),
-                        "image_url":     song.get('thumbnail_url', ''),
-                        "youtube_url":   song.get('youtube_url', ''),
-                        "pack_id":       pack_id,
-                    })
-
-                cards_json = json.dumps(cards)
-
-                # Insert pack as LIVE
-                if db_type == "postgresql":
-                    cursor.execute(f"""
-                        INSERT INTO creator_packs
-                        (pack_id, creator_id, name, description, pack_size,
-                         status, cards_data, published_at, price_cents, stripe_payment_id)
-                        VALUES ({ph}, 0, {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP, 0, 'SEED_PACK')
-                    """, (
-                        pack_id,
-                        pack_name,
-                        f"Official {artist_name} pack from {genre} with 5 songs",
-                        len(cards),
-                        cards_json,
-                    ))
-                else:
-                    cursor.execute("""
-                        INSERT INTO creator_packs
-                        (pack_id, creator_id, name, description, pack_size,
-                         status, cards_data, published_at, price_cents, stripe_payment_id)
-                        VALUES (?, 0, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, 0, 'SEED_PACK')
-                    """, (
-                        pack_id,
-                        pack_name,
-                        f"Official {artist_name} pack from {genre} with 5 songs",
-                        len(cards),
-                        cards_json,
-                    ))
-
-                # Insert each card into the master cards table
-                # PostgreSQL uses ON CONFLICT, SQLite uses INSERT OR IGNORE
-                if db_type == "postgresql":
-                    for card in cards:
+                    # Insert pack as LIVE
+                    if db_type == "postgresql":
                         cursor.execute(f"""
-                            INSERT INTO cards
-                            (card_id, name, artist_name, title, rarity, tier, serial_number,
-                             print_number, quality, impact, skill, longevity, culture, hype,
-                             image_url, youtube_url, type, pack_id)
-                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
-                                    {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'artist', {ph})
-                            ON CONFLICT (card_id) DO NOTHING
+                            INSERT INTO creator_packs
+                            (pack_id, creator_id, name, description, pack_size,
+                             status, cards_data, published_at, price_cents, stripe_payment_id, genre)
+                            VALUES ({ph}, 0, {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP, 0, 'SEED_PACK', {ph})
                         """, (
-                            card["card_id"],
-                            card["name"],
-                            card["artist_name"],
-                            card["title"],
-                            card["rarity"],
-                            card["tier"],
-                            card["serial_number"],
-                            card["print_number"],
-                            card["quality"],
-                            card["impact"],
-                            card["skill"],
-                            card["longevity"],
-                            card["culture"],
-                            card["hype"],
-                            card["image_url"],
-                            card["youtube_url"],
                             pack_id,
+                            pack_name,
+                            f"Official {artist_name} pack from {genre} with 5 songs",
+                            len(cards),
+                            cards_json,
+                            genre,
                         ))
-                else:
-                    for card in cards:
+                    else:
                         cursor.execute("""
-                            INSERT OR IGNORE INTO cards
-                            (card_id, name, artist_name, title, rarity, tier, serial_number,
-                             print_number, quality, impact, skill, longevity, culture, hype,
-                             image_url, youtube_url, type, pack_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'artist', ?)
+                            INSERT INTO creator_packs
+                            (pack_id, creator_id, name, description, pack_size,
+                             status, cards_data, published_at, price_cents, stripe_payment_id, genre)
+                            VALUES (?, 0, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, 0, 'SEED_PACK', ?)
                         """, (
-                            card["card_id"],
-                            card["name"],
-                            card["artist_name"],
-                            card["title"],
-                            card["rarity"],
-                            card["tier"],
-                            card["serial_number"],
-                            card["print_number"],
-                            card["quality"],
-                            card["impact"],
-                            card["skill"],
-                            card["longevity"],
-                            card["culture"],
-                            card["hype"],
-                            card["image_url"],
-                            card["youtube_url"],
                             pack_id,
+                            pack_name,
+                            f"Official {artist_name} pack from {genre} with 5 songs",
+                            len(cards),
+                            cards_json,
+                            genre,
                         ))
 
-                inserted += 1
+                    # Insert each card into the master cards table
+                    if db_type == "postgresql":
+                        for card in cards:
+                            cursor.execute(f"""
+                                INSERT INTO cards
+                                (card_id, name, artist_name, title, rarity, tier, serial_number,
+                                 print_number, quality, impact, skill, longevity, culture, hype,
+                                 image_url, youtube_url, type, pack_id)
+                                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph},
+                                        {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'artist', {ph})
+                                ON CONFLICT (card_id) DO NOTHING
+                            """, (
+                                card["card_id"],
+                                card["name"],
+                                card["artist_name"],
+                                card["title"],
+                                card["rarity"],
+                                card["tier"],
+                                card["serial_number"],
+                                card["print_number"],
+                                card["quality"],
+                                card["impact"],
+                                card["skill"],
+                                card["longevity"],
+                                card["culture"],
+                                card["hype"],
+                                card["image_url"],
+                                card["youtube_url"],
+                                pack_id,
+                            ))
+                    else:
+                        for card in cards:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO cards
+                                (card_id, name, artist_name, title, rarity, tier, serial_number,
+                                 print_number, quality, impact, skill, longevity, culture, hype,
+                                 image_url, youtube_url, type, pack_id)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'artist', ?)
+                            """, (
+                                card["card_id"],
+                                card["name"],
+                                card["artist_name"],
+                                card["title"],
+                                card["rarity"],
+                                card["tier"],
+                                card["serial_number"],
+                                card["print_number"],
+                                card["quality"],
+                                card["impact"],
+                                card["skill"],
+                                card["longevity"],
+                                card["culture"],
+                                card["hype"],
+                                card["image_url"],
+                                card["youtube_url"],
+                                pack_id,
+                            ))
 
-        conn.commit()
-        print(f"✅ [SEED_PACKS] Committed {inserted} packs, skipped {skipped}")
+                    # COMMIT after each pack so failures don't lose previous work
+                    conn.commit()
+                    inserted += 1
+                    print(f"✅ [SEED_PACKS] Inserted: {pack_name} ({genre}) [{inserted} total]")
+
+                except Exception as e:
+                    # Roll back just this pack, continue with the next one
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    failed += 1
+                    print(f"⚠️ [SEED_PACKS] Failed to insert {artist_name} ({genre}): {e}")
+                    continue
+
+        print(f"✅ [SEED_PACKS] Done: {inserted} inserted, {skipped} skipped, {failed} failed")
     except Exception as e:
         print(f"❌ [SEED_PACKS] Error during insertion: {e}")
         import traceback
         traceback.print_exc()
-        return {"inserted": inserted, "skipped": skipped, "error": str(e)}
+        return {"inserted": inserted, "skipped": skipped, "failed": failed, "error": str(e)}
     finally:
         conn.close()
 
-    return {"inserted": inserted, "skipped": skipped}
+    return {"inserted": inserted, "skipped": skipped, "failed": failed}

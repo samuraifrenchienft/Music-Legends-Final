@@ -228,21 +228,24 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Bot logger init failed (non-critical): {e}")
 
-        # Load seed packs (25 genre packs so marketplace always has content)
+        # Load seed packs (75 genre packs so marketplace always has content)
         try:
             from services.seed_packs import seed_packs_into_db
             result = seed_packs_into_db()
+            failed = result.get("failed", 0)
             if result["inserted"] > 0:
-                print(f"🎵 Seed packs: {result['inserted']} inserted, {result['skipped']} already existed")
+                print(f"🎵 Seed packs: {result['inserted']} inserted, {result['skipped']} skipped, {failed} failed")
                 try:
                     from services.changelog_manager import log_system_event
                     log_system_event('seed_packs', f"Loaded {result['inserted']} seed packs", severity='high', metadata=result)
                 except Exception:
                     pass
             else:
-                print(f"🎵 Seed packs: all {result['skipped']} already loaded")
+                print(f"🎵 Seed packs: all {result['skipped']} already loaded ({failed} failed)")
         except Exception as e:
             print(f"⚠️ Seed pack loading failed (non-critical): {e}")
+            import traceback
+            traceback.print_exc()
 
         # Send any pending restart alerts that were queued during startup
         try:

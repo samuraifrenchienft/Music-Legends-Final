@@ -1,4 +1,5 @@
 # cogs/marketplace.py
+from __future__ import annotations
 import discord
 from discord.ext import commands
 from discord import app_commands, Interaction
@@ -6,7 +7,403 @@ import sqlite3
 import json
 import uuid
 import os
+import math
 from database import DatabaseManager
+
+# Genre metadata
+GENRE_EMOJI = {
+    "EDM Bangers":      "🎧",
+    "Rock Classics":    "🎸",
+    "R&B Soul Pack":    "🎷",
+    "Pop Hits 2024":    "🎤",
+    "Hip Hop Legends":  "🎙️",
+}
+
+RARITY_EMOJI = {
+    "common": "⚪", "rare": "🔵", "epic": "🟣",
+    "legendary": "⭐", "mythic": "🔴",
+}
+
+PACKS_PER_PAGE = 5
+
+
+# ─── Helper: fetch packs for a genre (or all) with pagination ───────────────
+
+def _fetch_packs(db, genre: str | None, offset: int, limit: int):
+    """Return (packs_list, total_count) for the given genre filter."""
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        if genre:
+            cursor.execute(
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND genre = ?",
+                (genre,),
+            )
+            total = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT pack_id, name, description, cards_data, genre
+                FROM creator_packs
+                WHERE status = 'LIVE' AND genre = ?
+                ORDER BY name
+                LIMIT ? OFFSET ?
+            """, (genre, limit, offset))
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'"
+            )
+            total = cursor.fetchone()[0]
+            cursor.execute("""
+                SELECT pack_id, name, description, cards_data, genre
+                FROM creator_packs
+                WHERE status = 'LIVE'
+                ORDER BY name
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
+        packs = cursor.fetchall()
+    return packs, total
+
+
+def _fetch_pack_detail(db, pack_id: str):
+    """Return a single pack row or None."""
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT pack_id, name, description, cards_data, genre
+            FROM creator_packs
+            WHERE pack_id = ? AND status = 'LIVE'
+        """, (pack_id,))
+        return cursor.fetchone()
+
+
+# ─── Helper: build embed for pack list page ─────────────────────────────────
+
+def _build_pack_list_embed(packs, genre, page, total_pages, total_count):
+    genre_label = genre or "All Genres"
+    emoji = GENRE_EMOJI.get(genre, "🎵")
+
+    embed = discord.Embed(
+        title=f"{emoji} {genre_label} — Packs",
+        description=f"Showing page **{page}/{total_pages}** ({total_count} packs total)",
+        color=discord.Color.gold(),
+    )
+
+    for pack_id, name, description, cards_data, pack_genre in packs:
+        cards = json.loads(cards_data) if cards_data else []
+        pack_emoji = GENRE_EMOJI.get(pack_genre, "📦")
+        desc_short = (description[:80] + "...") if description and len(description) > 80 else (description or "No description")
+        embed.add_field(
+            name=f"{pack_emoji} {name}",
+            value=f"{len(cards)} cards | {desc_short}",
+            inline=False,
+        )
+
+    embed.set_footer(text="Select a pack below to view details")
+    return embed
+
+
+def _build_pack_detail_embed(pack_row):
+    pack_id, name, description, cards_data, genre = pack_row
+    cards = json.loads(cards_data) if cards_data else []
+    emoji = GENRE_EMOJI.get(genre, "📦")
+
+    embed = discord.Embed(
+        title=f"{emoji} {name}",
+        description=description or "No description",
+        color=discord.Color.purple(),
+    )
+
+    for card in cards[:5]:
+        rarity = card.get("rarity", "common")
+        r_emoji = RARITY_EMOJI.get(rarity.lower(), "⚪")
+        stats = (
+            f"Impact: {card.get('impact', '?')} | "
+            f"Skill: {card.get('skill', '?')} | "
+            f"Longevity: {card.get('longevity', '?')}\n"
+            f"Culture: {card.get('culture', '?')} | "
+            f"Hype: {card.get('hype', '?')}"
+        )
+        embed.add_field(
+            name=f"{r_emoji} {card.get('name', 'Unknown')} [{rarity.title()}]",
+            value=stats,
+            inline=False,
+        )
+
+    embed.set_footer(text=f"Pack ID: {pack_id} | {len(cards)} cards")
+    return embed
+
+
+# ─── View: Genre Select (entry point) ──────────────────────────────────────
+
+class GenreSelectView(discord.ui.View):
+    def __init__(self, db: DatabaseManager, author_id: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.author_id = author_id
+        self._add_dropdown()
+
+    def _add_dropdown(self):
+        options = [
+            discord.SelectOption(label="All Genres", value="__all__", emoji="🎵", description="Browse every pack"),
+        ]
+        for genre, emoji in GENRE_EMOJI.items():
+            options.append(discord.SelectOption(label=genre, value=genre, emoji=emoji))
+
+        select = discord.ui.Select(
+            placeholder="Choose a genre...",
+            options=options,
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        value = interaction.data["values"][0]
+        genre = None if value == "__all__" else value
+
+        packs, total = _fetch_packs(self.db, genre, 0, PACKS_PER_PAGE)
+        total_pages = max(1, math.ceil(total / PACKS_PER_PAGE))
+
+        if not packs:
+            embed = discord.Embed(
+                title="📦 No Packs Found",
+                description=f"No packs available for **{genre or 'All Genres'}** yet.",
+                color=discord.Color.greyple(),
+            )
+            view = GenreSelectView(self.db, self.author_id)
+            return await interaction.response.edit_message(embed=embed, view=view)
+
+        embed = _build_pack_list_embed(packs, genre, 1, total_pages, total)
+        view = PackBrowserView(self.db, self.author_id, genre, packs, page=1, total_pages=total_pages, total_count=total)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.author_id
+
+
+# ─── View: Pack Browser (paginated list + pack select) ─────────────────────
+
+class PackBrowserView(discord.ui.View):
+    def __init__(self, db: DatabaseManager, author_id: int, genre: str | None,
+                 packs: list, page: int, total_pages: int, total_count: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.author_id = author_id
+        self.genre = genre
+        self.packs = packs
+        self.page = page
+        self.total_pages = total_pages
+        self.total_count = total_count
+        self._build_items()
+
+    def _build_items(self):
+        # Pack select dropdown (row 0)
+        if self.packs:
+            options = []
+            for pack_id, name, desc, cards_data, genre in self.packs:
+                cards = json.loads(cards_data) if cards_data else []
+                label = name[:100] if name else "Unknown Pack"
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=pack_id,
+                    description=f"{len(cards)} cards",
+                    emoji=GENRE_EMOJI.get(genre, "📦"),
+                ))
+
+            select = discord.ui.Select(
+                placeholder="Select a pack to view details...",
+                options=options,
+                row=0,
+            )
+            select.callback = self._on_pack_select
+            self.add_item(select)
+
+        # Prev button (row 1)
+        prev_btn = discord.ui.Button(
+            label="← Prev",
+            style=discord.ButtonStyle.secondary,
+            disabled=(self.page <= 1),
+            row=1,
+        )
+        prev_btn.callback = self._on_prev
+        self.add_item(prev_btn)
+
+        # Page indicator (row 1)
+        page_btn = discord.ui.Button(
+            label=f"Page {self.page}/{self.total_pages}",
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+            row=1,
+        )
+        self.add_item(page_btn)
+
+        # Next button (row 1)
+        next_btn = discord.ui.Button(
+            label="Next →",
+            style=discord.ButtonStyle.secondary,
+            disabled=(self.page >= self.total_pages),
+            row=1,
+        )
+        next_btn.callback = self._on_next
+        self.add_item(next_btn)
+
+        # Back to genres (row 1)
+        back_btn = discord.ui.Button(
+            label="Back to Genres",
+            style=discord.ButtonStyle.primary,
+            row=1,
+        )
+        back_btn.callback = self._on_back
+        self.add_item(back_btn)
+
+    async def _go_to_page(self, interaction: Interaction, new_page: int):
+        offset = (new_page - 1) * PACKS_PER_PAGE
+        packs, total = _fetch_packs(self.db, self.genre, offset, PACKS_PER_PAGE)
+        total_pages = max(1, math.ceil(total / PACKS_PER_PAGE))
+
+        embed = _build_pack_list_embed(packs, self.genre, new_page, total_pages, total)
+        view = PackBrowserView(self.db, self.author_id, self.genre, packs,
+                               page=new_page, total_pages=total_pages, total_count=total)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def _on_prev(self, interaction: Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+        await self._go_to_page(interaction, self.page - 1)
+
+    async def _on_next(self, interaction: Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+        await self._go_to_page(interaction, self.page + 1)
+
+    async def _on_back(self, interaction: Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="🛍️ MARKETPLACE PACKS",
+            description="Select a genre to browse packs",
+            color=discord.Color.gold(),
+        )
+        view = GenreSelectView(self.db, self.author_id)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def _on_pack_select(self, interaction: Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        pack_id = interaction.data["values"][0]
+        pack_row = _fetch_pack_detail(self.db, pack_id)
+        if not pack_row:
+            return await interaction.response.send_message("Pack not found or no longer available.", ephemeral=True)
+
+        embed = _build_pack_detail_embed(pack_row)
+        view = PackDetailView(self.db, self.author_id, pack_id, self.genre,
+                              self.page, self.total_pages, self.total_count)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.author_id
+
+
+# ─── View: Pack Detail (card stats + open) ─────────────────────────────────
+
+class PackDetailView(discord.ui.View):
+    def __init__(self, db: DatabaseManager, author_id: int, pack_id: str,
+                 genre: str | None, page: int, total_pages: int, total_count: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.author_id = author_id
+        self.pack_id = pack_id
+        self.genre = genre
+        self.page = page
+        self.total_pages = total_pages
+        self.total_count = total_count
+
+    @discord.ui.button(label="Open Pack", style=discord.ButtonStyle.success, emoji="🎴", row=0)
+    async def open_pack_button(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        # Delegate to the existing /open_pack command logic
+        # Find the CardGameCog to call its open_pack method
+        card_game_cog = interaction.client.get_cog("CardGameCog")
+        if card_game_cog:
+            # Create a fake-ish interaction flow: defer, then call the pack opening
+            await interaction.response.defer(ephemeral=False)
+            try:
+                pack_row = _fetch_pack_detail(self.db, self.pack_id)
+                if not pack_row:
+                    return await interaction.followup.send("Pack not found or no longer available.", ephemeral=True)
+
+                pack_id, pack_name, desc, cards_data_json, genre = pack_row
+                cards_data = json.loads(cards_data_json) if cards_data_json else []
+
+                if not cards_data:
+                    return await interaction.followup.send("This pack has no cards.", ephemeral=True)
+
+                import random
+                received_cards = []
+                for card_data in cards_data:
+                    if card_data.get('rarity') in ['legendary', 'epic']:
+                        if random.random() < 0.1:
+                            variant_frames = ['holographic', 'crystal', 'neon']
+                            card_data['frame_style'] = random.choice(variant_frames)
+                            card_data['foil'] = True
+                            card_data['foil_effect'] = 'rainbow'
+
+                    if 'card_id' not in card_data:
+                        card_data['card_id'] = str(uuid.uuid4())
+
+                    self.db.add_card_to_master(card_data)
+                    self.db.add_card_to_collection(
+                        user_id=interaction.user.id,
+                        card_id=card_data['card_id'],
+                        acquired_from='pack_opening',
+                    )
+                    received_cards.append(card_data)
+
+                pack_type = 'gold' if any(c.get('rarity') in ['legendary', 'epic'] for c in received_cards) else 'community'
+
+                from views.pack_opening import open_pack_with_animation
+                await open_pack_with_animation(
+                    interaction=interaction,
+                    pack_name=pack_name,
+                    pack_type=pack_type,
+                    cards=received_cards,
+                    pack_id=pack_id,
+                    delay=2.0,
+                )
+            except Exception as e:
+                print(f"Error opening pack from browse: {e}")
+                import traceback
+                traceback.print_exc()
+                await interaction.followup.send(f"Failed to open pack: {e}", ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"Use `/open_pack {self.pack_id}` to open this pack.",
+                ephemeral=True,
+            )
+
+    @discord.ui.button(label="Back to Browse", style=discord.ButtonStyle.secondary, emoji="🔙", row=0)
+    async def back_button(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        offset = (self.page - 1) * PACKS_PER_PAGE
+        packs, total = _fetch_packs(self.db, self.genre, offset, PACKS_PER_PAGE)
+        total_pages = max(1, math.ceil(total / PACKS_PER_PAGE))
+
+        embed = _build_pack_list_embed(packs, self.genre, self.page, total_pages, total)
+        view = PackBrowserView(self.db, self.author_id, self.genre, packs,
+                               page=self.page, total_pages=total_pages, total_count=total)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.author_id
+
+
+# ─── Cog: Marketplace Commands ─────────────────────────────────────────────
 
 class MarketplaceCommands(commands.Cog):
     """Marketplace commands for buying/selling cards"""
@@ -33,7 +430,7 @@ class MarketplaceCommands(commands.Cog):
 
             if not card:
                 conn.close()
-                await interaction.response.send_message("❌ You don't own this card!", ephemeral=True)
+                await interaction.response.send_message("You don't own this card!", ephemeral=True)
                 return
 
             card_name, rarity = card
@@ -63,21 +460,21 @@ class MarketplaceCommands(commands.Cog):
             from services.backup_service import backup_service
             backup_path = await backup_service.backup_critical('marketplace_listing', card_id)
             if backup_path:
-                print(f"💾 Critical backup created after marketplace listing: {backup_path}")
+                print(f"Critical backup created after marketplace listing: {backup_path}")
         except Exception as e:
-            print(f"⚠️ Backup trigger failed (non-critical): {e}")
+            print(f"Backup trigger failed (non-critical): {e}")
 
-        rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity.lower(), "⚪")
+        rarity_emoji = RARITY_EMOJI.get(rarity.lower(), "⚪")
 
         embed = discord.Embed(
-            title="🏪 CARD LISTED",
+            title="CARD LISTED",
             description=f"{rarity_emoji} **{card_name}** has been listed for {price:,} Gold!",
             color=discord.Color.green()
         )
 
         embed.add_field(name="Card ID", value=f"`{card_id}`", inline=True)
         embed.add_field(name="Price", value=f"{price:,} Gold", inline=True)
-        embed.add_field(name="Status", value="📦 Listed", inline=True)
+        embed.add_field(name="Status", value="Listed", inline=True)
 
         await interaction.response.send_message(embed=embed)
 
@@ -104,7 +501,7 @@ class MarketplaceCommands(commands.Cog):
             if not listing:
                 conn.close()
                 await interaction.response.send_message(
-                    "❌ This card is not available for purchase! It may have been sold or removed.",
+                    "This card is not available for purchase! It may have been sold or removed.",
                     ephemeral=True
                 )
                 return
@@ -115,7 +512,7 @@ class MarketplaceCommands(commands.Cog):
             if seller_id == interaction.user.id:
                 conn.close()
                 await interaction.response.send_message(
-                    "❌ You can't buy your own card! Remove it from the marketplace first.",
+                    "You can't buy your own card! Remove it from the marketplace first.",
                     ephemeral=True
                 )
                 return
@@ -140,7 +537,7 @@ class MarketplaceCommands(commands.Cog):
             if user_gold < price:
                 conn.close()
                 await interaction.response.send_message(
-                    f"❌ Insufficient funds! You need {price:,} Gold but only have {user_gold:,} Gold.",
+                    f"Insufficient funds! You need {price:,} Gold but only have {user_gold:,} Gold.",
                     ephemeral=True
                 )
                 return
@@ -190,14 +587,14 @@ class MarketplaceCommands(commands.Cog):
                     from services.backup_service import backup_service
                     backup_path = await backup_service.backup_critical('marketplace_buy', card_id)
                     if backup_path:
-                        print(f"💾 Critical backup created after marketplace purchase: {backup_path}")
+                        print(f"Critical backup created after marketplace purchase: {backup_path}")
                 except Exception as e:
-                    print(f"⚠️ Backup trigger failed (non-critical): {e}")
+                    print(f"Backup trigger failed (non-critical): {e}")
 
-                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity.lower(), "⚪")
+                rarity_emoji = RARITY_EMOJI.get(rarity.lower(), "⚪")
 
                 embed = discord.Embed(
-                    title="✅ PURCHASE SUCCESSFUL",
+                    title="PURCHASE SUCCESSFUL",
                     description=f"{rarity_emoji} **{card_name}** has been added to your collection!",
                     color=discord.Color.green()
                 )
@@ -214,7 +611,7 @@ class MarketplaceCommands(commands.Cog):
             except Exception as e:
                 conn.rollback()
                 await interaction.response.send_message(
-                    f"❌ Purchase failed: {str(e)}",
+                    f"Purchase failed: {str(e)}",
                     ephemeral=True
                 )
                 print(f"Marketplace purchase error: {e}")
@@ -228,7 +625,7 @@ class MarketplaceCommands(commands.Cog):
         """View all active marketplace listings"""
 
         embed = discord.Embed(
-            title="🏪 CARD MARKETPLACE",
+            title="CARD MARKETPLACE",
             description="Browse cards for sale",
             color=discord.Color.gold()
         )
@@ -247,7 +644,7 @@ class MarketplaceCommands(commands.Cog):
 
         if listings:
             for card_id, card_name, rarity, price, seller_id in listings:
-                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get((rarity or "common").lower(), "⚪")
+                rarity_emoji = RARITY_EMOJI.get((rarity or "common").lower(), "⚪")
                 embed.add_field(
                     name=f"{rarity_emoji} {card_name}",
                     value=f"Price: {price:,} Gold\nID: `{card_id}`\nUse `/buy {card_id}` to purchase",
@@ -255,12 +652,12 @@ class MarketplaceCommands(commands.Cog):
                 )
         else:
             embed.add_field(
-                name="📦 No Listings",
+                name="No Listings",
                 value="No cards for sale yet. Use `/sell <card_id> <price>` to list yours!",
                 inline=False
             )
 
-        embed.set_footer(text="Use /sell to list your cards • Use /buy to purchase")
+        embed.set_footer(text="Use /sell to list your cards | Use /buy to purchase")
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="pack", description="View your available packs")
@@ -268,7 +665,7 @@ class MarketplaceCommands(commands.Cog):
         """View packs you own"""
 
         embed = discord.Embed(
-            title="🎴 YOUR PACKS",
+            title="YOUR PACKS",
             description="View and open your card packs",
             color=discord.Color.purple()
         )
@@ -290,73 +687,64 @@ class MarketplaceCommands(commands.Cog):
                 pack_id, pack_name, status, created_at, cards_data = pack
                 cards = json.loads(cards_data) if cards_data else []
                 embed.add_field(
-                    name=f"📦 {pack_name}",
+                    name=f"{pack_name}",
                     value=f"Status: {status}\nCards: {len(cards)}\nCreated: {created_at}\nUse `/open_pack {pack_id}` to open",
                     inline=False
                 )
         else:
             embed.add_field(
-                name="📦 No Packs",
+                name="No Packs",
                 value="You don't have any packs yet. Use `/create_pack` to make one!",
                 inline=False
             )
 
-        embed.set_footer(text="Packs • Use /create_pack to make new packs")
+        embed.set_footer(text="Packs | Use /create_pack to make new packs")
         try:
             await interaction.response.send_message(embed=embed)
         except discord.errors.HTTPException:
             await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="packs", description="Browse marketplace packs")
+    @app_commands.command(name="packs", description="Browse marketplace packs by genre")
     async def packs_command(self, interaction: Interaction):
-        """Browse all available marketplace packs"""
+        """Browse all available marketplace packs with genre filtering"""
 
         embed = discord.Embed(
-            title="🛍️ MARKETPLACE PACKS",
-            description="Browse available packs from creators",
-            color=discord.Color.gold()
+            title="MARKETPLACE PACKS",
+            description="Select a genre to browse packs",
+            color=discord.Color.gold(),
         )
 
-        # Get all live packs
+        # Show genre counts in the initial embed
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT pack_id, name, creator_id, description, created_at, cards_data
-                FROM creator_packs
-                WHERE status = 'LIVE'
-                ORDER BY created_at DESC
-                LIMIT 20
+                SELECT genre, COUNT(*) FROM creator_packs
+                WHERE status = 'LIVE' AND genre IS NOT NULL
+                GROUP BY genre ORDER BY genre
             """)
-            packs = cursor.fetchall()
+            genre_counts = cursor.fetchall()
+            cursor.execute(
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'"
+            )
+            total = cursor.fetchone()[0]
 
-            if packs:
-                for pack in packs:
-                    pack_id, pack_name, creator_id, description, created_at, cards_data = pack
-                    cards = json.loads(cards_data) if cards_data else []
+        if genre_counts:
+            lines = []
+            for genre_name, count in genre_counts:
+                emoji = GENRE_EMOJI.get(genre_name, "🎵")
+                lines.append(f"{emoji} **{genre_name}** — {count} packs")
+            embed.add_field(
+                name="Available Genres",
+                value="\n".join(lines),
+                inline=False,
+            )
+        embed.set_footer(text=f"{total} packs total | Select a genre below")
 
-                    # Get creator name
-                    cursor.execute("SELECT username FROM users WHERE user_id = ?", (creator_id,))
-                    creator_result = cursor.fetchone()
-                    creator_name = creator_result[0] if creator_result else f"User {creator_id}"
-
-                    desc_text = (description[:100] + "...") if description and len(description) > 100 else (description or "No description")
-                    embed.add_field(
-                        name=f"📦 {pack_name}",
-                        value=f"Creator: {creator_name}\nCards: {len(cards)}\n{desc_text}\nPack ID: `{pack_id}`",
-                        inline=False
-                    )
-            else:
-                embed.add_field(
-                    name="📦 No Packs Available",
-                    value="No packs in marketplace yet. Be the first to create one!",
-                    inline=False
-                )
-
-        embed.set_footer(text="Marketplace • Use /create_pack to add your pack")
+        view = GenreSelectView(self.db, interaction.user.id)
         try:
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, view=view)
         except discord.errors.HTTPException:
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="unlist", description="Remove your card from the marketplace")
     @app_commands.describe(card_id="Card ID to remove from sale")
@@ -377,7 +765,7 @@ class MarketplaceCommands(commands.Cog):
             if not listing:
                 conn.close()
                 await interaction.response.send_message(
-                    "❌ You don't have this card listed for sale!",
+                    "You don't have this card listed for sale!",
                     ephemeral=True
                 )
                 return
@@ -393,7 +781,7 @@ class MarketplaceCommands(commands.Cog):
             conn.close()
 
         embed = discord.Embed(
-            title="✅ LISTING REMOVED",
+            title="LISTING REMOVED",
             description=f"Your card has been removed from the marketplace.",
             color=discord.Color.green()
         )

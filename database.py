@@ -1400,9 +1400,20 @@ class DatabaseManager:
                 "price_cents INTEGER DEFAULT 500",
                 "total_purchases INTEGER DEFAULT 0",
                 "cards_data TEXT",
+                "genre TEXT",
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # Backfill genre for existing seed packs that have it in description
+            for genre_name in ['EDM Bangers', 'Rock Classics', 'R&B Soul Pack', 'Pop Hits 2024', 'Hip Hop Legends']:
+                try:
+                    cursor.execute(
+                        "UPDATE creator_packs SET genre = ? WHERE description LIKE ? AND genre IS NULL",
+                        (genre_name, f'%{genre_name}%')
+                    )
                 except Exception:
                     pass
 
