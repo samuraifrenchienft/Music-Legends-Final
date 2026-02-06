@@ -302,7 +302,10 @@ class MarketplaceCommands(commands.Cog):
             )
 
         embed.set_footer(text="Packs • Use /create_pack to make new packs")
-        await interaction.response.send_message(embed=embed)
+        try:
+            await interaction.response.send_message(embed=embed)
+        except discord.errors.HTTPException:
+            await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="packs", description="Browse marketplace packs")
     async def packs_command(self, interaction: Interaction):
@@ -350,7 +353,10 @@ class MarketplaceCommands(commands.Cog):
                 )
 
         embed.set_footer(text="Marketplace • Use /create_pack to add your pack")
-        await interaction.response.send_message(embed=embed)
+        try:
+            await interaction.response.send_message(embed=embed)
+        except discord.errors.HTTPException:
+            await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="unlist", description="Remove your card from the marketplace")
     @app_commands.describe(card_id="Card ID to remove from sale")
