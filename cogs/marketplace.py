@@ -158,24 +158,33 @@ class GenreSelectView(discord.ui.View):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
 
-        value = interaction.data["values"][0]
-        genre = None if value == "__all__" else value
+        try:
+            value = interaction.data["values"][0]
+            genre = None if value == "__all__" else value
 
-        packs, total = _fetch_packs(self.db, genre, 0, PACKS_PER_PAGE)
-        total_pages = max(1, math.ceil(total / PACKS_PER_PAGE))
+            packs, total = _fetch_packs(self.db, genre, 0, PACKS_PER_PAGE)
+            total_pages = max(1, math.ceil(total / PACKS_PER_PAGE))
 
-        if not packs:
-            embed = discord.Embed(
-                title="📦 No Packs Found",
-                description=f"No packs available for **{genre or 'All Genres'}** yet.",
-                color=discord.Color.greyple(),
-            )
-            view = GenreSelectView(self.db, self.author_id)
-            return await interaction.response.edit_message(embed=embed, view=view)
+            if not packs:
+                embed = discord.Embed(
+                    title="No Packs Found",
+                    description=f"No packs available for **{genre or 'All Genres'}** yet.",
+                    color=discord.Color.greyple(),
+                )
+                view = GenreSelectView(self.db, self.author_id)
+                return await interaction.response.edit_message(embed=embed, view=view)
 
-        embed = _build_pack_list_embed(packs, genre, 1, total_pages, total)
-        view = PackBrowserView(self.db, self.author_id, genre, packs, page=1, total_pages=total_pages, total_count=total)
-        await interaction.response.edit_message(embed=embed, view=view)
+            embed = _build_pack_list_embed(packs, genre, 1, total_pages, total)
+            view = PackBrowserView(self.db, self.author_id, genre, packs, page=1, total_pages=total_pages, total_count=total)
+            await interaction.response.edit_message(embed=embed, view=view)
+        except Exception as e:
+            print(f"[PACKS] Genre select error: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(f"Error loading packs: {e}", ephemeral=True)
+            except Exception:
+                await interaction.followup.send(f"Error loading packs: {e}", ephemeral=True)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.author_id
@@ -269,19 +278,29 @@ class PackBrowserView(discord.ui.View):
     async def _on_prev(self, interaction: Interaction):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
-        await self._go_to_page(interaction, self.page - 1)
+        try:
+            await self._go_to_page(interaction, self.page - 1)
+        except Exception as e:
+            print(f"[PACKS] Prev page error: {e}")
+            import traceback; traceback.print_exc()
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
     async def _on_next(self, interaction: Interaction):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
-        await self._go_to_page(interaction, self.page + 1)
+        try:
+            await self._go_to_page(interaction, self.page + 1)
+        except Exception as e:
+            print(f"[PACKS] Next page error: {e}")
+            import traceback; traceback.print_exc()
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
     async def _on_back(self, interaction: Interaction):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
 
         embed = discord.Embed(
-            title="🛍️ MARKETPLACE PACKS",
+            title="MARKETPLACE PACKS",
             description="Select a genre to browse packs",
             color=discord.Color.gold(),
         )
@@ -292,15 +311,23 @@ class PackBrowserView(discord.ui.View):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
 
-        pack_id = interaction.data["values"][0]
-        pack_row = _fetch_pack_detail(self.db, pack_id)
-        if not pack_row:
-            return await interaction.response.send_message("Pack not found or no longer available.", ephemeral=True)
+        try:
+            pack_id = interaction.data["values"][0]
+            pack_row = _fetch_pack_detail(self.db, pack_id)
+            if not pack_row:
+                return await interaction.response.send_message("Pack not found or no longer available.", ephemeral=True)
 
-        embed = _build_pack_detail_embed(pack_row)
-        view = PackDetailView(self.db, self.author_id, pack_id, self.genre,
-                              self.page, self.total_pages, self.total_count)
-        await interaction.response.edit_message(embed=embed, view=view)
+            embed = _build_pack_detail_embed(pack_row)
+            view = PackDetailView(self.db, self.author_id, pack_id, self.genre,
+                                  self.page, self.total_pages, self.total_count)
+            await interaction.response.edit_message(embed=embed, view=view)
+        except Exception as e:
+            print(f"[PACKS] Pack select error: {e}")
+            import traceback; traceback.print_exc()
+            try:
+                await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+            except Exception:
+                await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.author_id
