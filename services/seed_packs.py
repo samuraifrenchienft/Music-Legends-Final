@@ -5,7 +5,7 @@ Loads genre_seed_packs.json on startup so the marketplace always has
 a baseline catalogue of packs.  Packs are idempotent — if a seed pack
 already exists in the DB it is skipped, so this is safe to call every boot.
 
-Each genre gets 5 packs (Vol. 1-5), each with 5 artist cards.
+Each genre gets 15 packs (Vol. 1-15), each with 5 artist cards.
 Card rarities per pack:  1 epic, 2 rare, 2 common.
 Stats are deterministically seeded from the artist name so they stay
 consistent across restarts.
@@ -50,7 +50,7 @@ GENRE_EMOJI = {
     "Rock Classics":         "🎸",
     "R&B Soul Pack":         "🎷",
     "Pop Hits 2024":         "🎤",
-    "Hip Hop Legends Vol. 1":"🎙️",
+    "Hip Hop Legends":       "🎙️",
 }
 
 
@@ -63,9 +63,9 @@ def _deterministic_stat(artist_name: str, stat_name: str, lo: int, hi: int) -> i
     return lo + (val % (hi - lo + 1))
 
 
-def _deterministic_uuid(genre: str, artist: str, card_num: int) -> str:
+def _deterministic_uuid(genre: str, vol: int, artist: str) -> str:
     """Stable UUID so the same seed data always produces the same card_id."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"musiclegends:{genre}:{artist}:{card_num}"))
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"musiclegends:{genre}:vol{vol}:{artist}"))
 
 
 def _rarity_to_tier(rarity: str) -> str:
@@ -79,49 +79,11 @@ def _rarity_to_tier(rarity: str) -> str:
     }.get(rarity.lower(), "community")
 
 
-# Card variations for each artist (5 cards per pack)
-CARD_VARIATIONS = [
-    {"suffix": "Prime Era", "rarity": "epic"},
-    {"suffix": "Classic Hits", "rarity": "rare"},
-    {"suffix": "Deep Cuts", "rarity": "rare"},
-    {"suffix": "Live Performance", "rarity": "common"},
-    {"suffix": "Legacy", "rarity": "common"},
-]
 
 
-def _build_artist_pack(artist_name: str, genre: str) -> List[Dict]:
-    """Build 5 cards for a single artist pack."""
-    cards = []
-    for i, variation in enumerate(CARD_VARIATIONS):
-        rarity = variation["rarity"]
-        lo, hi = RARITY_STAT_RANGES[rarity]
-        card_id = _deterministic_uuid(genre, artist_name, i)
-        card_title = f"{artist_name} - {variation['suffix']}"
-
-        cards.append({
-            "card_id":       card_id,
-            "name":          artist_name,
-            "artist_name":   artist_name,
-            "title":         variation["suffix"],
-            "rarity":        rarity,
-            "tier":          _rarity_to_tier(rarity),
-            "serial_number": card_id,
-            "print_number":  i + 1,
-            "quality":       "standard",
-            "impact":        _deterministic_stat(f"{artist_name}:{i}", "impact", lo, hi),
-            "skill":         _deterministic_stat(f"{artist_name}:{i}", "skill", lo, hi),
-            "longevity":     _deterministic_stat(f"{artist_name}:{i}", "longevity", lo, hi),
-            "culture":       _deterministic_stat(f"{artist_name}:{i}", "culture", lo, hi),
-            "hype":          _deterministic_stat(f"{artist_name}:{i}", "hype", lo, hi),
-            "image_url":     "",
-            "youtube_url":   "",
-        })
-    return cards
-
-
-def _seed_pack_id(genre: str, artist_name: str) -> str:
+def _seed_pack_id(genre: str, vol: int) -> str:
     """Stable pack_id so we can detect if a seed pack already exists."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"musiclegends:pack:{genre}:{artist_name}"))
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"musiclegends:pack:{genre}:vol{vol}"))
 
 
 def load_seed_data() -> Dict[str, List[List[str]]]:
@@ -226,13 +188,13 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
             """)
             conn.commit()
 
-        for genre, artist_list in genre_data.items():
+        for genre, pack_lists in genre_data.items():
             emoji = GENRE_EMOJI.get(genre, "🎵")
 
-            # Each artist in the list becomes their own pack with 5 cards
-            for artist_name in artist_list:
-                pack_id = _seed_pack_id(genre, artist_name)
-                pack_name = f"{emoji} {artist_name}"
+            # Each array of 5 artists becomes 1 pack with 5 cards (1 per artist)
+            for vol_idx, artist_list in enumerate(pack_lists, start=1):
+                pack_id = _seed_pack_id(genre, vol_idx)
+                pack_name = f"{emoji} {genre} Vol. {vol_idx}"
 
                 # Check if this seed pack already exists (by pack_id only - safer)
                 cursor.execute(
@@ -243,10 +205,32 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     skipped += 1
                     continue
 
-                # Build 5 cards for this artist
-                cards = _build_artist_pack(artist_name, genre)
-                for card in cards:
-                    card["pack_id"] = pack_id
+                # Build 5 cards (1 per artist) with rarities from SLOT_RARITIES
+                cards = []
+                for slot_idx, artist_name in enumerate(artist_list):
+                    rarity = SLOT_RARITIES[slot_idx]
+                    lo, hi = RARITY_STAT_RANGES[rarity]
+                    card_id = _deterministic_uuid(genre, vol_idx, artist_name)
+
+                    cards.append({
+                        "card_id":       card_id,
+                        "name":          artist_name,
+                        "artist_name":   artist_name,
+                        "title":         f"{genre} Collection",
+                        "rarity":        rarity,
+                        "tier":          _rarity_to_tier(rarity),
+                        "serial_number": card_id,
+                        "print_number":  slot_idx + 1,
+                        "quality":       "standard",
+                        "impact":        _deterministic_stat(artist_name, "impact", lo, hi),
+                        "skill":         _deterministic_stat(artist_name, "skill", lo, hi),
+                        "longevity":     _deterministic_stat(artist_name, "longevity", lo, hi),
+                        "culture":       _deterministic_stat(artist_name, "culture", lo, hi),
+                        "hype":          _deterministic_stat(artist_name, "hype", lo, hi),
+                        "image_url":     "",
+                        "youtube_url":   "",
+                        "pack_id":       pack_id,
+                    })
 
                 cards_json = json.dumps(cards)
 
@@ -260,7 +244,7 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     """, (
                         pack_id,
                         pack_name,
-                        f"Official {genre} pack featuring {artist_name}",
+                        f"Official {genre} pack with 5 legendary artists",
                         len(cards),
                         cards_json,
                     ))
@@ -273,7 +257,7 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     """, (
                         pack_id,
                         pack_name,
-                        f"Official {genre} pack featuring {artist_name}",
+                        f"Official {genre} pack with 5 legendary artists",
                         len(cards),
                         cards_json,
                     ))
@@ -293,13 +277,13 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                         """, (
                             card["card_id"],
                             card["name"],
-                            card.get("artist_name", card["name"]),
+                            card["artist_name"],
                             card["title"],
                             card["rarity"],
-                            card.get("tier", _rarity_to_tier(card["rarity"])),
-                            card.get("serial_number", card["card_id"]),
-                            card.get("print_number", 1),
-                            card.get("quality", "standard"),
+                            card["tier"],
+                            card["serial_number"],
+                            card["print_number"],
+                            card["quality"],
                             card["impact"],
                             card["skill"],
                             card["longevity"],
@@ -320,13 +304,13 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                         """, (
                             card["card_id"],
                             card["name"],
-                            card.get("artist_name", card["name"]),
+                            card["artist_name"],
                             card["title"],
                             card["rarity"],
-                            card.get("tier", _rarity_to_tier(card["rarity"])),
-                            card.get("serial_number", card["card_id"]),
-                            card.get("print_number", 1),
-                            card.get("quality", "standard"),
+                            card["tier"],
+                            card["serial_number"],
+                            card["print_number"],
+                            card["quality"],
                             card["impact"],
                             card["skill"],
                             card["longevity"],
