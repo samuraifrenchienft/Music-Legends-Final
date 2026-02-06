@@ -1320,8 +1320,14 @@ class DatabaseManager:
             if not result:
                 return None
             
-            cards_data, creator_id, pack_name = result[0], result[1], result[2]
-            
+            cards_json, creator_id, pack_name = result[0], result[1], result[2]
+
+            # Parse cards JSON if it's a string
+            if isinstance(cards_json, str):
+                cards_data = json.loads(cards_json)
+            else:
+                cards_data = cards_json or []
+
             # Generate cards for buyer (add to their collection)
             received_cards = []
             for card_data in cards_data:
@@ -1582,30 +1588,43 @@ class DatabaseManager:
     
     def add_card_to_master_list(self, card_data: Dict) -> str:
         """Add card to master cards table with minimal storage"""
-        card_id = f"{card_data['name'].lower().replace(' ', '_')}_{card_data.get('rarity', 'Common').lower()}"
+        # Use existing card_id if provided, otherwise generate one
+        card_id = card_data.get('card_id') or f"{card_data['name'].lower().replace(' ', '_')}_{card_data.get('rarity', 'Common').lower()}"
+
+        # Map rarity to tier if not provided
+        rarity = card_data.get('rarity', 'Common').lower()
+        tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                    'legendary': 'legendary', 'mythic': 'legendary'}
+        tier = card_data.get('tier') or tier_map.get(rarity, 'community')
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR IGNORE INTO cards
-                (card_id, type, name, title, image_url,
-                 youtube_url, rarity, variant, impact, skill, longevity, culture, hype,
+                (card_id, type, name, artist_name, title, image_url,
+                 youtube_url, rarity, tier, variant, impact, skill, longevity, culture, hype,
+                 serial_number, print_number, quality,
                  effect_type, effect_value, pack_id, created_by_user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 card_id,
                 card_data.get('type', 'artist'),
                 card_data.get('name'),
+                card_data.get('artist_name', card_data.get('name')),
                 card_data.get('title', ''),
                 card_data.get('image_url', ''),
                 card_data.get('youtube_url', ''),
                 card_data.get('rarity', 'Common'),
+                tier,
                 card_data.get('variant', 'Classic'),
                 card_data.get('impact', 50),
                 card_data.get('skill', 50),
                 card_data.get('longevity', 50),
                 card_data.get('culture', 50),
                 card_data.get('hype', 50),
+                card_data.get('serial_number', card_id),
+                card_data.get('print_number', 1),
+                card_data.get('quality', 'standard'),
                 card_data.get('effect_type'),
                 card_data.get('effect_value'),
                 card_data.get('pack_id'),

@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord import app_commands, Interaction
 import sqlite3
 import json
+import uuid
 
 class MarketplaceCommands(commands.Cog):
     """Marketplace commands for buying/selling cards"""
@@ -34,14 +35,15 @@ class MarketplaceCommands(commands.Cog):
 
         card_name, rarity = card
 
-        # List the card
+        # List the card - use correct table name and columns
+        listing_id = f"listing_{uuid.uuid4().hex[:8]}"
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO marketplace_listings
-                (card_id, seller_id, price, status, listed_at)
-                VALUES (?, ?, ?, 'active', datetime('now'))
-            """, (card_id, interaction.user.id, price))
+                INSERT OR REPLACE INTO market_listings
+                (listing_id, card_id, seller_user_id, asking_gold, status, created_at)
+                VALUES (?, ?, ?, ?, 'active', datetime('now'))
+            """, (listing_id, card_id, interaction.user.id, price))
             conn.commit()
 
         # Trigger backup after marketplace listing
@@ -75,12 +77,12 @@ class MarketplaceCommands(commands.Cog):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Check if card is listed
+            # Check if card is listed - use correct table and column names
             cursor.execute("""
                 SELECT c.card_id, c.name, c.rarity, c.image_url,
-                       m.price, m.seller_id, m.status
+                       m.asking_gold, m.seller_user_id, m.status, m.listing_id
                 FROM cards c
-                JOIN marketplace_listings m ON c.card_id = m.card_id
+                JOIN market_listings m ON c.card_id = m.card_id
                 WHERE c.card_id = ? AND m.status = 'active'
             """, (card_id,))
             listing = cursor.fetchone()
@@ -92,7 +94,7 @@ class MarketplaceCommands(commands.Cog):
                 )
                 return
 
-            card_id_db, card_name, rarity, image_url, price, seller_id, status = listing
+            card_id_db, card_name, rarity, image_url, price, seller_id, status, listing_id = listing
 
             # Check if user is trying to buy their own card
             if seller_id == interaction.user.id:
@@ -102,20 +104,22 @@ class MarketplaceCommands(commands.Cog):
                 )
                 return
 
-            # Check if user has enough gold
+            # Check if user has enough gold - from user_inventory table
             cursor.execute("""
-                SELECT gold FROM users WHERE user_id = ?
+                SELECT gold FROM user_inventory WHERE user_id = ?
             """, (interaction.user.id,))
             user_result = cursor.fetchone()
 
             if not user_result:
-                await interaction.response.send_message(
-                    "❌ User not found! Please use `/daily` first to register.",
-                    ephemeral=True
-                )
-                return
-
-            user_gold = user_result[0] or 0
+                # Create user inventory if not exists
+                cursor.execute("""
+                    INSERT INTO user_inventory (user_id, gold, dust, tickets, gems, xp, level)
+                    VALUES (?, 500, 0, 0, 0, 0, 1)
+                """, (interaction.user.id,))
+                conn.commit()
+                user_gold = 500
+            else:
+                user_gold = user_result[0] or 0
 
             if user_gold < price:
                 await interaction.response.send_message(
@@ -132,25 +136,28 @@ class MarketplaceCommands(commands.Cog):
                 """, (seller_id, card_id))
 
                 cursor.execute("""
-                    INSERT INTO user_cards (user_id, card_id, source, acquired_at)
+                    INSERT INTO user_cards (user_id, card_id, acquired_from, acquired_at)
                     VALUES (?, ?, 'marketplace', datetime('now'))
                 """, (interaction.user.id, card_id))
 
-                # Transfer gold
+                # Transfer gold - use user_inventory table
                 cursor.execute("""
-                    UPDATE users SET gold = gold - ? WHERE user_id = ?
+                    UPDATE user_inventory SET gold = gold - ? WHERE user_id = ?
                 """, (price, interaction.user.id))
 
+                # Ensure seller has inventory record
                 cursor.execute("""
-                    UPDATE users SET gold = gold + ? WHERE user_id = ?
-                """, (price, seller_id))
+                    INSERT INTO user_inventory (user_id, gold)
+                    VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
+                """, (seller_id, price, price))
 
                 # Update listing status
                 cursor.execute("""
-                    UPDATE marketplace_listings
-                    SET status = 'sold', buyer_id = ?, sold_at = datetime('now')
-                    WHERE card_id = ?
-                """, (interaction.user.id, card_id))
+                    UPDATE market_listings
+                    SET status = 'sold', buyer_user_id = ?, sold_at = datetime('now')
+                    WHERE listing_id = ?
+                """, (interaction.user.id, listing_id))
 
                 conn.commit()
 
@@ -189,6 +196,46 @@ class MarketplaceCommands(commands.Cog):
                 print(f"Marketplace purchase error: {e}")
                 import traceback
                 traceback.print_exc()
+
+    @app_commands.command(name="market", description="View marketplace listings")
+    async def market_command(self, interaction: Interaction):
+        """View all active marketplace listings"""
+
+        embed = discord.Embed(
+            title="🏪 CARD MARKETPLACE",
+            description="Browse cards for sale",
+            color=discord.Color.gold()
+        )
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.card_id, c.name, c.rarity, m.asking_gold, m.seller_user_id
+                FROM cards c
+                JOIN market_listings m ON c.card_id = m.card_id
+                WHERE m.status = 'active'
+                ORDER BY m.created_at DESC
+                LIMIT 20
+            """)
+            listings = cursor.fetchall()
+
+        if listings:
+            for card_id, card_name, rarity, price, seller_id in listings:
+                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get((rarity or "common").lower(), "⚪")
+                embed.add_field(
+                    name=f"{rarity_emoji} {card_name}",
+                    value=f"Price: {price:,} Gold\nID: `{card_id}`\nUse `/buy {card_id}` to purchase",
+                    inline=True
+                )
+        else:
+            embed.add_field(
+                name="📦 No Listings",
+                value="No cards for sale yet. Use `/sell <card_id> <price>` to list yours!",
+                inline=False
+            )
+
+        embed.set_footer(text="Use /sell to list your cards • Use /buy to purchase")
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="pack", description="View your available packs")
     async def pack_command(self, interaction: Interaction):
@@ -253,30 +300,71 @@ class MarketplaceCommands(commands.Cog):
             """)
             packs = cursor.fetchall()
 
-        if packs:
-            for pack in packs:
-                pack_id, pack_name, creator_id, description, created_at, cards_data = pack
-                cards = json.loads(cards_data) if cards_data else []
+            if packs:
+                for pack in packs:
+                    pack_id, pack_name, creator_id, description, created_at, cards_data = pack
+                    cards = json.loads(cards_data) if cards_data else []
 
-                # Get creator name
-                cursor.execute("SELECT username FROM users WHERE user_id = ?", (creator_id,))
-                creator_result = cursor.fetchone()
-                creator_name = creator_result[0] if creator_result else f"User {creator_id}"
+                    # Get creator name
+                    cursor.execute("SELECT username FROM users WHERE user_id = ?", (creator_id,))
+                    creator_result = cursor.fetchone()
+                    creator_name = creator_result[0] if creator_result else f"User {creator_id}"
 
+                    desc_text = (description[:100] + "...") if description and len(description) > 100 else (description or "No description")
+                    embed.add_field(
+                        name=f"📦 {pack_name}",
+                        value=f"Creator: {creator_name}\nCards: {len(cards)}\n{desc_text}\nPack ID: `{pack_id}`",
+                        inline=False
+                    )
+            else:
                 embed.add_field(
-                    name=f"📦 {pack_name}",
-                    value=f"Creator: {creator_name}\nCards: {len(cards)}\n{description[:100]}...\nPack ID: `{pack_id}`",
+                    name="📦 No Packs Available",
+                    value="No packs in marketplace yet. Be the first to create one!",
                     inline=False
                 )
-        else:
-            embed.add_field(
-                name="📦 No Packs Available",
-                value="No packs in marketplace yet. Be the first to create one!",
-                inline=False
-            )
 
         embed.set_footer(text="Marketplace • Use /create_pack to add your pack")
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="unlist", description="Remove your card from the marketplace")
+    @app_commands.describe(card_id="Card ID to remove from sale")
+    async def unlist_command(self, interaction: Interaction, card_id: str):
+        """Remove a card listing from the marketplace"""
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Check if user owns this listing
+            cursor.execute("""
+                SELECT listing_id, asking_gold FROM market_listings
+                WHERE card_id = ? AND seller_user_id = ? AND status = 'active'
+            """, (card_id, interaction.user.id))
+            listing = cursor.fetchone()
+
+            if not listing:
+                await interaction.response.send_message(
+                    "❌ You don't have this card listed for sale!",
+                    ephemeral=True
+                )
+                return
+
+            listing_id, price = listing
+
+            # Remove listing
+            cursor.execute("""
+                UPDATE market_listings SET status = 'cancelled' WHERE listing_id = ?
+            """, (listing_id,))
+            conn.commit()
+
+        embed = discord.Embed(
+            title="✅ LISTING REMOVED",
+            description=f"Your card has been removed from the marketplace.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Card ID", value=f"`{card_id}`", inline=True)
+
+        await interaction.response.send_message(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(MarketplaceCommands(bot))
