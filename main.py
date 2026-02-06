@@ -137,15 +137,6 @@ class Bot(commands.Bot):
         asyncio.create_task(periodic_backup_loop())
         print("⏰ Periodic backups enabled (every 20 minutes during active periods)")
         
-        # Initialize Season System
-        print("🎮 Initializing Season System...")
-        from season_system import SeasonManager
-        from database import DatabaseManager
-        season_db = DatabaseManager()
-        season_manager = SeasonManager(season_db)
-        season_manager.initialize_season_tables()
-        print("✅ Season System initialized")
-        
         # Load essential cogs without duplicates
         cogs = [
             'cogs.start_game',                # Start game command
