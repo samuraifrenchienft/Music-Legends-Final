@@ -142,6 +142,56 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
         # PostgreSQL uses %s placeholders, SQLite uses ?
         ph = "%s" if db_type == "postgresql" else "?"
 
+        # Ensure creator_packs table exists with required columns
+        if db_type == "postgresql":
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS creator_packs (
+                    pack_id TEXT PRIMARY KEY,
+                    creator_id INTEGER,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    pack_type TEXT DEFAULT 'creator',
+                    pack_size INTEGER DEFAULT 10,
+                    status TEXT DEFAULT 'DRAFT',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    published_at TIMESTAMP,
+                    stripe_payment_id TEXT,
+                    price_cents INTEGER DEFAULT 500,
+                    total_purchases INTEGER DEFAULT 0,
+                    cards_data TEXT
+                )
+            """)
+            # Ensure cards table exists
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cards (
+                    card_id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL DEFAULT 'artist',
+                    name TEXT NOT NULL,
+                    artist_name TEXT,
+                    title TEXT,
+                    image_url TEXT,
+                    youtube_url TEXT,
+                    rarity TEXT NOT NULL,
+                    tier TEXT,
+                    variant TEXT DEFAULT 'Classic',
+                    era TEXT,
+                    impact INTEGER,
+                    skill INTEGER,
+                    longevity INTEGER,
+                    culture INTEGER,
+                    hype INTEGER,
+                    serial_number TEXT,
+                    print_number INTEGER DEFAULT 1,
+                    quality TEXT DEFAULT 'standard',
+                    effect_type TEXT,
+                    effect_value TEXT,
+                    pack_id TEXT,
+                    created_by_user_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+
         for genre, pack_lists in genre_data.items():
             emoji = GENRE_EMOJI.get(genre, "🎵")
 
@@ -150,10 +200,10 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
                 pack_id = _seed_pack_id(genre, vol)
                 pack_name = f"{emoji} {genre} Vol. {vol}"
 
-                # Check if this seed pack already exists (by ID or by name)
+                # Check if this seed pack already exists (by pack_id only - safer)
                 cursor.execute(
-                    f"SELECT 1 FROM creator_packs WHERE pack_id = {ph} OR name = {ph}",
-                    (pack_id, pack_name)
+                    f"SELECT 1 FROM creator_packs WHERE pack_id = {ph}",
+                    (pack_id,)
                 )
                 if cursor.fetchone():
                     skipped += 1
