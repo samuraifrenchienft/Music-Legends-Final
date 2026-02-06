@@ -446,10 +446,6 @@ if __name__ == "__main__":
         print(f"Purchase successful: {success}")
         print(f"Gold after purchase: {player.gold}")
 
-# Additional classes needed by other cogs
-import sqlite3
-import uuid
-import time as _time
 
 class CardEconomyManager:
     """Economy manager for card operations — used by gameplay.py"""

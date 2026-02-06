@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-04-13-45-00-WEBHOOK-FIX-NEW-BUILD
+ARG CACHE_BUST=2026-02-05-POSTGRESQL-SUPPORT
 
 # Set working directory
 WORKDIR /app
