@@ -1,6 +1,7 @@
 # database.py
 import sqlite3
 import json
+import os
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -8,10 +9,33 @@ from pathlib import Path
 class DatabaseManager:
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
+        self._database_url = os.getenv("DATABASE_URL")
+        self._db_type = "postgresql" if self._database_url else "sqlite"
         self.init_database()
+
+    def _get_connection(self):
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        if self._database_url:
+            import psycopg2
+            url = self._database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return psycopg2.connect(url)
+        else:
+            return sqlite3.connect(self.db_path)
+
+    def _get_placeholder(self):
+        """Get placeholder for queries - %s for PostgreSQL, ? for SQLite."""
+        return "%s" if self._database_url else "?"
     
     def init_database(self):
         """Initialize all database tables"""
+        # For PostgreSQL, tables are managed by seed_packs.py and migrations
+        # Only run full init for SQLite
+        if self._database_url:
+            print("✅ [DATABASE] Using PostgreSQL - skipping SQLite table creation")
+            return
+
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cursor = conn.cursor()
@@ -866,38 +890,57 @@ class DatabaseManager:
     
     def add_card_to_collection(self, user_id: int, card_id: str, acquired_from: str = 'pack') -> bool:
         """Add a card to user's collection"""
+        conn = self._get_connection()
+        ph = self._get_placeholder()
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
+            cursor = conn.cursor()
+            if self._database_url:
+                # PostgreSQL - use ON CONFLICT
                 cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
-                    VALUES (?, ?, ?)
+                    f"""
+                    INSERT INTO user_cards (user_id, card_id, acquired_from)
+                    VALUES ({ph}, {ph}, {ph})
+                    ON CONFLICT (user_id, card_id) DO NOTHING
                     """,
                     (user_id, card_id, acquired_from)
                 )
-                conn.commit()
-                return cursor.rowcount > 0
-        except sqlite3.Error as e:
+            else:
+                # SQLite
+                cursor.execute(
+                    f"""
+                    INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
+                    VALUES ({ph}, {ph}, {ph})
+                    """,
+                    (user_id, card_id, acquired_from)
+                )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
             print(f"Error adding card to collection: {e}")
             return False
+        finally:
+            conn.close()
     
     def get_user_collection(self, user_id: int) -> List[Dict]:
         """Get all cards owned by a user"""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+        try:
             cursor = conn.cursor()
             cursor.execute(
-                """
+                f"""
                 SELECT c.*, uc.acquired_at, uc.acquired_from, uc.is_favorite
                 FROM cards c
                 JOIN user_cards uc ON c.card_id = uc.card_id
-                WHERE uc.user_id = ?
+                WHERE uc.user_id = {ph}
                 ORDER BY c.rarity DESC, c.name
                 """,
                 (user_id,)
             )
             columns = [desc[0] for desc in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        finally:
+            conn.close()
     
     def get_user_deck(self, user_id: int, limit: int = 3) -> List[Dict]:
         """Get user's deck (first N cards from collection)"""
@@ -1208,19 +1251,23 @@ class DatabaseManager:
     
     def get_live_packs(self, limit: int = 20) -> List[Dict]:
         """Get all live packs for browsing"""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+        try:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT p.*, COALESCE(u.username, 'System') as creator_name
                 FROM creator_packs p
                 LEFT JOIN users u ON p.creator_id = u.user_id
                 WHERE p.status = 'LIVE'
                 ORDER BY p.published_at DESC
-                LIMIT ?
+                LIMIT {ph}
             """, (limit,))
-            
+
             columns = [desc[0] for desc in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        finally:
+            conn.close()
     
     def bulk_create_packs(self, packs_data: List[Dict]) -> Dict[str, List]:
         """Bulk insert multiple packs at once (optimized for admin imports)

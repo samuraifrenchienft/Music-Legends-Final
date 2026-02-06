@@ -3,6 +3,10 @@ card_economy.py - Economy management for Music Legends
 Handles gold, tickets, daily claims, rewards
 """
 
+import os
+import sqlite3
+import uuid
+import time as _time
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 import discord
@@ -468,9 +472,21 @@ class CardEconomyManager:
 
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
+        self._database_url = os.getenv("DATABASE_URL")
         self.transactions = []
         self._drop_cooldowns: Dict[int, float] = {}   # server_id -> last drop timestamp
         self._active_drops: Dict[int, dict] = {}       # channel_id -> drop data
+
+    def _get_connection(self):
+        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        if self._database_url:
+            import psycopg2
+            url = self._database_url
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return psycopg2.connect(url), "postgresql", "%s"
+        else:
+            return sqlite3.connect(self.db_path), "sqlite", "?"
 
     # ------------------------------------------------------------------
     # Table bootstrap (called once on cog init)
@@ -527,13 +543,16 @@ class CardEconomyManager:
             return {'success': False, 'error': 'Drop is on cooldown for this server.'}
 
         # Pull 3 random cards from the database
-        with sqlite3.connect(self.db_path) as conn:
+        conn, db_type, ph = self._get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT card_id, name, title, rarity, image_url
                 FROM cards ORDER BY RANDOM() LIMIT 3
             """)
             rows = cursor.fetchall()
+        finally:
+            conn.close()
 
         if not rows:
             return {'success': False, 'error': 'No cards available in database.'}
@@ -606,18 +625,31 @@ class CardEconomyManager:
     # ------------------------------------------------------------------
     def _award_card_to_user(self, user_id: int, card_id: str, source: str = 'drop'):
         """Add a card to a user's collection"""
-        with sqlite3.connect(self.db_path) as conn:
+        conn, db_type, ph = self._get_connection()
+        try:
             cursor = conn.cursor()
             # Ensure user exists
-            cursor.execute(
-                "INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)",
-                (user_id, str(user_id))
-            )
-            cursor.execute(
-                "INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from) VALUES (?, ?, ?)",
-                (user_id, card_id, source)
-            )
+            if db_type == "postgresql":
+                cursor.execute(
+                    f"INSERT INTO users (user_id, username) VALUES ({ph}, {ph}) ON CONFLICT (user_id) DO NOTHING",
+                    (user_id, str(user_id))
+                )
+                cursor.execute(
+                    f"INSERT INTO user_cards (user_id, card_id, acquired_from) VALUES ({ph}, {ph}, {ph}) ON CONFLICT (user_id, card_id) DO NOTHING",
+                    (user_id, card_id, source)
+                )
+            else:
+                cursor.execute(
+                    f"INSERT OR IGNORE INTO users (user_id, username) VALUES ({ph}, {ph})",
+                    (user_id, str(user_id))
+                )
+                cursor.execute(
+                    f"INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from) VALUES ({ph}, {ph}, {ph})",
+                    (user_id, card_id, source)
+                )
             conn.commit()
+        finally:
+            conn.close()
 
     def burn_card_for_dust(self, user_id: int, serial_number: str) -> dict:
         """Burn a card and give the user dust"""
