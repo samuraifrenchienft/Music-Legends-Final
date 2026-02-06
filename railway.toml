@@ -2,7 +2,7 @@
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 startCommand = "python run_bot.py"
-# Force rebuild - 2026-02-06-REMOVE-SEASON-COSMETIC-REVSHARE
+# Force rebuild - 2026-02-06-GENRE-BROWSE-UI-V2
 
 [[services]]
 name = "music-legends-bot"

@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-06-FIX-PACK-NAME-COLUMN
+ARG CACHE_BUST=2026-02-06-GENRE-BROWSE-UI
 
 # Set working directory
 WORKDIR /app
