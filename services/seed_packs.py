@@ -117,11 +117,20 @@ def load_seed_data() -> Dict[str, List[List[str]]]:
         return json.load(f)
 
 
-def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
+def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = False) -> Dict[str, int]:
     """Insert seed packs into the database. Skips packs that already exist.
+
+    Args:
+        db_path: Path to SQLite database (ignored if DATABASE_URL is set)
+        force_reseed: If True, delete existing seed packs and re-insert all
 
     Returns dict with counts: {"inserted": N, "skipped": N}
     """
+    # Check for force reseed environment variable
+    if os.getenv("FORCE_RESEED_PACKS") == "1":
+        force_reseed = True
+        print("🔄 [SEED_PACKS] FORCE_RESEED_PACKS=1 detected, will delete and re-insert all seed packs")
+
     genre_data = load_seed_data()
     if not genre_data:
         print("⚠️ [SEED_PACKS] No genre data loaded from JSON file")
@@ -141,6 +150,14 @@ def seed_packs_into_db(db_path: str = "music_legends.db") -> Dict[str, int]:
         cursor = conn.cursor()
         # PostgreSQL uses %s placeholders, SQLite uses ?
         ph = "%s" if db_type == "postgresql" else "?"
+
+        # Force reseed: delete all existing seed packs first
+        if force_reseed:
+            print("🗑️ [SEED_PACKS] Deleting existing seed packs (stripe_payment_id = 'SEED_PACK')...")
+            cursor.execute("DELETE FROM creator_packs WHERE stripe_payment_id = 'SEED_PACK'")
+            deleted_count = cursor.rowcount
+            print(f"🗑️ [SEED_PACKS] Deleted {deleted_count} existing seed packs")
+            conn.commit()
 
         # Ensure creator_packs table exists with required columns
         if db_type == "postgresql":
