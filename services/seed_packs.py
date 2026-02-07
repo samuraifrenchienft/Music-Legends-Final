@@ -583,6 +583,26 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                                 pack_id,
                             ))
 
+                    # Grant cards to dev account(s) so they have every pack
+                    dev_ids_str = os.getenv("DEV_USER_IDS", "")
+                    if dev_ids_str:
+                        for dev_id_str in dev_ids_str.split(","):
+                            dev_id_str = dev_id_str.strip()
+                            if dev_id_str.isdigit():
+                                dev_id = int(dev_id_str)
+                                for card in cards:
+                                    if db_type == "postgresql":
+                                        cursor.execute(f"""
+                                            INSERT INTO user_cards (user_id, card_id, acquired_from)
+                                            VALUES ({ph}, {ph}, 'seed_grant')
+                                            ON CONFLICT (user_id, card_id) DO NOTHING
+                                        """, (dev_id, card["card_id"]))
+                                    else:
+                                        cursor.execute("""
+                                            INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
+                                            VALUES (?, ?, 'seed_grant')
+                                        """, (dev_id, card["card_id"]))
+
                     # COMMIT after each pack so failures don't lose previous work
                     conn.commit()
                     inserted += 1

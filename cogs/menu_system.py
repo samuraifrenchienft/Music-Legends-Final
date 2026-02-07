@@ -495,8 +495,7 @@ class UserHubView(discord.ui.View):
     )
     async def daily_button(self, interaction: Interaction, button: discord.ui.Button):
         """Claim daily reward"""
-        economy = CardEconomyManager(self.db)
-        result = economy.claim_daily_reward(interaction.user.id)
+        result = self.db.claim_daily_reward(interaction.user.id)
         
         if result.get('success'):
             embed = discord.Embed(

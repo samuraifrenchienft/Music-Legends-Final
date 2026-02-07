@@ -17,52 +17,6 @@ class AdminCommandsCog(commands.Cog):
         self.bot = bot
         self.db = DatabaseManager()
     
-    @app_commands.command(name="delete_pack", description="[ADMIN] Delete a pack by ID")
-    @app_commands.describe(pack_id="Pack ID to delete")
-    @app_commands.default_permissions(administrator=True)
-    async def delete_pack(self, interaction: Interaction, pack_id: str):
-        """Delete a pack - Admin only"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            import sqlite3
-            with self.db._get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Check if pack exists
-                cursor.execute("SELECT name, creator_id FROM creator_packs WHERE pack_id = ?", (pack_id,))
-                pack = cursor.fetchone()
-                
-                if not pack:
-                    await interaction.followup.send(f"❌ Pack `{pack_id}` not found", ephemeral=True)
-                    return
-                
-                pack_name, creator_id = pack
-                
-                # Delete pack
-                cursor.execute("DELETE FROM creator_packs WHERE pack_id = ?", (pack_id,))
-                deleted = cursor.rowcount
-                
-                conn.commit()
-                
-                if deleted > 0:
-                    embed = discord.Embed(
-                        title="🗑️ Pack Deleted",
-                        description=f"Successfully deleted pack",
-                        color=discord.Color.red()
-                    )
-                    embed.add_field(name="Pack ID", value=f"`{pack_id}`", inline=False)
-                    embed.add_field(name="Name", value=pack_name, inline=True)
-                    embed.add_field(name="Creator ID", value=creator_id, inline=True)
-                    
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ Failed to delete pack", ephemeral=True)
-                    
-        except Exception as e:
-            print(f"Error deleting pack: {e}")
-            await interaction.followup.send("❌ Something went wrong. Please try again.", ephemeral=True)
-    
     @app_commands.command(name="server_analytics", description="View server usage analytics")
     @app_commands.default_permissions(administrator=True)
     async def server_analytics(self, interaction: Interaction, days: int = 30):

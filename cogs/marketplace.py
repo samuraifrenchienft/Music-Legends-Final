@@ -359,11 +359,16 @@ class PackDetailView(discord.ui.View):
         self.total_count = total_count
 
     def _grant_pack_cards(self, user_id: int, pack_row) -> list:
-        """Grant all cards from a pack to a user. Returns list of received cards."""
+        """Grant all cards from a pack to a user atomically.
+
+        All cards are inserted in a single transaction so either all
+        are granted or none are (no partial inventory on failure).
+        """
         cards_data_json = pack_row[3]
         cards_data = json.loads(cards_data_json) if cards_data_json else []
-        received_cards = []
         import random
+
+        # Prepare card data before touching DB
         for card_data in cards_data:
             if card_data.get('rarity') in ['legendary', 'epic']:
                 if random.random() < 0.1:
@@ -373,23 +378,59 @@ class PackDetailView(discord.ui.View):
                     card_data['foil_effect'] = 'rainbow'
             if 'card_id' not in card_data:
                 card_data['card_id'] = str(uuid.uuid4())
-            self.db.add_card_to_master(card_data)
-            self.db.add_card_to_collection(
-                user_id=user_id,
-                card_id=card_data['card_id'],
-                acquired_from='pack_purchase',
-            )
-            received_cards.append(card_data)
 
-        # Increment total_purchases
-        with self.db._get_connection() as conn:
+        # Single atomic transaction for all cards + purchase counter
+        conn = self.db._get_connection()
+        try:
             cursor = conn.cursor()
+
+            for card_data in cards_data:
+                # Upsert into master cards table
+                rarity = card_data.get('rarity', 'common').lower()
+                tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                            'legendary': 'legendary', 'mythic': 'legendary'}
+                tier = card_data.get('tier') or tier_map.get(rarity, 'community')
+
+                cursor.execute("""
+                    INSERT OR REPLACE INTO cards
+                    (card_id, name, artist_name, title, rarity, tier, serial_number, print_number,
+                     quality, impact, skill, longevity, culture, hype, image_url, youtube_url, type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    card_data['card_id'], card_data.get('name', ''),
+                    card_data.get('artist_name', card_data.get('name', '')),
+                    card_data.get('title', ''), rarity, tier,
+                    card_data.get('serial_number', card_data['card_id']),
+                    card_data.get('print_number', 1), card_data.get('quality', 'standard'),
+                    card_data.get('impact', 0), card_data.get('skill', 0),
+                    card_data.get('longevity', 0), card_data.get('culture', 0),
+                    card_data.get('hype', 0), card_data.get('image_url'),
+                    card_data.get('youtube_url'), card_data.get('type', 'artist'),
+                ))
+
+                # Add to user collection
+                cursor.execute("""
+                    INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
+                    VALUES (?, ?, 'pack_purchase')
+                """, (user_id, card_data['card_id']))
+
+            # Increment total_purchases
             cursor.execute(
                 "UPDATE creator_packs SET total_purchases = total_purchases + 1 WHERE pack_id = ?",
                 (self.pack_id,),
             )
+
             conn.commit()
-        return received_cards
+            return cards_data
+
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
 
     @discord.ui.button(label="Buy with Gold", style=discord.ButtonStyle.success, emoji="🪙", row=0)
     async def buy_gold_button(self, interaction: Interaction, button: discord.ui.Button):
