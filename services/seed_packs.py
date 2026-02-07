@@ -348,13 +348,15 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
         # PostgreSQL uses %s placeholders, SQLite uses ?
         ph = "%s" if db_type == "postgresql" else "?"
 
-        # Clean up old-style packs (created before the seed system).
-        # Old packs have creator_id=0 but stripe_payment_id is NULL or 'ADMIN_IMPORT'
-        # instead of 'SEED_PACK'.  They duplicate the new seed packs and confuse users.
+        # Clean up ALL old-style packs from before the seed system.
+        # ADMIN_IMPORT packs (any creator_id) are from the old bulk import and
+        # are fully replaced by the new 75 seed packs.  Also remove orphan
+        # packs with no stripe_payment_id that aren't user-created drafts.
         try:
             cursor.execute(
-                "DELETE FROM creator_packs WHERE creator_id = 0 "
-                "AND (stripe_payment_id IS NULL OR stripe_payment_id = 'ADMIN_IMPORT')"
+                "DELETE FROM creator_packs "
+                "WHERE stripe_payment_id = 'ADMIN_IMPORT' "
+                "   OR (stripe_payment_id IS NULL AND creator_id = 0)"
             )
             old_deleted = cursor.rowcount
             if old_deleted > 0:
@@ -653,6 +655,45 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     continue
 
         print(f"✅ [SEED_PACKS] Done: {inserted} inserted, {skipped} skipped, {failed} failed")
+
+        # Always grant all seed-pack cards to DEV_USER_IDS (even if packs were
+        # already in the DB and skipped).  This ensures new dev users get cards
+        # without needing a force-reseed.  INSERT OR IGNORE makes it a fast no-op
+        # for users who already have them.
+        dev_ids_str = os.getenv("DEV_USER_IDS", "")
+        if dev_ids_str:
+            try:
+                cursor.execute(
+                    f"SELECT card_id FROM cards WHERE pack_id IN "
+                    f"(SELECT pack_id FROM creator_packs WHERE stripe_payment_id = 'SEED_PACK')"
+                )
+                all_seed_card_ids = [row[0] for row in cursor.fetchall()]
+
+                granted = 0
+                for dev_id_str in dev_ids_str.split(","):
+                    dev_id_str = dev_id_str.strip()
+                    if not dev_id_str.isdigit():
+                        continue
+                    dev_id = int(dev_id_str)
+                    for card_id in all_seed_card_ids:
+                        if db_type == "postgresql":
+                            cursor.execute(f"""
+                                INSERT INTO user_cards (user_id, card_id, acquired_from)
+                                VALUES ({ph}, {ph}, 'seed_grant')
+                                ON CONFLICT (user_id, card_id) DO NOTHING
+                            """, (dev_id, card_id))
+                        else:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
+                                VALUES (?, ?, 'seed_grant')
+                            """, (dev_id, card_id))
+                    granted += 1
+                conn.commit()
+                if granted:
+                    print(f"✅ [SEED_PACKS] Granted {len(all_seed_card_ids)} seed cards to {granted} dev user(s)")
+            except Exception as e:
+                print(f"⚠️ [SEED_PACKS] Dev grant error (non-critical): {e}")
+
     except Exception as e:
         print(f"❌ [SEED_PACKS] Error during insertion: {e}")
         import traceback
