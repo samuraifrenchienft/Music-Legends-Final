@@ -24,13 +24,14 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+DEPLOY_VERSION = "v3.0-2026-02-07-SEED-DAILY-FIX"
+
 def main():
     """Main bot entry point"""
     try:
-        print("[DOCKER] Starting bot in Docker container")
-        print(f"[DOCKER] Working directory: {os.getcwd()}")
-        print(f"[DOCKER] Python path: {sys.path}")
-        print(f"[DOCKER] Files in current dir: {os.listdir('.')}")
+        print(f"[DEPLOY] ====== VERSION: {DEPLOY_VERSION} ======")
+        print(f"[DEPLOY] Working directory: {os.getcwd()}")
+        print(f"[DEPLOY] Files: {sorted(os.listdir('.'))}")
         
         # Log startup
         from services.system_monitor import log_bot_restart
