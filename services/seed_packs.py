@@ -348,6 +348,21 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
         # PostgreSQL uses %s placeholders, SQLite uses ?
         ph = "%s" if db_type == "postgresql" else "?"
 
+        # Clean up old-style packs (created before the seed system).
+        # Old packs have creator_id=0 but stripe_payment_id is NULL or 'ADMIN_IMPORT'
+        # instead of 'SEED_PACK'.  They duplicate the new seed packs and confuse users.
+        try:
+            cursor.execute(
+                "DELETE FROM creator_packs WHERE creator_id = 0 "
+                "AND (stripe_payment_id IS NULL OR stripe_payment_id = 'ADMIN_IMPORT')"
+            )
+            old_deleted = cursor.rowcount
+            if old_deleted > 0:
+                conn.commit()
+                print(f"🗑️ [SEED_PACKS] Removed {old_deleted} old-style packs (pre-seed system)")
+        except Exception:
+            pass
+
         # Force reseed: delete all existing seed packs first
         if force_reseed:
             print("🗑️ [SEED_PACKS] Deleting existing seed packs (stripe_payment_id = 'SEED_PACK')...")
