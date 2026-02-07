@@ -229,9 +229,12 @@ class Bot(commands.Bot):
             print(f"⚠️ Bot logger init failed (non-critical): {e}")
 
         # Seed marketplace packs on startup (idempotent — skips existing packs)
+        # Runs in a thread because seed_packs_into_db() is synchronous and may
+        # make HTTP API calls that would block the event loop / miss heartbeats.
         try:
+            import asyncio
             from services.seed_packs import seed_packs_into_db
-            result = seed_packs_into_db()
+            result = await asyncio.to_thread(seed_packs_into_db)
             print(f"🎵 Seed packs: {result.get('inserted', 0)} inserted, {result.get('skipped', 0)} skipped, {result.get('failed', 0)} failed")
         except Exception as e:
             print(f"⚠️ Seed pack loading (non-critical): {e}")
