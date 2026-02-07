@@ -440,24 +440,13 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN {col} {col_def}")
             conn.commit()
 
-        # Initialize APIs — these are optional, packs will be created regardless
-        youtube_api_key = os.getenv("YOUTUBE_API_KEY")
-        lastfm_api_key = os.getenv("LASTFM_API_KEY")
-
+        # Skip external API calls — all 75 artists have FALLBACK_SONGS with
+        # hardcoded song names.  API calls (AudioDB, Last.fm, YouTube) only add
+        # thumbnails/URLs and can hang for minutes on Railway, blocking startup.
         yt = None
         lastfm = None
         audiodb = None
-
-        try:
-            from youtube_integration import YouTubeIntegration
-            from lastfm_integration import LastFmIntegration
-            from audiodb_integration import AudioDBIntegration
-            yt = YouTubeIntegration(youtube_api_key) if youtube_api_key else None
-            lastfm = LastFmIntegration() if lastfm_api_key else None
-            audiodb = AudioDBIntegration()
-            print("✅ [SEED_PACKS] API integrations loaded")
-        except Exception as e:
-            print(f"⚠️ [SEED_PACKS] API integration unavailable (will use fallbacks): {e}")
+        print("✅ [SEED_PACKS] Using fallback songs (no API calls — fast startup)")
 
         for genre, artist_list in genre_data.items():
             emoji = GENRE_EMOJI.get(genre, "🎵")

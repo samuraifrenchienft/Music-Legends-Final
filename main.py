@@ -228,16 +228,34 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Bot logger init failed (non-critical): {e}")
 
-        # Seed marketplace packs on startup (idempotent — skips existing packs)
-        # Runs in a thread because seed_packs_into_db() is synchronous and may
-        # make HTTP API calls that would block the event loop / miss heartbeats.
+        # Step 1: Immediately clean up old ADMIN_IMPORT packs (fast, no API calls)
         try:
-            import asyncio
-            from services.seed_packs import seed_packs_into_db
-            result = await asyncio.to_thread(seed_packs_into_db)
-            print(f"🎵 Seed packs: {result.get('inserted', 0)} inserted, {result.get('skipped', 0)} skipped, {result.get('failed', 0)} failed")
+            from database import DatabaseManager
+            _db = DatabaseManager()
+            with _db._get_connection() as _conn:
+                _cur = _conn.cursor()
+                _cur.execute(
+                    "DELETE FROM creator_packs "
+                    "WHERE stripe_payment_id = 'ADMIN_IMPORT' "
+                    "   OR (stripe_payment_id IS NULL AND creator_id = 0)"
+                )
+                _old = _cur.rowcount
+                _conn.commit()
+                if _old > 0:
+                    print(f"🗑️ Removed {_old} old-style packs")
         except Exception as e:
-            print(f"⚠️ Seed pack loading (non-critical): {e}")
+            print(f"⚠️ Old pack cleanup (non-critical): {e}")
+
+        # Step 2: Seed packs in background — do NOT await (API calls can hang)
+        import asyncio
+        async def _background_seed():
+            try:
+                from services.seed_packs import seed_packs_into_db
+                result = await asyncio.to_thread(seed_packs_into_db)
+                print(f"🎵 Seed packs: {result.get('inserted', 0)} inserted, {result.get('skipped', 0)} skipped, {result.get('failed', 0)} failed")
+            except Exception as e:
+                print(f"⚠️ Seed pack loading (non-critical): {e}")
+        asyncio.create_task(_background_seed())
 
         # Send any pending restart alerts that were queued during startup
         try:
