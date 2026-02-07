@@ -572,6 +572,243 @@ class PackDetailView(discord.ui.View):
         return interaction.user.id == self.author_id
 
 
+# ─── Tier Pack Definitions (for /buy_pack) ─────────────────────────────────
+
+TIER_PACKS = {
+    "community": {"label": "Community Pack", "emoji": "📦", "color": 0x2ECC71},
+    "gold":      {"label": "Gold Pack",      "emoji": "🥇", "color": 0xFFD700},
+    "platinum":  {"label": "Platinum Pack",   "emoji": "💎", "color": 0xE5E4E2},
+}
+
+
+# ─── View: Tier Pack Confirm (purchase buttons) ───────────────────────────
+
+class BuyPackConfirmView(discord.ui.View):
+    """Shows tier pack details + Buy with Gold / Buy with Stripe buttons."""
+
+    def __init__(self, db: DatabaseManager, author_id: int, tier: str):
+        super().__init__(timeout=120)
+        self.db = db
+        self.author_id = author_id
+        self.tier = tier
+
+    @discord.ui.button(label="Buy with Gold", style=discord.ButtonStyle.success, emoji="🪙", row=0)
+    async def buy_gold(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=False)
+        try:
+            from config.economy import PACK_PRICING
+            pricing = PACK_PRICING.get(self.tier)
+            if not pricing:
+                return await interaction.followup.send("Invalid tier.", ephemeral=True)
+
+            gold_price = pricing.get('buy_gold')
+            if gold_price is None:
+                return await interaction.followup.send(
+                    f"The **{TIER_PACKS[self.tier]['label']}** cannot be purchased with gold. Use Stripe or tickets instead.",
+                    ephemeral=True,
+                )
+
+            economy = self.db.get_user_economy(interaction.user.id)
+            user_gold = economy.get('gold', 0)
+
+            if user_gold < gold_price:
+                return await interaction.followup.send(
+                    f"Insufficient gold! You need **{gold_price:,}** Gold but only have **{user_gold:,}**.",
+                    ephemeral=True,
+                )
+
+            # Deduct gold
+            self.db.update_user_economy(interaction.user.id, gold_change=-gold_price)
+
+            # Generate random cards for this tier
+            cards = self.db.generate_tier_pack_cards(interaction.user.id, self.tier)
+            if not cards:
+                # Refund on failure
+                self.db.update_user_economy(interaction.user.id, gold_change=gold_price)
+                return await interaction.followup.send("No cards available to generate. Gold refunded.", ephemeral=True)
+
+            # Grant bonuses
+            bonus_gold = pricing.get('bonus_gold', 0)
+            bonus_tickets = pricing.get('bonus_tickets', 0)
+            if bonus_gold or bonus_tickets:
+                self.db.update_user_economy(interaction.user.id, gold_change=bonus_gold, tickets_change=bonus_tickets)
+
+            # Record purchase
+            purchase_id = str(uuid.uuid4())
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """INSERT INTO purchases (purchase_id, user_id, pack_id, amount_cents, payment_method, status)
+                       VALUES (?, ?, ?, 0, 'gold', 'completed')""",
+                    (purchase_id, interaction.user.id, f'tier_{self.tier}'),
+                )
+                conn.commit()
+
+            # Pack opening animation
+            pack_name = TIER_PACKS[self.tier]['label']
+            pack_type = 'gold' if self.tier in ('gold', 'platinum') else 'community'
+
+            from views.pack_opening import open_pack_with_animation
+            await open_pack_with_animation(
+                interaction=interaction,
+                pack_name=pack_name,
+                pack_type=pack_type,
+                cards=cards,
+                delay=2.0,
+            )
+
+            bonus_text = ""
+            if bonus_gold:
+                bonus_text += f"+{bonus_gold:,} Gold "
+            if bonus_tickets:
+                bonus_text += f"+{bonus_tickets} Tickets"
+            if bonus_text:
+                await interaction.followup.send(f"**Bonus rewards:** {bonus_text.strip()}", ephemeral=True)
+
+        except Exception as e:
+            print(f"Error buying tier pack with gold: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"Failed to purchase pack: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Buy Pack", style=discord.ButtonStyle.primary, emoji="💳", row=0)
+    async def buy_stripe(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        try:
+            from config.economy import PACK_PRICING
+            pricing = PACK_PRICING.get(self.tier)
+            if not pricing:
+                return await interaction.response.send_message("Invalid tier.", ephemeral=True)
+
+            price_cents = pricing['buy_usd_cents']
+            pack_name = TIER_PACKS[self.tier]['label']
+
+            from stripe_payments import stripe_manager
+            result = stripe_manager.create_tier_pack_checkout(
+                tier=self.tier,
+                buyer_id=interaction.user.id,
+                pack_name=pack_name,
+                price_cents=price_cents,
+            )
+
+            if result.get('success'):
+                checkout_url = result['checkout_url']
+                embed = discord.Embed(
+                    title="Checkout",
+                    description=f"[Click here to pay ${price_cents/100:.2f}]({checkout_url})\n\nYour cards will be delivered automatically after payment.",
+                    color=discord.Color.blue(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    f"Failed to create checkout: {result.get('error', 'Unknown error')}",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            print(f"Error creating tier pack Stripe checkout: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(f"Failed to create checkout: {e}", ephemeral=True)
+            except Exception:
+                await interaction.followup.send(f"Failed to create checkout: {e}", ephemeral=True)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.author_id
+
+
+# ─── View: Tier Pack Select (dropdown) ────────────────────────────────────
+
+class BuyPackTierView(discord.ui.View):
+    """Dropdown to choose Community / Gold / Platinum tier pack."""
+
+    def __init__(self, db: DatabaseManager, author_id: int):
+        super().__init__(timeout=120)
+        self.db = db
+        self.author_id = author_id
+        self._add_dropdown()
+
+    def _add_dropdown(self):
+        from config.economy import PACK_PRICING
+        options = []
+        for tier, meta in TIER_PACKS.items():
+            pricing = PACK_PRICING.get(tier, {})
+            price_str = f"${pricing.get('buy_usd', 0):.2f}"
+            gold_str = f"{pricing.get('buy_gold', 'N/A'):,}" if pricing.get('buy_gold') else "N/A"
+            cards = pricing.get('cards_per_pack', '?')
+            options.append(discord.SelectOption(
+                label=meta['label'],
+                value=tier,
+                emoji=meta['emoji'],
+                description=f"{cards} cards | {price_str} or {gold_str} gold",
+            ))
+
+        select = discord.ui.Select(placeholder="Choose a pack tier...", options=options)
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        tier = interaction.data["values"][0]
+        from config.economy import PACK_PRICING
+        from schemas.pack_definition import PACK_DEFINITIONS
+
+        # Map PACK_PRICING tier names to PACK_DEFINITIONS keys
+        TIER_TO_DEF = {"community": "starter", "gold": "gold", "platinum": "platinum"}
+
+        pricing = PACK_PRICING.get(tier, {})
+        pack_def = PACK_DEFINITIONS.get(TIER_TO_DEF.get(tier, tier))
+        meta = TIER_PACKS[tier]
+
+        # Build detail embed
+        embed = discord.Embed(
+            title=f"{meta['emoji']} {meta['label']}",
+            description=pricing.get('description', ''),
+            color=meta['color'],
+        )
+
+        embed.add_field(
+            name="Cards",
+            value=f"**{pricing.get('cards_per_pack', '?')}** random cards",
+            inline=True,
+        )
+
+        # Odds breakdown from pack definition
+        if pack_def:
+            odds_lines = [f"{r.title()}: {int(o*100)}%" for r, o in pack_def.odds.items()]
+            embed.add_field(name="Rarity Odds", value="\n".join(odds_lines), inline=True)
+
+        # Bonuses
+        bonus_parts = []
+        if pricing.get('bonus_gold'):
+            bonus_parts.append(f"+{pricing['bonus_gold']:,} Gold")
+        if pricing.get('bonus_tickets'):
+            bonus_parts.append(f"+{pricing['bonus_tickets']} Tickets")
+        if bonus_parts:
+            embed.add_field(name="Bonuses", value="\n".join(bonus_parts), inline=True)
+
+        # Price
+        price_lines = [f"**${pricing.get('buy_usd', 0):.2f}** USD"]
+        if pricing.get('buy_gold'):
+            price_lines.append(f"**{pricing['buy_gold']:,}** Gold")
+        if pricing.get('buy_tickets'):
+            price_lines.append(f"**{pricing['buy_tickets']:,}** Tickets")
+        embed.add_field(name="Price", value=" / ".join(price_lines), inline=False)
+
+        view = BuyPackConfirmView(self.db, self.author_id, tier)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.author_id
+
+
 # ─── Cog: Marketplace Commands ─────────────────────────────────────────────
 
 class MarketplaceCommands(commands.Cog):
@@ -914,6 +1151,24 @@ class MarketplaceCommands(commands.Cog):
             await interaction.response.send_message(embed=embed, view=view)
         except discord.errors.HTTPException:
             await interaction.followup.send(embed=embed, view=view)
+
+    @app_commands.command(name="buy_pack", description="Purchase a pack by tier (Community, Gold, Platinum)")
+    async def buy_pack_command(self, interaction: Interaction):
+        """Show tier selection dropdown for buying built-in packs."""
+        embed = discord.Embed(
+            title="📦 Buy a Pack",
+            description="Select a tier below to see details and purchase.",
+            color=discord.Color.gold(),
+        )
+        embed.add_field(
+            name="Available Tiers",
+            value="📦 **Community Pack** — $2.99 / 500 Gold\n"
+                  "🥇 **Gold Pack** — $4.99 / 100 Tickets\n"
+                  "💎 **Platinum Pack** — $6.99 / 2,500 Gold",
+            inline=False,
+        )
+        view = BuyPackTierView(self.db, interaction.user.id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(MarketplaceCommands(bot))

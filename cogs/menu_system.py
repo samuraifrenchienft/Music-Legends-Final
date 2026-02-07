@@ -166,8 +166,9 @@ def create_shop_embed() -> discord.Embed:
     embed.add_field(
         name="📦 Packs",
         value="• **Community Pack** - $2.99 (500 gold) — 5 cards + 100 bonus gold\n"
-              "• **Gold Pack** - $4.99 (1,000 gold) — 5 cards + 250 gold & 2 tickets\n"
-              "• **Platinum Pack** - $6.99 (2,500 gold) — 10 cards + 500 gold & 5 tickets",
+              "• **Gold Pack** - $4.99 (100 tickets) — 5 cards + 250 gold & 2 tickets\n"
+              "• **Platinum Pack** - $6.99 (2,500 gold) — 10 cards + 500 gold & 5 tickets\n\n"
+              "Click **Buy Pack** below or use `/buy_pack`",
         inline=False
     )
     
@@ -646,14 +647,21 @@ class ShopView(discord.ui.View):
     
     @discord.ui.button(label="📦 Buy Pack", style=discord.ButtonStyle.primary)
     async def buy_pack(self, interaction: Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "📦 **Buy Packs**\n\n"
-            "Use these commands:\n"
-            "• `/buy community` - $2.99 — 5 cards + 100 gold\n"
-            "• `/buy gold` - $4.99 — 5 cards + 250 gold & 2 tickets\n"
-            "• `/buy platinum` - $6.99 — 10 cards + 500 gold & 5 tickets",
-            ephemeral=True
+        from cogs.marketplace import BuyPackTierView
+        embed = discord.Embed(
+            title="📦 Buy a Pack",
+            description="Select a tier below to see details and purchase.",
+            color=discord.Color.gold(),
         )
+        embed.add_field(
+            name="Available Tiers",
+            value="📦 **Community Pack** — $2.99 / 500 Gold\n"
+                  "🥇 **Gold Pack** — $4.99 / 100 Tickets\n"
+                  "💎 **Platinum Pack** — $6.99 / 2,500 Gold",
+            inline=False,
+        )
+        view = BuyPackTierView(self.db, interaction.user.id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     @discord.ui.button(label="🎫 Buy Tickets", style=discord.ButtonStyle.secondary)
     async def buy_tickets(self, interaction: Interaction, button: discord.ui.Button):

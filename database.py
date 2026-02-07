@@ -2799,6 +2799,111 @@ class DatabaseManager:
             "card": daily_card  # NEW: Include card in response
         }
 
+    def generate_tier_pack_cards(self, user_id: int, tier: str) -> list:
+        """
+        Generate random cards for a built-in tier pack (community/gold/platinum).
+        Rolls N cards using weighted rarity odds from PACK_DEFINITIONS,
+        avoids duplicates within the same pack, and grants each card to the user.
+        Returns list of card dicts for pack opening animation.
+        """
+        import random
+        from schemas.pack_definition import PACK_DEFINITIONS
+
+        # Map PACK_PRICING tier names to PACK_DEFINITIONS keys
+        TIER_TO_DEF_KEY = {"community": "starter", "gold": "gold", "platinum": "platinum"}
+        def_key = TIER_TO_DEF_KEY.get(tier, tier)
+
+        pack_def = PACK_DEFINITIONS.get(def_key)
+        if not pack_def:
+            return []
+
+        # PACK_DEFINITIONS odds use tier names; DB cards table uses rarity names
+        ODDS_KEY_TO_DB_RARITY = {
+            "community": "common",
+            "gold": "rare",
+            "rare": "rare",
+            "epic": "epic",
+            "platinum": "epic",
+            "legendary": "legendary",
+            "diamond": "legendary",
+        }
+
+        num_cards = pack_def.cards_per_pack
+        odds = pack_def.odds
+        odds_keys = list(odds.keys())
+        weights = list(odds.values())
+
+        granted_cards = []
+        granted_ids = set()
+
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            for _ in range(num_cards):
+                # Roll using pack definition odds, then map to DB rarity
+                rolled_key = random.choices(odds_keys, weights=weights, k=1)[0]
+                rarity = ODDS_KEY_TO_DB_RARITY.get(rolled_key, rolled_key)
+
+                # Build exclusion clause for already-granted cards + owned cards
+                exclude_ids = granted_ids.copy()
+                placeholders_list = []
+                params = [rarity]
+
+                if exclude_ids:
+                    ph_str = ", ".join(["?" for _ in exclude_ids])
+                    placeholders_list.append(f"card_id NOT IN ({ph_str})")
+                    params.extend(list(exclude_ids))
+
+                if user_id:
+                    placeholders_list.append(
+                        "card_id NOT IN (SELECT card_id FROM user_cards WHERE user_id = ?)"
+                    )
+                    params.append(user_id)
+
+                where_extra = (" AND " + " AND ".join(placeholders_list)) if placeholders_list else ""
+
+                cursor.execute(
+                    f"SELECT * FROM cards WHERE rarity = ?{where_extra} ORDER BY RANDOM() LIMIT 1",
+                    params
+                )
+                row = cursor.fetchone()
+
+                # Fallback: any rarity if no cards of rolled rarity available
+                if not row:
+                    params_fb = []
+                    where_parts = []
+                    if exclude_ids:
+                        ph_str = ", ".join(["?" for _ in exclude_ids])
+                        where_parts.append(f"card_id NOT IN ({ph_str})")
+                        params_fb.extend(list(exclude_ids))
+                    if user_id:
+                        where_parts.append(
+                            "card_id NOT IN (SELECT card_id FROM user_cards WHERE user_id = ?)"
+                        )
+                        params_fb.append(user_id)
+                    where_fb = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+                    cursor.execute(
+                        f"SELECT * FROM cards{where_fb} ORDER BY RANDOM() LIMIT 1",
+                        params_fb
+                    )
+                    row = cursor.fetchone()
+
+                if row:
+                    columns = [desc[0] for desc in cursor.description]
+                    card = dict(zip(columns, row))
+                    granted_cards.append(card)
+                    granted_ids.add(card['card_id'])
+                    self.add_card_to_collection(user_id, card['card_id'], 'tier_pack')
+
+            return granted_cards
+
+        except Exception as e:
+            print(f"Error generating tier pack cards: {e}")
+            return granted_cards
+        finally:
+            conn.close()
+
     def _get_random_daily_card(self, user_id: int = None) -> Optional[Dict]:
         """
         Get a random card for daily claim using rarity + tier weighted selection.

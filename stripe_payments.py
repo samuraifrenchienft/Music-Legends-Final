@@ -178,6 +178,52 @@ class StripePaymentManager:
                 'error': str(e)
             }
     
+    def create_tier_pack_checkout(self, tier: str, buyer_id: int, pack_name: str, price_cents: int) -> Dict:
+        """Create Stripe Checkout session for a built-in tier pack purchase."""
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_intent_data={
+                    'metadata': {
+                        'tier': tier,
+                        'buyer_id': str(buyer_id),
+                        'type': 'tier_pack_purchase'
+                    }
+                },
+                customer_email=None,
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': pack_name,
+                            'description': f'Purchase a {pack_name} — random cards from the master collection',
+                            'images': [],
+                        },
+                        'unit_amount': price_cents,
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url='https://discord.com/channels/@me',
+                cancel_url='https://discord.com/channels/@me',
+                metadata={
+                    'tier': tier,
+                    'buyer_id': str(buyer_id),
+                    'type': 'tier_pack_purchase'
+                }
+            )
+
+            return {
+                'success': True,
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def create_battlepass_checkout(self, user_id: int) -> Dict:
         """Create Stripe Checkout session for Battle Pass Premium ($9.99)"""
         try:

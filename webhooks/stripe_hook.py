@@ -101,6 +101,10 @@ async def handle_checkout_session_completed(event: Dict[str, Any]) -> Dict[str, 
         if metadata.get("type") == "battlepass_purchase":
             return await _fulfill_battlepass_purchase(session, metadata, session_id)
 
+        # --- Tier pack purchase flow (community/gold/platinum) ---
+        if metadata.get("type") == "tier_pack_purchase":
+            return await _fulfill_tier_pack_purchase(session, metadata, session_id)
+
         # --- Pack purchase flow (from marketplace) ---
         if metadata.get("type") == "pack_purchase":
             return await _fulfill_pack_purchase(session, metadata, session_id)
@@ -220,6 +224,70 @@ async def _fulfill_pack_purchase(session: Dict, metadata: Dict, session_id: str)
         import traceback
         traceback.print_exc()
         return {"error": "Fulfillment failed"}, 500
+
+async def _fulfill_tier_pack_purchase(session: Dict, metadata: Dict, session_id: str) -> Dict[str, Any]:
+    """Fulfill a built-in tier pack purchase (community/gold/platinum) after Stripe payment."""
+    import uuid as _uuid
+    try:
+        tier = metadata.get("tier")
+        buyer_id = metadata.get("buyer_id")
+        amount_cents = session.get("amount_total", 0)
+
+        if not tier or not buyer_id:
+            logger.error(f"Missing tier or buyer_id in session {session_id}")
+            return {"error": "Missing tier pack metadata"}, 400
+
+        buyer_id = int(buyer_id)
+        logger.info(f"Fulfilling tier pack purchase: tier={tier}, buyer={buyer_id}, session={session_id}")
+
+        from database import DatabaseManager
+        db = DatabaseManager()
+
+        # Generate random cards for this tier
+        cards = db.generate_tier_pack_cards(buyer_id, tier)
+        if not cards:
+            logger.error(f"No cards generated for tier {tier}, buyer {buyer_id}")
+            return {"error": "Card generation failed — no cards available"}, 500
+
+        # Grant bonus gold/tickets
+        from config.economy import PACK_PRICING
+        pricing = PACK_PRICING.get(tier, {})
+        bonus_gold = pricing.get('bonus_gold', 0)
+        bonus_tickets = pricing.get('bonus_tickets', 0)
+        if bonus_gold or bonus_tickets:
+            db.update_user_economy(buyer_id, gold_change=bonus_gold, tickets_change=bonus_tickets)
+
+        # Record purchase
+        purchase_id = str(_uuid.uuid4())
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO purchases
+                   (purchase_id, user_id, pack_id, amount_cents, payment_method, stripe_session_id, status)
+                   VALUES (?, ?, ?, ?, 'stripe', ?, 'completed')""",
+                (purchase_id, buyer_id, f'tier_{tier}', amount_cents, session_id),
+            )
+            conn.commit()
+
+        logger.info(f"Tier pack fulfilled: {len(cards)} cards granted to user {buyer_id}, tier={tier}")
+
+        return {
+            "status": "fulfilled",
+            "tier": tier,
+            "buyer_id": buyer_id,
+            "cards_granted": len(cards),
+            "bonus_gold": bonus_gold,
+            "bonus_tickets": bonus_tickets,
+            "session_id": session_id,
+            "purchase_id": purchase_id,
+        }
+
+    except Exception as e:
+        logger.error(f"Tier pack fulfillment failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": "Tier pack fulfillment failed"}, 500
+
 
 async def _fulfill_battlepass_purchase(session: Dict, metadata: Dict, session_id: str) -> Dict[str, Any]:
     """Grant premium battle pass — sets premium_expires to now + SEASON_DURATION_DAYS."""
