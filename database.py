@@ -367,6 +367,27 @@ class DatabaseManager:
                 )
             """)
             
+            # Lightweight migrations for creator_packs (existing DBs may lack newer columns)
+            cursor.execute("PRAGMA table_info(creator_packs)")
+            cp_columns = {row[1] for row in cursor.fetchall()}
+            if "genre" not in cp_columns:
+                cursor.execute("ALTER TABLE creator_packs ADD COLUMN genre TEXT")
+                # Backfill genre from pack name for existing packs
+                genre_map = {
+                    "EDM": "EDM Bangers", "Rock": "Rock Classics",
+                    "R&B": "R&B Soul Pack", "Pop": "Pop Hits 2024",
+                    "Hip Hop": "Hip Hop Legends",
+                }
+                for keyword, genre_name in genre_map.items():
+                    cursor.execute(
+                        "UPDATE creator_packs SET genre = ? WHERE name LIKE ? AND genre IS NULL",
+                        (genre_name, f"%{keyword}%"),
+                    )
+            if "price_gold" not in cp_columns:
+                cursor.execute("ALTER TABLE creator_packs ADD COLUMN price_gold INTEGER DEFAULT 500")
+            if "pack_tier" not in cp_columns:
+                cursor.execute("ALTER TABLE creator_packs ADD COLUMN pack_tier TEXT DEFAULT 'community'")
+
             # Creator pack limits tracking
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS creator_pack_limits (

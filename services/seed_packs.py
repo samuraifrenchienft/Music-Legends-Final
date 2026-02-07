@@ -37,8 +37,14 @@ def _get_db_connection():
         # Local SQLite
         return sqlite3.connect("music_legends.db"), "sqlite"
 
-# Rarity assignment per card slot (index 0-4 inside each pack)
-SLOT_RARITIES = ["epic", "rare", "rare", "common", "common"]
+# Artist power threshold: >= this value → Gold tier, below → Community tier
+GOLD_TIER_THRESHOLD = 88
+
+# Card rarity mix per pack tier
+TIER_SLOT_RARITIES = {
+    "gold":      ["epic", "rare", "rare", "common", "common"],
+    "community": ["rare", "rare", "common", "common", "common"],
+}
 
 # Stat ranges by rarity
 RARITY_STAT_RANGES = {
@@ -86,7 +92,6 @@ ARTIST_POWER = {
 PACK_TIER_PRICING = {
     "community": {"price_cents": 299, "price_gold": 500},
     "gold":      {"price_cents": 499, "price_gold": 900},
-    "platinum":  {"price_cents": 699, "price_gold": 1500},
 }
 
 # Genre → emoji for pack display
@@ -371,9 +376,12 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     genre TEXT
                 )
             """)
-            # Ensure genre column exists on old tables
+            # Ensure genre column exists on old tables (SQLite-safe)
             try:
-                cursor.execute("ALTER TABLE creator_packs ADD COLUMN IF NOT EXISTS genre TEXT")
+                cursor.execute("PRAGMA table_info(creator_packs)")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                if "genre" not in existing_cols:
+                    cursor.execute("ALTER TABLE creator_packs ADD COLUMN genre TEXT")
             except Exception:
                 pass
             # Ensure cards table exists
@@ -448,10 +456,15 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                 try:
                     songs = _get_songs_for_artist(artist_name, yt, lastfm, audiodb)
 
-                    # Build 5 cards (1 per song) with rarities from SLOT_RARITIES
+                    # Determine pack tier from artist power ranking
+                    power = ARTIST_POWER.get(artist_name, 50)
+                    pack_tier = "gold" if power >= GOLD_TIER_THRESHOLD else "community"
+                    slot_rarities = TIER_SLOT_RARITIES[pack_tier]
+
+                    # Build 5 cards (1 per song) with tier-based rarities
                     cards = []
                     for slot_idx, song in enumerate(songs[:5]):
-                        rarity = SLOT_RARITIES[slot_idx]
+                        rarity = slot_rarities[slot_idx]
                         song_title = song.get('title', f"{artist_name} - Song {slot_idx+1}")
                         card_id = _deterministic_uuid(genre, artist_idx, song_title)
                         merit_stats = _merit_based_stats(artist_name, song_title, rarity)
@@ -478,10 +491,8 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
 
                     cards_json = json.dumps(cards)
 
-                    # Determine pack tier from highest rarity card
-                    best_rarity = max(cards, key=lambda c: list(RARITY_STAT_RANGES.keys()).index(c["rarity"]))["rarity"]
-                    pack_tier = _rarity_to_tier(best_rarity)
-                    tier_pricing = PACK_TIER_PRICING.get(pack_tier, PACK_TIER_PRICING["community"])
+                    # Pack tier already set from artist power above
+                    tier_pricing = PACK_TIER_PRICING[pack_tier]
                     price_cents = tier_pricing["price_cents"]
                     price_gold = tier_pricing["price_gold"]
 
