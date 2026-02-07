@@ -2663,6 +2663,12 @@ class DatabaseManager:
 
             result = cursor.fetchone()
             if not result:
+                # Ensure user exists in users table first (FK constraint)
+                cursor.execute("""
+                    INSERT INTO users (user_id, username, discord_tag)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (user_id, f'User_{user_id}', f'User#{user_id}'))
                 # Create new economy record for user
                 cursor.execute("""
                     INSERT INTO user_inventory (user_id, gold, tickets, dust, gems, xp, level, daily_streak)
@@ -2685,7 +2691,13 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                # Ensure user exists first
+                # Ensure user exists in users table first (FK constraint)
+                cursor.execute("""
+                    INSERT INTO users (user_id, username, discord_tag)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (user_id, f'User_{user_id}', f'User#{user_id}'))
+                # Ensure user_inventory row exists
                 cursor.execute("""
                     INSERT INTO user_inventory (user_id, gold, tickets)
                     VALUES (?, 500, 0)

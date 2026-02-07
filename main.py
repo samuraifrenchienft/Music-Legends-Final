@@ -228,24 +228,19 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Bot logger init failed (non-critical): {e}")
 
-        # Load seed packs (75 genre packs so marketplace always has content)
+        # Clean up old seed packs from marketplace
         try:
-            from services.seed_packs import seed_packs_into_db
-            result = seed_packs_into_db()
-            failed = result.get("failed", 0)
-            if result["inserted"] > 0:
-                print(f"🎵 Seed packs: {result['inserted']} inserted, {result['skipped']} skipped, {failed} failed")
-                try:
-                    from services.changelog_manager import log_system_event
-                    log_system_event('seed_packs', f"Loaded {result['inserted']} seed packs", severity='high', metadata=result)
-                except Exception:
-                    pass
-            else:
-                print(f"🎵 Seed packs: all {result['skipped']} already loaded ({failed} failed)")
+            from database import DatabaseManager
+            _cleanup_db = DatabaseManager()
+            with _cleanup_db._get_connection() as _conn:
+                _cur = _conn.cursor()
+                _cur.execute("DELETE FROM creator_packs WHERE stripe_payment_id = 'SEED_PACK'")
+                _deleted = _cur.rowcount
+                _conn.commit()
+                if _deleted > 0:
+                    print(f"🗑️ Cleaned up {_deleted} old seed packs from marketplace")
         except Exception as e:
-            print(f"⚠️ Seed pack loading failed (non-critical): {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"⚠️ Seed pack cleanup (non-critical): {e}")
 
         # Send any pending restart alerts that were queued during startup
         try:
