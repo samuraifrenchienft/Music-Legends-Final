@@ -313,7 +313,7 @@ if __name__ == "__main__":
     print(f"🔍 Python version: {os.sys.version}")
     print(f"🔍 Current directory: {os.getcwd()}")
     print(f"🔍 Files in directory: {os.listdir('.')}")
-    print(f"🔧 DEPLOYMENT VERSION: 2.0 - NO MOCK DATA - DEV PANEL FIXED")
+    print(f"🔧 DEPLOYMENT VERSION: 3.0 - SYNC SEED + DAILY CARD FIX - 2026-02-07")
 
     try:
         token = os.getenv("BOT_TOKEN")

@@ -648,7 +648,72 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     print(f"⚠️ [SEED_PACKS] Failed to insert {artist_name} ({genre}): {e}")
                     continue
 
-        print(f"✅ [SEED_PACKS] Done: {inserted} inserted, {skipped} skipped, {failed} failed")
+        print(f"[SEED] Done: {inserted} inserted, {skipped} skipped, {failed} failed")
+
+        # === BACKFILL: ensure cards table has rows for all seed packs ===
+        # If packs were skipped (already exist) but cards table is empty,
+        # parse cards from the packs' cards_data JSON and insert them.
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) FROM cards WHERE pack_id IN "
+                "(SELECT pack_id FROM creator_packs WHERE stripe_payment_id = 'SEED_PACK')"
+            )
+            card_count = cursor.fetchone()[0]
+
+            if card_count == 0 and skipped > 0:
+                print("[SEED] Cards table empty but packs exist — backfilling cards from JSON...")
+                cursor.execute(
+                    "SELECT pack_id, cards_data FROM creator_packs WHERE stripe_payment_id = 'SEED_PACK'"
+                )
+                backfill_count = 0
+                for pack_id_row, cards_json_row in cursor.fetchall():
+                    cards_list = json.loads(cards_json_row) if cards_json_row else []
+                    for card in cards_list:
+                        if db_type == "postgresql":
+                            cursor.execute(f"""
+                                INSERT INTO cards
+                                (card_id, name, artist_name, title, rarity, tier, serial_number,
+                                 print_number, quality, impact, skill, longevity, culture, hype,
+                                 image_url, youtube_url, type, pack_id)
+                                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},
+                                        {ph},{ph},{ph},{ph},{ph},{ph},{ph},'artist',{ph})
+                                ON CONFLICT (card_id) DO NOTHING
+                            """, (
+                                card["card_id"], card["name"], card.get("artist_name",""),
+                                card.get("title",""), card["rarity"], card.get("tier",""),
+                                card.get("serial_number",""), card.get("print_number",1),
+                                card.get("quality","standard"), card.get("impact",0),
+                                card.get("skill",0), card.get("longevity",0),
+                                card.get("culture",0), card.get("hype",0),
+                                card.get("image_url",""), card.get("youtube_url",""),
+                                pack_id_row,
+                            ))
+                        else:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO cards
+                                (card_id, name, artist_name, title, rarity, tier, serial_number,
+                                 print_number, quality, impact, skill, longevity, culture, hype,
+                                 image_url, youtube_url, type, pack_id)
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'artist',?)
+                            """, (
+                                card["card_id"], card["name"], card.get("artist_name",""),
+                                card.get("title",""), card["rarity"], card.get("tier",""),
+                                card.get("serial_number",""), card.get("print_number",1),
+                                card.get("quality","standard"), card.get("impact",0),
+                                card.get("skill",0), card.get("longevity",0),
+                                card.get("culture",0), card.get("hype",0),
+                                card.get("image_url",""), card.get("youtube_url",""),
+                                pack_id_row,
+                            ))
+                        backfill_count += 1
+                conn.commit()
+                print(f"[SEED] Backfilled {backfill_count} cards into cards table")
+            else:
+                print(f"[SEED] Cards table has {card_count} seed cards — no backfill needed")
+        except Exception as e:
+            print(f"[SEED] Card backfill error: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Always grant all seed-pack cards to DEV_USER_IDS (even if packs were
         # already in the DB and skipped).  This ensures new dev users get cards
