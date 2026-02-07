@@ -348,22 +348,27 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
         # PostgreSQL uses %s placeholders, SQLite uses ?
         ph = "%s" if db_type == "postgresql" else "?"
 
-        # Clean up ALL old-style packs from before the seed system.
-        # ADMIN_IMPORT packs (any creator_id) are from the old bulk import and
-        # are fully replaced by the new 75 seed packs.  Also remove orphan
-        # packs with no stripe_payment_id that aren't user-created drafts.
+        # Clean up ALL non-seed packs with creator_id=0 (old bulk imports,
+        # ADMIN_IMPORT, CLI_IMPORT, NULL payment_id, etc.)
+        # Only SEED_PACK packs with creator_id=0 should survive.
         try:
             cursor.execute(
                 "DELETE FROM creator_packs "
-                "WHERE stripe_payment_id = 'ADMIN_IMPORT' "
-                "   OR (stripe_payment_id IS NULL AND creator_id = 0)"
+                "WHERE (stripe_payment_id = 'ADMIN_IMPORT') "
+                "   OR (stripe_payment_id = 'CLI_IMPORT' AND creator_id = 0) "
+                "   OR (stripe_payment_id IS NULL AND creator_id = 0) "
+                "   OR (creator_id = 0 AND (stripe_payment_id IS NULL OR stripe_payment_id != 'SEED_PACK'))"
             )
             old_deleted = cursor.rowcount
+            conn.commit()
             if old_deleted > 0:
-                conn.commit()
-                print(f"🗑️ [SEED_PACKS] Removed {old_deleted} old-style packs (pre-seed system)")
-        except Exception:
-            pass
+                print(f"[SEED] Removed {old_deleted} old-style packs")
+            else:
+                print("[SEED] No old packs to remove")
+        except Exception as e:
+            print(f"[SEED] Cleanup error: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Force reseed: delete all existing seed packs first
         if force_reseed:

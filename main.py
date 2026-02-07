@@ -228,34 +228,19 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Bot logger init failed (non-critical): {e}")
 
-        # Step 1: Immediately clean up old ADMIN_IMPORT packs (fast, no API calls)
-        try:
-            from database import DatabaseManager
-            _db = DatabaseManager()
-            with _db._get_connection() as _conn:
-                _cur = _conn.cursor()
-                _cur.execute(
-                    "DELETE FROM creator_packs "
-                    "WHERE stripe_payment_id = 'ADMIN_IMPORT' "
-                    "   OR (stripe_payment_id IS NULL AND creator_id = 0)"
-                )
-                _old = _cur.rowcount
-                _conn.commit()
-                if _old > 0:
-                    print(f"🗑️ Removed {_old} old-style packs")
-        except Exception as e:
-            print(f"⚠️ Old pack cleanup (non-critical): {e}")
-
-        # Step 2: Seed packs in background — do NOT await (API calls can hang)
+        # Seed packs synchronously — cleanup + insert runs in < 1 second
+        # (API calls disabled, all songs are hardcoded in FALLBACK_SONGS)
         import asyncio
-        async def _background_seed():
-            try:
-                from services.seed_packs import seed_packs_into_db
-                result = await asyncio.to_thread(seed_packs_into_db)
-                print(f"🎵 Seed packs: {result.get('inserted', 0)} inserted, {result.get('skipped', 0)} skipped, {result.get('failed', 0)} failed")
-            except Exception as e:
-                print(f"⚠️ Seed pack loading (non-critical): {e}")
-        asyncio.create_task(_background_seed())
+        try:
+            print("[SEED] Starting seed_packs_into_db...")
+            from services.seed_packs import seed_packs_into_db
+            result = await asyncio.to_thread(seed_packs_into_db)
+            print(f"[SEED] Done: {result.get('inserted', 0)} inserted, "
+                  f"{result.get('skipped', 0)} skipped, {result.get('failed', 0)} failed")
+        except Exception as e:
+            print(f"[SEED] ERROR: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Send any pending restart alerts that were queued during startup
         try:
