@@ -372,21 +372,22 @@ class DatabaseManager:
             cp_columns = {row[1] for row in cursor.fetchall()}
             if "genre" not in cp_columns:
                 cursor.execute("ALTER TABLE creator_packs ADD COLUMN genre TEXT")
-                # Backfill genre from pack name for existing packs
-                genre_map = {
-                    "EDM": "EDM Bangers", "Rock": "Rock Classics",
-                    "R&B": "R&B Soul Pack", "Pop": "Pop Hits 2024",
-                    "Hip Hop": "Hip Hop Legends",
-                }
-                for keyword, genre_name in genre_map.items():
-                    cursor.execute(
-                        "UPDATE creator_packs SET genre = ? WHERE name LIKE ? AND genre IS NULL",
-                        (genre_name, f"%{keyword}%"),
-                    )
             if "price_gold" not in cp_columns:
                 cursor.execute("ALTER TABLE creator_packs ADD COLUMN price_gold INTEGER DEFAULT 500")
             if "pack_tier" not in cp_columns:
                 cursor.execute("ALTER TABLE creator_packs ADD COLUMN pack_tier TEXT DEFAULT 'community'")
+
+            # Always backfill NULL genres from pack names (runs every startup, fast no-op if already set)
+            genre_map = {
+                "EDM": "EDM Bangers", "Rock": "Rock Classics",
+                "R&B": "R&B Soul Pack", "Pop": "Pop Hits 2024",
+                "Hip Hop": "Hip Hop Legends",
+            }
+            for keyword, genre_name in genre_map.items():
+                cursor.execute(
+                    "UPDATE creator_packs SET genre = ? WHERE name LIKE ? AND genre IS NULL",
+                    (genre_name, f"%{keyword}%"),
+                )
 
             # Creator pack limits tracking
             cursor.execute("""
@@ -1461,6 +1462,22 @@ class DatabaseManager:
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
+            # Backfill NULL genres from pack names (runs every startup, fast no-op if set)
+            ph = self._get_placeholder()
+            genre_map = {
+                "EDM": "EDM Bangers", "Rock": "Rock Classics",
+                "R&B": "R&B Soul Pack", "Pop": "Pop Hits 2024",
+                "Hip Hop": "Hip Hop Legends",
+            }
+            for keyword, genre_name in genre_map.items():
+                try:
+                    cursor.execute(
+                        f"UPDATE creator_packs SET genre = {ph} WHERE name LIKE {ph} AND genre IS NULL",
+                        (genre_name, f"%{keyword}%"),
+                    )
                 except Exception:
                     pass
 
