@@ -1,335 +1,309 @@
 # 🎵 Music Legends — Discord Card Game
 
-Music Legends is a Discord card game where players collect artist cards, create custom packs, battle friends, and compete in seasonal events for exclusive rewards.
+Music Legends is a Discord card game where players collect artist cards, build decks, battle friends, buy packs with gold or Stripe, and compete in seasonal events for exclusive rewards.
 
 ## 🚀 **Current Status: PRODUCTION READY** ✅
 
-- ✅ **Battle System**: Complete 4-tier wager system with critical hits
-- ✅ **Pack Creation**: Interactive YouTube/Spotify integration  
-- ✅ **Season System**: 60-day competitive seasons with exclusive rewards
-- ✅ **Audio Feedback**: Enhanced celebrations with sound effects
-- ✅ **Database**: SQLite with full schema support
+- ✅ **Battle System**: 4-tier wager system with critical hits
+- ✅ **Pack System**: Buy built-in tier packs (Community/Gold/Platinum) or browse creator packs
+- ✅ **Season System**: 60-day Battle Pass with 50 tiers of free + premium rewards
+- ✅ **VIP Membership**: $4.99/month with battle bonuses, marketplace perks, and cosmetics
+- ✅ **Marketplace**: Buy/sell cards, browse creator packs by genre
+- ✅ **Stripe Payments**: Secure checkout for packs, Battle Pass, and VIP
+- ✅ **Audio/Visual Feedback**: Sound effects and animated GIFs for special moments
 - ✅ **Railway Deployment**: Docker containerized and running
 
 ---
 
 ## 🎮 **For Players (How to Play)**
 
+### **Getting Started**
+1. Join a server with the Music Legends bot
+2. Click **Daily Claim** in the User Hub to get your first gold + a free card
+3. Use `/buy_pack` to purchase your first pack
+4. Use `/battle @user` to challenge someone
+5. Track your progress with `/season_progress`
+
 ### **Core Commands**
-- **🎴 Open a pack:** `/open_pack <pack_id>`
-- **👀 View your cards:** Collection button in User Hub
-- **⚔️ Battle someone:** `/battle @user <wager>`
-- **📊 Check stats:** `/stats`
-- **🏆 Leaderboard:** `/leaderboard`
-- **💰 Check balance:** `/balance`
-- **🎁 Daily reward:** Click "Daily Claim" in User Hub
+| Command | Description |
+|---------|-------------|
+| `/buy_pack` | Purchase a tier pack (Community, Gold, or Platinum) |
+| `/packs` | Browse creator packs by genre |
+| `/open_pack <pack_id>` | Open a specific pack |
+| `/battle <@user>` | Challenge a player to a card battle |
+| `/battle_stats [user]` | View battle record and statistics |
+| `/deck` | View your battle deck (top 3 cards) |
+| `/stats` | View your battle statistics |
+| `/leaderboard [metric]` | View global rankings |
+| `/sell <card_id> <price>` | List a card for sale on the marketplace |
+| `/buy <card_id>` | Purchase a card from the marketplace |
+| `/market` | View marketplace listings |
 
-### **🎮 Season System (NEW!)**
-Compete in 60-day seasons to earn exclusive rewards and climb the ranks!
+### **Season & Battle Pass Commands**
+| Command | Description |
+|---------|-------------|
+| `/battlepass` | View tier progress, rewards, and claim tiers |
+| `/season_info` | Current season details and countdown |
+| `/season_progress` | Your level, XP, and rank |
+| `/season_rewards` | Browse available rewards |
+| `/season_leaderboard` | Top 25 players |
+| `/claim_reward <id>` | Claim your earned rewards |
 
-- **📊 View Season Info:** `/season_info` - Current season details and countdown
-- **⭐ Track Progress:** `/season_progress` - Your level, XP, and rank
-- **🎁 Browse Rewards:** `/season_rewards` - See what you can earn
-- **🏆 Leaderboard:** `/season_leaderboard` - Top 25 players
-- **💎 Claim Rewards:** `/claim_reward <id>` - Get your earned rewards
-
-**How It Works:**
-- Earn XP by opening packs, winning battles, and trading
-- Level up to unlock exclusive cards, gold, and cosmetics
-- Compete for top ranks: Bronze → Silver → Gold → Platinum → Diamond
-- Season-exclusive cards are available ONLY during their season!
-
-### **Battle System**
-- **4 Wager Tiers**: Casual (50g), Standard (100g), High Stakes (250g), Extreme (500g)
-- **Critical Hits**: Random chance for bonus damage
-- **Accept Battles**: `/battle_accept <match_id>`
-- **Power-based**: Card stats determine winner
-
-### **Pack Creation**
-- **Create Pack:** Use Dev Panel (test server) or menu system
-- **Browse Packs:** `/packs`
-- **YouTube Integration**: Automatic video search and card generation
-- **Interactive Selection**: Song selection UI for custom packs
+### **User Hub** (Persistent Menu)
+Admins post the User Hub via `/setup_user_hub`. Players use its buttons for:
+- **Daily Claim** — Claim daily gold + free card (streak bonuses up to 1,100g at 30 days)
+- **Collection** — View all owned cards
+- **Stats** — Personal battle statistics
+- **Battle Pass** — Season progress and rewards
+- **VIP** — Membership status and benefits
+- **Help** — How-to guide
 
 ---
 
-## 🎨 **Enhanced Features**
+## 📦 **Pack System**
 
-### **Audio Feedback**
-Experience premium audio effects during key moments:
-- 🌟 **Legendary Pulls** - Epic sound when you get legendary cards
-- 💰 **Daily Rewards** - Coin sounds for daily claims
-- 🎴 **Card Pickups** - Whoosh sounds when claiming drops
-- 📦 **Purchases** - Success sounds for pack purchases
+### **Built-In Tier Packs** (`/buy_pack`)
 
-### **Visual Celebrations**
-- Animated GIFs for legendary pulls and milestones
-- Emoji fireworks for special achievements
-- Rarity-specific effects and colors
-- Full-size card images in reveals
+| Tier | Price (USD) | Price (Gold/Tickets) | Cards | Bonuses |
+|------|-------------|----------------------|-------|---------|
+| **Community** | $2.99 | 500 Gold | 5 | +100 Gold |
+| **Gold** | $4.99 | 100 Tickets | 5 | +250 Gold, +2 Tickets |
+| **Platinum** | $6.99 | 2,500 Gold or 200 Tickets | 10 | +500 Gold, +5 Tickets |
+
+Built-in packs pull **random cards from the master card database** using weighted rarity odds. Each tier has different odds for Common, Rare, Epic, and Legendary cards.
+
+You can also access this from the **Shop menu** → **Buy Pack** button.
+
+### **Creator Packs** (`/packs`)
+Browse and buy community-created packs organized by genre (EDM, Rock, R&B, Pop, Hip Hop). Creator packs contain hand-picked artist cards.
+
+---
+
+## ⚔️ **Battle System**
+
+### **How Battles Work**
+- **Best-of-3 Rounds**: First to win 2 rounds wins the match
+- **3-Card Decks**: Each player uses their top 3 cards
+- **Stat Categories**: Impact, Skill, Longevity, Culture
+- **Critical Hits**: 15% chance for 1.5x damage multiplier
+
+### **Wager Tiers**
+
+| Tier | Wager | Winner Gets | Winner XP | Loser Gets | Loser XP |
+|------|-------|-------------|-----------|------------|----------|
+| Casual | 50g | 100g | 25 XP | 10g | 5 XP |
+| Standard | 100g | 175g | 38 XP | 10g | 5 XP |
+| High Stakes | 250g | 350g | 50 XP | 10g | 5 XP |
+| Extreme | 500g | 650g | 75 XP | 10g | 5 XP |
+
+---
+
+## 🏆 **Season System (Battle Pass)**
+
+### **Season 1: Rhythm Rising**
+- **Duration**: 60 days
+- **Tiers**: 50 (free track + premium track)
+- **Premium Unlock**: $9.99
+- **Tier Skip**: $1.00 or 10 tickets per tier
+
+### **Earning XP**
+
+| Activity | XP |
+|----------|-----|
+| Daily Claim | +50 XP |
+| Battle Win | +25 XP |
+| Battle Loss | +5 XP |
+| Quest Complete | +100 XP |
+| First Win of Day | +50 XP |
+| Friend Battle | +10 XP |
+
+### **Rank Progression**
+
+| Rank | XP Required | Wins Required |
+|------|-------------|---------------|
+| 🥉 Bronze | 0 | 0 |
+| 🥈 Silver | 100 | 10 |
+| 🥇 Gold | 250 | 25 |
+| 💎 Platinum | 500 | 50 |
+| 💠 Diamond | 1,000 | 100 |
+| 👑 Legend | 2,500 | 250 |
+
+### **Rewards**
+- **Free Track**: Gold (100–4,000), Common/Rare/Epic/Legendary cards, XP boosts, Community Packs, Tickets
+- **Premium Track**: All free rewards + exclusive cosmetics, Gold Packs, extra tickets, exclusive cards
+- **Tier 50 Free**: "Rhythm Rising Champion" Mythic card
+- **Tier 50 Premium**: Ultimate bundle (10,000 gold, 100 tickets, 10 Gold Packs)
+
+---
+
+## 👑 **VIP Membership**
+
+**$4.99/month** (or 50 tickets)
+
+| Perk | VIP | Non-VIP |
+|------|-----|---------|
+| Daily Gold | 200 | 100 |
+| Daily Tickets | +1 | 0 |
+| Battle Gold Multiplier | 1.5x | 1.0x |
+| Battle XP Multiplier | 1.5x | 1.0x |
+| Wager Protection | Lose only 50% | Lose full wager |
+| Marketplace Listing Fee | 0% | 10% |
+| Trade Fee | 0g | 50g |
+| Daily Trade Limit | 20 | 5 |
+| Marketplace Slots | 10 | 3 |
+| Monthly Free Gold Pack | Yes | No |
+| Exclusive Cosmetics | Yes | No |
+
+---
+
+## 💰 **Economy System**
+
+### **Daily Streak Rewards**
+
+| Streak | Gold | Tickets |
+|--------|------|---------|
+| Day 1 | 100 | 0 |
+| Day 3 | 150 | 0 |
+| Day 7 | 300 | 1 |
+| Day 14 | 600 | 2 |
+| Day 30 | 1,100 | 5 |
+
+Every daily claim also grants a **free random card** (70% Common, 25% Rare, 5% Epic).
+
+### **Card Selling Prices**
+
+| Rarity | Sell Price | With Duplicate Bonus (1.5x) |
+|--------|-----------|----------------------------|
+| Common | 10g | 15g |
+| Rare | 25g | 38g |
+| Epic | 75g | 113g |
+| Legendary | 200g | 300g |
+
+### **New Player Starting Resources**
+- 500 Gold, 0 Tickets
 
 ---
 
 ## 🛠️ **For Server Owners**
 
-### **💰 Server Revenue Sharing (FREE BOT!)**
-
-Music Legends is **completely free** - server owners earn revenue from transactions in their server!
-
-**How It Works:**
-- **10% base revenue share** from all purchases in your server
-- **+10% per NFT** you own (up to 2 NFTs = 30% total max)
-- **Weekly payouts** via Stripe Connect when you reach $25 minimum
-- **Example:** If users spend $100 in your server → you earn $10-$30!
-
-**🎫 To Set Up Revenue Sharing:**
-1. **Join the official Music Legends support server**
-2. **Create a support ticket** in the #tickets channel
-3. **Provide:**
-   - Your server ID
-   - Your Discord username
-   - (Optional) NFT wallet address for bonus share
-4. **Complete Stripe Connect verification** (secure, direct bank payouts)
-5. **Start earning automatically!**
-
-**Why tickets instead of commands?**
-Manual setup via tickets provides better security and ensures proper Stripe verification. This protects both server owners and the platform.
-
-**NFT Bonus System (Optional):**
-- Own 1 eligible NFT → **20% revenue share**
-- Own 2+ eligible NFTs → **30% revenue share (MAX)**
-- NFTs must be verified through support ticket
-
----
+### **Setup**
+1. Add bot to your server
+2. Run `/setup_user_hub` in your main channel
+3. (Optional) Create a support ticket for revenue sharing
 
 ### **Admin Commands**
-- **📈 Server Analytics:** `/server_analytics`
-- **ℹ️ Server Info:** `/server_info`
-- **🔄 Sync Commands:** `/sync_commands`
-- **📋 Setup User Hub:** `/setup_user_hub`
-- **💎 Premium:** `/premium_subscribe`
+| Command | Description |
+|---------|-------------|
+| `/setup_user_hub` | Post the persistent User Hub menu |
+| `/start_game` | Initialize Music Legends in the server |
+| `/server_analytics [days]` | View server usage analytics (premium) |
+| `/server_info` | View server subscription status |
+| `/premium_subscribe` | Upgrade server to Premium |
 
-### **Setup Requirements**
-1. **Add Bot to Server**
-2. **Run `/setup_user_hub`** in your main channel
-3. **Set Up Channel Permissions**
-4. **(Optional) Create ticket for revenue sharing**
-5. **Players start playing!**
-
----
-
-## 📋 **Complete Command List**
-
-### **🎮 Gameplay Commands**
-- `/battle` - Challenge players with wager system
-- `/battle_accept` - Accept battle challenges  
-- `/deck` - View your battle deck
-- `/stats` - View your battle statistics
-- `/leaderboard` - View global rankings
-- `/daily` - Claim daily rewards
-- `/balance` - Check gold and economy
-
-### **🎯 Season Commands (NEW!)**
-- `/season_info` - View current season details
-- `/season_progress` - Check your level and XP
-- `/season_rewards` - Browse available rewards
-- `/season_leaderboard` - See top players
-- `/claim_reward` - Claim your earned rewards
-
-### **📦 Pack Commands**
-- `/create_pack` - Create custom artist packs (dev server)
-- `/open_pack` - Open packs and receive cards
-- `/packs` - Browse available creator packs
-
-### **💎 Premium/Admin Commands**
-- `/premium_subscribe` - Upgrade to premium
-- `/server_info` - View server status
-- `/server_analytics` - View usage analytics
-- `/setup_user_hub` - Post persistent User Hub
-- `/sync_commands` - Force sync slash commands
-
----
-
-## 📚 Documentation
-
-- **[Player Guide](PLAYER_GUIDE.md)** - Complete guide for players (seasons, commands, tips)
-- **[Game Documentation](GAME_DOCUMENTATION.md)** - Technical details and architecture
-- **[Pack Creation Guide](PACK_CREATION_COMPLETE.md)** - How pack creation works
-- **[Bulk Pack Creation](BULK_PACK_CREATION_GUIDE.md)** - Create multiple packs at once
+### **Revenue Sharing (FREE BOT!)**
+- **10% base** revenue share from all purchases in your server
+- **+10% per NFT** you own (up to 2 NFTs = 30% max)
+- **Weekly payouts** via Stripe Connect ($25 minimum)
+- Set up via support ticket in the official server
 
 ---
 
 ## 🏗️ **Technical Architecture**
-
-### **Battle System v2.0**
-- **BattleEngine**: Core battle logic with critical hits
-- **BattleManager**: Match state management
-- **4-Tier Wagers**: Casual → Standard → High Stakes → Extreme
-- **PlayerState**: Individual player battle state
-- **MatchState**: Complete battle match tracking
-
-### **Database Schema**
-```sql
--- Core Tables
-creator_packs          - Pack information and cards_data
-users                  - User profiles and inventory
-user_inventory         - Gold, XP, and assets
-battle_matches         - Battle history and results
-cards                  - Master card catalog
-card_collections       - User card ownership
-pack_purchases         - Transaction tracking
-audit_logs             - Action logging
-```
 
 ### **Key Integrations**
 - **YouTube API**: Video search and thumbnail extraction
 - **TheAudioDB**: Artist images and metadata
 - **Last.fm**: Music data and statistics
 - **Spotify**: Artist information (fallback)
+- **Stripe**: Payment processing for packs, Battle Pass, and VIP
+
+### **Database**
+SQLite (local) or PostgreSQL (via `DATABASE_URL`). Core tables: `users`, `user_inventory`, `cards`, `user_cards`, `creator_packs`, `purchases`, `battle_matches`, `season_progress`, `marketplace_listings`, `audit_logs`.
+
+### **Project Structure**
+```
+├── main.py                 # Bot entry point
+├── database.py             # Database management
+├── stripe_payments.py      # Stripe checkout sessions
+├── config/
+│   ├── economy.py          # All pricing, rewards, ranks
+│   ├── battle_pass.py      # Season/Battle Pass config
+│   └── vip.py              # VIP membership config
+├── schemas/
+│   └── pack_definition.py  # Pack tier definitions and odds
+├── cogs/
+│   ├── card_game.py        # Core game commands (deck, stats, leaderboard)
+│   ├── marketplace.py      # Buy/sell, packs, /buy_pack
+│   ├── menu_system.py      # User Hub, Shop, Battle menus
+│   ├── battle_commands.py  # /battle, /battle_stats
+│   ├── battlepass_commands.py # Season & Battle Pass commands
+│   ├── gameplay.py         # Card drops and grabs
+│   ├── start_game.py       # Server initialization
+│   └── admin_commands.py   # Server analytics
+├── views/
+│   └── pack_opening.py     # Pack opening animation
+├── webhooks/
+│   └── stripe_hook.py      # Stripe webhook fulfillment
+└── requirements.txt
+```
 
 ---
 
 ## 🚀 **Deployment**
 
 ### **Railway (Production)**
-- ✅ **Dockerfile**: Multi-stage build with cache busting
-- ✅ **Environment**: All variables configured
-- ✅ **Database**: SQLite with automatic backups
-- ✅ **Monitoring**: Full logging and error tracking
+```bash
+# Dockerfile-based deployment with environment variables
+# SQLite with automatic backups, full logging
+```
 
 ### **Local Development**
 ```bash
-# Clone and setup
 git clone https://github.com/samuraifrenchienft/Music-Legends
 cd Music-Legends
 pip install -r requirements.txt
-
-# Configure environment
 cp .env.txt.example .env.txt
 # Edit .env.txt with your tokens
-
-# Run bot
 python main.py
 ```
 
----
-
-## 💰 **Economy System**
-
-### **Gold Economy**
-- **Daily Rewards**: 100-500 gold based on streak
-- **Battle Winnings**: Wager-based rewards
-- **Pack Creation**: Free (creator-driven)
-
-### **Battle Rewards**
-| Wager Tier | Cost | Winner Gold | Winner XP | Loser Gold | Loser XP |
-|------------|------|-------------|-----------|------------|---------|
-| Casual     | 50g  | 75g         | 10 XP     | 25g        | 5 XP    |
-| Standard   | 100g | 150g        | 20 XP     | 50g        | 10 XP   |
-| High Stakes| 250g | 375g        | 50 XP     | 125g       | 25 XP   |
-| Extreme    | 500g | 750g        | 100 XP    | 250g       | 50 XP   |
-
----
-
-## � **Recent Major Updates**
-
-### **✅ Completed (v2.0)**
-- **Battle System Overhaul**: Complete rewrite with BattleManager
-- **JSON Import Fixes**: Resolved all import conflicts across 8 files
-- **Railway Deployment**: Production-ready Docker setup
-- **Image Validation**: Fallback system for broken thumbnails
-- **Command Conflicts**: Resolved duplicate command registrations
-
-### **🔄 In Progress**
-- **Trading System**: Card marketplace functionality
-- **Tournament Mode**: Multi-player battles
-- **Mobile App**: React Native companion
-
----
-
-## 🔧 **Configuration Files**
-
-### **Environment Variables (.env.txt)**
+### **Environment Variables**
 ```env
-# Discord Configuration
 BOT_TOKEN=your_discord_bot_token
 DISCORD_APPLICATION_ID=your_application_id
 TEST_SERVER_ID=your_test_server_id
-
-# API Keys
 YOUTUBE_API_KEY=your_youtube_api_key
 LASTFM_API_KEY=your_lastfm_api_key
 AUDIODB_API_KEY=1
-
-# Developer
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
 DEV_USER_IDS=your_discord_user_id
 ```
 
-### **Deployment Files**
-- `railway.toml` - Railway configuration
-- `Dockerfile` - Container build
-- `nixpacks.toml` - Alternative build system
-- `requirements.txt` - Python dependencies
-
 ---
 
-## � **Troubleshooting**
+## 📚 **Documentation**
 
-### **Common Issues**
-- **JSON Errors**: ✅ All resolved (14 local imports fixed)
-- **Command Conflicts**: ✅ Fixed duplicate registrations
-- **Railway Deployment**: ✅ Cache busting implemented
-- **Database Issues**: ✅ Fallback to in-memory DB
-
-### **Debug Commands**
-- Bot logs show full startup sequence
-- Railway build logs available in dashboard
-- JSON errors completely eliminated
+- **[Player Guide](PLAYER_GUIDE.md)** — Seasons, daily rewards, marketplace tips
+- **[Game Documentation](GAME_DOCUMENTATION.md)** — Technical details, card system, database schema
 
 ---
 
 ## 🤝 **Contributing**
 
-1. **Fork** the repository
-2. **Create** feature branch (`git checkout -b feature/AmazingFeature`)
-3. **Commit** changes (`git commit -m 'Add AmazingFeature'`)
-4. **Push** to branch (`git push origin feature/AmazingFeature`)
-5. **Open** Pull Request
-
-### **Development Guidelines**
-- Follow PEP 8 style
-- Add proper JSON imports at file top
-- Test battle system thoroughly
-- Update documentation
-
----
-
-## 📄 **License**
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
 
 ---
 
 ## 🆘 **Support**
 
 - **GitHub Issues**: [Report bugs](https://github.com/samuraifrenchienft/Music-Legends/issues)
-- **Documentation**: Check this README and code comments
-- **Status**: Bot is production-ready and actively maintained
 
 ---
 
-## 🎯 **Live Stats**
-
-- **Bot ID**: 1462769520660709408
-- **Commands**: 25+ available
-- **Servers**: Running on 1+ servers
-- **Battle System**: Fully functional
-- **Pack Creation**: Working with YouTube integration
-- **Status**: ✅ PRODUCTION READY
-
----
-
-**🔥 Built with ❤️ for the Discord music community**
-
-**Last Updated**: January 2026  
-**Version**: 2.0 (Battle System Complete)
+**Last Updated**: February 2026
+**Version**: 3.0 (Buy Pack + Battle Pass + VIP)

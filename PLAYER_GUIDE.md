@@ -1,217 +1,210 @@
 # 🎮 Music Legends - Player Guide
 
-**Last Updated:** January 31, 2026
+**Last Updated:** February 2026
 
-Complete guide to playing Music Legends and understanding all game features.
+Everything you need to know to play Music Legends.
 
 ---
 
-## 🎮 Season System
+## 🚀 Getting Started
 
-### What Are Seasons?
+1. **Join a server** with the Music Legends bot
+2. **Find the User Hub** — an admin posts it with `/setup_user_hub`
+3. **Click Daily Claim** — get free gold + a random card every day
+4. **Buy your first pack** — run `/buy_pack` and pick a tier
+5. **Challenge someone** — run `/battle @friend` and pick a wager
+6. **Track your season** — run `/season_progress` to see your rank
 
-Seasons are 60-day competitive events where you earn XP, level up, and unlock exclusive rewards. Think of it like Fortnite's Battle Pass or Call of Duty seasons!
+---
 
-### How to Participate
+## 📦 Buying Packs
 
-**Earn XP Through:**
-- Opening packs → +10 XP per card
-- Winning battles → +25 XP per win
-- Completing trades → +15 XP per trade
-- Collecting unique artists → +50 XP bonus
-- Daily claims → Bonus XP
+### Built-In Tier Packs (`/buy_pack`)
 
-**Progress Through Ranks:**
-- 🥉 Bronze (0-499 XP)
-- 🥈 Silver (500-1,999 XP)
-- 🥇 Gold (2,000-4,999 XP)
-- 💎 Platinum (5,000-9,999 XP)
-- 💠 Diamond (10,000+ XP)
+Run `/buy_pack` or click **Buy Pack** in the Shop menu. Pick a tier:
+
+| Tier | Price | Cards | Bonuses |
+|------|-------|-------|---------|
+| **Community** | $2.99 or 500 Gold | 5 | +100 Gold |
+| **Gold** | $4.99 or 100 Tickets | 5 | +250 Gold, +2 Tickets |
+| **Platinum** | $6.99 or 2,500 Gold | 10 | +500 Gold, +5 Tickets |
+
+After selecting a tier, you'll see the rarity odds and can choose:
+- **Buy with Gold** — instant purchase, pack opening animation
+- **Buy Pack (Stripe)** — secure credit card checkout
+
+### Creator Packs (`/packs`)
+
+Browse community-made packs by genre: EDM, Rock, R&B, Pop, Hip Hop. Each pack contains hand-picked artist cards with a unique theme.
+
+---
+
+## ⚔️ Battles
+
+### How to Battle
+1. Run `/battle @opponent`
+2. Pick a wager tier (Casual 50g, Standard 100g, High Stakes 250g, Extreme 500g)
+3. Your top 3 cards auto-form your deck
+4. Best-of-3 rounds — stats are compared in random categories (Impact, Skill, Longevity, Culture)
+5. 15% chance of critical hits (1.5x damage)
+
+### Wager Rewards
+
+| Tier | Cost | Winner Gets | Loser Gets |
+|------|------|-------------|------------|
+| Casual | 50g | 100g + 25 XP | 10g + 5 XP |
+| Standard | 100g | 175g + 38 XP | 10g + 5 XP |
+| High Stakes | 250g | 350g + 50 XP | 10g + 5 XP |
+| Extreme | 500g | 650g + 75 XP | 10g + 5 XP |
+
+### Battle Commands
+- `/battle <@user>` — Start a battle
+- `/battle_stats [user]` — View battle record
+- `/deck` — See your top 3 cards
+- `/stats` — Your overall statistics
+- `/leaderboard` — Global rankings
+
+---
+
+## 🏆 Season System (Battle Pass)
+
+### Season 1: Rhythm Rising
+- **60 days** of competitive play
+- **50 tiers** of rewards (free + premium tracks)
+- **Premium unlock**: $9.99 for bonus rewards at every tier
+- **Tier skip**: $1.00 or 10 tickets per tier
+
+### Earning XP
+
+| Activity | XP |
+|----------|-----|
+| Daily Claim | +50 XP |
+| Battle Win | +25 XP |
+| Battle Loss | +5 XP |
+| Quest Complete | +100 XP |
+| First Win of Day | +50 XP |
+
+### Ranks
+
+| Rank | XP Needed | Wins Needed |
+|------|-----------|-------------|
+| 🥉 Bronze | 0 | 0 |
+| 🥈 Silver | 100 | 10 |
+| 🥇 Gold | 250 | 25 |
+| 💎 Platinum | 500 | 50 |
+| 💠 Diamond | 1,000 | 100 |
+| 👑 Legend | 2,500 | 250 |
 
 ### Season Commands
+- `/battlepass` — View progress, claim tier rewards
+- `/season_info` — Season details and countdown
+- `/season_progress` — Your level, XP, rank
+- `/season_rewards` — Browse all available rewards
+- `/season_leaderboard` — Top 25 players
+- `/claim_reward <id>` — Claim an earned reward
 
-#### `/season_info`
-View current season details, time remaining, and exclusive rewards available.
-
-```
-Example Output:
-🎮 Season 1: Rhythm Rising
-Origins - The First Legends
-
-📅 42 days remaining
-⏳ Progress: ██████░░░░ 60%
-
-⭐ Season-Exclusive Cards:
-• Founder's Legend - Mythic
-• Season 1 Champion - Legendary
-```
-
-#### `/season_progress`
-Check your personal level, XP, rank, and stats.
-
-```
-Example Output:
-⭐ Level 15
-████████░░ 85/100 XP (85% to next level)
-🥇 Rank: Gold
-
-📊 Season Stats:
-🎴 Cards: 127 | 🎨 Unique Artists: 42
-⚔️ Battles Won: 18 | 🔄 Trades: 5
-```
-
-#### `/season_rewards`
-Browse rewards you can claim right now and see what's unlocked at each level.
-
-#### `/season_leaderboard`
-View the top 25 players with their levels, XP, and ranks. Top 3 get special medals: 🥇🥈🥉
-
-#### `/claim_reward <reward_id>`
-Claim your earned rewards! Get the reward ID from `/season_rewards`.
-
-```
-Example:
-/claim_reward season_1_level_10
-
-🎁 Reward Claimed!
-💰 Gold: +150
-🎴 A gold card has been added to your collection!
-```
-
-### Season Rewards
-
-**Reward Types:**
-- 💰 **Currency**: Gold, Dust, Tickets
-- 🎴 **Cards**: Guaranteed rarity cards
-- 🎨 **Cosmetics**: Frames, foils, badges
-- 🏆 **Titles**: Special profile titles
-- ⭐ **Season-Exclusive Cards**: Only available during that season!
-
-**Important:** 
-- Claim rewards as soon as you unlock them
-- Unclaimed rewards are lost when the season ends
-- Your collected cards stay forever, even after the season
-
-### Season End
-
-When a season concludes:
-1. Final leaderboard rankings are recorded
-2. Top 10 players receive bonus rewards
-3. Season-exclusive cards become unavailable forever
-4. New season begins with fresh rewards and theme
-5. All cards you earned remain in your collection
+### Key Rewards
+- **Free Tier 50**: "Rhythm Rising Champion" Mythic card
+- **Premium Tier 50**: 10,000 gold + 100 tickets + 10 Gold Packs
+- Season-exclusive cards are **only available during the season** — they become rare collectibles after it ends
 
 ---
 
-## 🔊 Audio & Visual Feedback
+## 💰 Daily Rewards
 
-### Sound Effects
+Click **Daily Claim** in the User Hub every day. You get gold, and sometimes tickets, based on your streak:
 
-The bot plays sound effects for special moments:
-- 🌟 **Legendary pulls** - Epic orchestral celebration
-- 💰 **Daily claims** - Satisfying coin sound
-- 🎴 **Card pickups** - Quick whoosh effect
-- 📦 **Pack purchases** - Success chime
+| Streak | Gold | Tickets |
+|--------|------|---------|
+| Day 1 | 100 | 0 |
+| Day 3 | 150 | 0 |
+| Day 7 | 300 | 1 |
+| Day 14 | 600 | 2 |
+| Day 30 | 1,100 | 5 |
 
-**How it works:** Discord will attach an audio file to the message. Click it to play!
-
-### Visual Enhancements
-
-**Animated GIFs:**
-- Legendary card pulls show fireworks
-- Daily streak milestones trigger celebrations
-- Pack purchases display money animations
-
-**Emoji Reactions:**
-- Legendary cards get special emoji fireworks: 💎 ⭐ ✨
-- Makes big moments more exciting!
-
-**Enhanced Displays:**
-- Rarity-specific colors (gold for legendary, purple for epic)
-- Progress bars for XP and season tracking
-- Full-size card images for better viewing
+Every daily claim also gives you a **free random card** (70% Common, 25% Rare, 5% Epic).
 
 ---
 
 ## 🛍️ Marketplace
 
-### Browsing Packs
+### Selling Cards
+- `/sell <card_id> <price>` — List a card for sale
 
-Use `/packs` to browse all available creator packs. You'll see:
-- Pack name and creator
-- Number of cards included
-- Price and total purchases
-- Pack description and theme
+### Buying Cards
+- `/buy <card_id>` — Purchase from another player
+- `/market` — Browse all listings
 
-### Daily Marketplace Updates
+### Sell Prices (to the bot)
 
-Some servers post daily marketplace summaries showing:
-- 📦 New packs added yesterday
-- 💎 Packs sold
-- 🏆 Trending packs
-- ⭐ Top creators
+| Rarity | Price | Duplicate Bonus |
+|--------|-------|-----------------|
+| Common | 10g | 15g |
+| Rare | 25g | 38g |
+| Epic | 75g | 113g |
+| Legendary | 200g | 300g |
 
-These updates keep you informed about marketplace activity!
+---
+
+## 👑 VIP Membership
+
+**$4.99/month** or **50 tickets**
+
+Best perks:
+- **Double daily gold** (200 vs 100)
+- **+1 ticket/day**
+- **1.5x battle gold and XP**
+- **Wager protection** (lose only 50% on defeat)
+- **0% marketplace fees** (vs 10% normally)
+- **Free Gold Pack every month**
+- **Exclusive cosmetics**: gold username, VIP badge, profile frame, emotes
+
+Access VIP info through the **VIP** button in the User Hub.
+
+---
+
+## 🔊 Audio & Visual Feedback
+
+- **Legendary card pulls** — epic celebration GIF + sound
+- **Daily claims** — coin sound effect
+- **Card pickups** — whoosh effect
+- **Pack purchases** — success chime
+- **Rarity-colored embeds** — gold for Legendary, purple for Epic
 
 ---
 
 ## 💡 Pro Tips
 
-### Earning XP Faster
-1. **Focus on unique artists** - Get +50 XP for each new artist you collect
-2. **Play daily** - Consistent small sessions beat occasional long ones
-3. **Battle more** - Battles give +25 XP per win
-4. **Trade actively** - Each trade gives +15 XP
-
-### Season Strategy
-1. **Claim rewards immediately** - Don't wait until season end!
-2. **Check leaderboards weekly** - See where you stand
-3. **Get season-exclusive cards** - They'll become rare collectibles
-4. **Maintain daily streaks** - Bonus XP adds up fast
-
-### Collection Tips
-1. **Use the User Hub** - Persistent menu for easy access
-2. **Open packs strategically** - Save for when you have time to enjoy
-3. **Diversify your collection** - More unique artists = more XP
-4. **Watch for legendary pulls** - Full audio/visual experience!
+1. **Claim daily every day** — streak bonuses are huge (1,100g at day 30)
+2. **Buy Platinum packs** — best value with 10 cards + 500 gold + 5 tickets
+3. **Battle often** — even losses give 5 XP and 10g consolation
+4. **Collect unique artists** — diverse collections help in battles
+5. **Claim season rewards ASAP** — unclaimed rewards are lost when the season ends
+6. **Check the leaderboard** — `/season_leaderboard` to see where you stand
+7. **Consider VIP** — the 1.5x battle multiplier and free monthly pack pay for themselves quickly
 
 ---
 
 ## ❓ FAQ
 
-**Q: Do I need to do anything special to hear sounds?**  
-A: Nope! Just click the audio file Discord attaches to the message.
+**Q: How do I get my first cards?**
+A: Click **Daily Claim** in the User Hub for a free card, then use `/buy_pack` to buy a pack.
 
-**Q: What if I miss claiming a season reward?**  
-A: You can claim anytime during the season, but unclaimed rewards disappear when the season ends.
+**Q: What happens when a season ends?**
+A: Leaderboards freeze, exclusive cards become unavailable, but all cards you earned stay in your collection forever.
 
-**Q: Do my cards disappear when a season ends?**  
-A: Never! All cards you earn are yours forever. Only the ability to earn NEW season-exclusive cards ends.
+**Q: Can I buy Gold Packs with gold?**
+A: Gold Packs can only be bought with USD ($4.99) or Tickets (100). Community and Platinum packs accept gold.
 
-**Q: How do I earn XP the fastest?**  
-A: Open packs (main source), win battles, trade, and focus on collecting unique artists.
+**Q: How do battles pick which stat to compare?**
+A: Categories are randomly selected each round from Impact, Skill, Longevity, and Culture.
 
-**Q: What's the difference between Level and Rank?**  
-A: **Level** = How much XP you've earned total (goes up every 100 XP). **Rank** = Your tier based on total XP (Bronze, Silver, Gold, etc.).
+**Q: What's the fastest way to earn XP?**
+A: Daily claims (+50), winning battles (+25, +50 first win), and completing quests (+100).
 
-**Q: Can I see other players' progress?**  
-A: You can see their rank and level on the leaderboard, but not their detailed stats.
-
-**Q: Do season-exclusive cards really never come back?**  
-A: Correct! Once a season ends, those exclusive cards cannot be earned anymore. They become rare collector's items.
+**Q: Do I keep my cards after a season?**
+A: Yes! All cards are permanent. Only the ability to earn new season-exclusive cards ends.
 
 ---
 
-## 🎯 Getting Started
-
-1. **Join a server** with Music Legends bot
-2. **Run `/season_info`** to see the current season
-3. **Open your first pack** to start earning XP
-4. **Check `/season_progress`** to track your advancement
-5. **Compete on leaderboards** and earn exclusive rewards!
-
-**Have fun collecting!** 🎉
-
----
-
-**For technical documentation and development info, see [GAME_DOCUMENTATION.md](GAME_DOCUMENTATION.md)**
+**For technical documentation, see [GAME_DOCUMENTATION.md](GAME_DOCUMENTATION.md)**

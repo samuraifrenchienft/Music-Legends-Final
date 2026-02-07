@@ -1,542 +1,420 @@
-# 🎵 Music Legends - Complete Game Documentation
+# 🎵 Music Legends - Game Documentation
+
+Technical reference for the Music Legends Discord card game.
 
 ## Table of Contents
-1. [Game Overview](#game-overview)
-2. [Core Gameplay Mechanics](#core-gameplay-mechanics)
-3. [Card System](#card-system)
-4. [Battle System](#battle-system)
-5. [Season System](#season-system)
-6. [Pack Creation & Economy](#pack-creation--economy)
-7. [Player Progression](#player-progression)
-8. [Database Architecture](#database-architecture)
-9. [API Reference](#api-reference)
-10. [Development Guide](#development-guide)
-
----
-
-## Game Overview
-
-**Music Legends** is a Discord-based card collecting and battling game focused on music artists. Players collect artist cards, build decks, and compete in strategic battles while creators can design and sell custom card packs.
-
-### Key Features
-- **Card Collection**: Collect artist cards with real music data
-- **Strategic Battles**: Best-of-3 PvP matches with stat-based combat
-- **Creator Economy**: Design and monetize custom card packs
-- **Progression System**: Stats, leaderboards, and achievements
-- **Dual Media Integration**: Spotify for artist data + YouTube for video content
-
----
-
-## Core Gameplay Mechanics
-
-### Card Stats System
-
-Each artist card has five core stats:
-
-| Stat | Description | Max Value |
-|------|-------------|-----------|
-| **Impact** | Overall influence and popularity | 100 |
-| **Skill** | Technical ability and artistry | 100 |
-| **Longevity** | Career endurance and relevance | 100 |
-| **Culture** | Cultural significance and impact | 100 |
-| **Hype** | Current momentum (tie-breaker) | 100 |
-
-### Rarity System
-
-Cards are classified into five rarity tiers:
-
-| Rarity | Color Emoji | Stat Range | Drop Rate |
-|--------|-------------|------------|-----------|
-| **Common** | 🟩 | 0-39 | 45% |
-| **Rare** | 🟦 | 40-59 | 30% |
-| **Epic** | 🟪 | 60-74 | 20% |
-| **Legendary** | ⭐ | 75-89 | 4.5% |
-| **Mythic** | 🔴 | 90-100 | 0.5% (Official packs only) |
-
-### Battle Categories
-
-Battles are fought across four main categories:
-- **Impact**: Raw popularity and reach
-- **Skill**: Technical proficiency and artistry  
-- **Longevity**: Career sustainability and endurance
-- **Culture**: Cultural impact and significance
+1. [Card System](#card-system)
+2. [Pack System](#pack-system)
+3. [Battle System](#battle-system)
+4. [Economy](#economy)
+5. [Season / Battle Pass](#season--battle-pass)
+6. [VIP Membership](#vip-membership)
+7. [Marketplace & Trading](#marketplace--trading)
+8. [Stripe Payments](#stripe-payments)
+9. [Database Schema](#database-schema)
+10. [Slash Commands Reference](#slash-commands-reference)
+11. [Project Structure](#project-structure)
 
 ---
 
 ## Card System
 
-### Card Structure
+### Card Stats
 
-```python
-{
-    "card_id": "unique_identifier",
-    "name": "Artist Name",
-    "rarity": "Rare",
-    "impact": 65,
-    "skill": 72,
-    "longevity": 58,
-    "culture": 61,
-    "hype": 70,
-    "image_url": "https://...",
-    "spotify_url": "https://open.spotify.com/artist/...",
-    "spotify_id": "spotify_artist_id",
-    "genres": ["pop", "electronic"],
-    "card_type": "artist"
-}
-```
+Each artist card has five core stats (0–100):
+
+| Stat | Description |
+|------|-------------|
+| **Impact** | Overall influence and popularity |
+| **Skill** | Technical ability and artistry |
+| **Longevity** | Career endurance and relevance |
+| **Culture** | Cultural significance and impact |
+| **Hype** | Current momentum (tie-breaker in battles) |
+
+### Rarity Tiers
+
+| Rarity | Emoji | Stat Range | Daily Drop Rate |
+|--------|-------|------------|-----------------|
+| Common | ⚪ | 0–39 | 70% |
+| Rare | 🔵 | 40–59 | 25% |
+| Epic | 🟣 | 60–74 | 5% |
+| Legendary | ⭐ | 75–89 | 0% (packs only) |
+| Mythic | 🔴 | 90–100 | 0% (season rewards only) |
 
 ### Card Acquisition
 
-1. **Daily Packs**: Free pack every 24 hours
-2. **Creator Packs**: Purchase custom packs from other users
-3. **Victory Tokens**: Guaranteed rewards from battle wins
-4. **Special Events**: Limited-time promotional packs
+| Source | Details |
+|--------|---------|
+| Daily Claim | 1 free random card per day (70% Common, 25% Rare, 5% Epic) |
+| Built-In Packs | `/buy_pack` — random cards from master DB using tier odds |
+| Creator Packs | `/packs` — hand-curated cards from community creators |
+| Card Drops | `/drop` spawns cards in channel; players react to grab |
+| Battle Rewards | Consolation gold for losers |
+| Season Rewards | Exclusive cards at specific Battle Pass tiers |
 
-### Collection Management
+---
 
-- **Deck Building**: Select top 3 cards for battle
-- **Favorites**: Mark favorite cards for quick access
-- **Trade System**: (Planned feature) Exchange cards with other players
+## Pack System
+
+### Built-In Tier Packs
+
+Purchased via `/buy_pack` or the Shop menu's **Buy Pack** button. Cards are pulled randomly from the master `cards` table using weighted rarity odds.
+
+| Tier | Cards | USD | Gold | Tickets | Bonus Gold | Bonus Tickets | Rarity Odds |
+|------|-------|-----|------|---------|------------|---------------|-------------|
+| Community | 5 | $2.99 | 500 | — | +100 | — | 80% Common, 20% Rare |
+| Gold | 5 | $4.99 | — | 100 | +250 | +2 | 40% Common, 30% Rare, 20% Epic, 10% Legendary |
+| Platinum | 10 | $6.99 | 2,500 | 200 | +500 | +5 | 25% Common, 35% Rare, 25% Epic, 15% Legendary |
+
+**Flow**: User selects tier → sees price/odds embed → picks "Buy with Gold" or "Buy Pack (Stripe)" → system rolls random cards → grants to user → pack opening animation.
+
+### Creator Packs
+
+Community-created packs with hand-picked artist cards. Browsed via `/packs` with genre filters (EDM, Rock, R&B, Pop, Hip Hop). Created via `/create_pack` on the dev server.
+
+### Pack Definitions (`schemas/pack_definition.py`)
+
+Additional pack tiers defined internally:
+
+| Key | Name | Cards | Price | Notes |
+|-----|------|-------|-------|-------|
+| starter | Starter Pack | 3 | $2.99 | Mapped to "community" tier |
+| silver | Silver Pack | 4 | $4.99 | Guaranteed gold rarity |
+| gold | Gold Pack | 5 | $6.99 | Epic chances |
+| platinum | Platinum Pack | 10 | $6.99 | Hero slot, legendary chances |
+| black | Black Pack | 5 | $9.99 | Hero slot guaranteed |
+| founder_gold | Founder Gold | 7 | $19.99 | Guaranteed epics |
+| founder_black | Founder Black | 8 | $29.99 | Guaranteed platinums |
 
 ---
 
 ## Battle System
 
-### Match Format
+### Mechanics
 
-- **Best-of-3 Rounds**: First to win 2 rounds wins the match
-- **3-Card Decks**: Each player uses their top 3 cards
-- **Category Selection**: Round 1 (random) → Round 2 (loser picks) → Round 3 (random)
+- **Format**: Best-of-3 rounds, first to 2 wins
+- **Decks**: Top 3 cards per player
+- **Categories**: Impact, Skill, Longevity, Culture (randomly selected per round)
+- **Critical Hits**: 15% chance, 1.5x damage multiplier
+- **Hype Bonus**: Winners gain +5 hype next round (capped at +10)
+- **Tie-Breaking**: Higher Hype stat → higher total power → coin flip
 
-### Battle Resolution
+### Wager Tiers (`config/economy.py`)
 
-1. **Stat Comparison**: Compare selected category stats
-2. **Hype Bonus**: Apply momentum bonuses (+5 per win, max +10)
-3. **Tie-Breakers**:
-   - Higher Hype stat
-   - Higher total power
-   - Coin flip (rare)
+| Tier | Wager | Win Total | Win XP | Loss Consolation | Loss XP | Tie Gold | Tie XP |
+|------|-------|-----------|--------|------------------|---------|----------|--------|
+| Casual | 50g | 100g | 25 | 10g | 5 | 25g | 10 |
+| Standard | 100g | 175g | 38 | 10g | 5 | 25g | 10 |
+| High Stakes | 250g | 350g | 50 | 10g | 5 | 25g | 10 |
+| Extreme | 500g | 650g | 75 | 10g | 5 | 25g | 10 |
 
-### Momentum System
+### Commands
 
-- Winners gain +5 hype bonus next round (capped at +10)
-- Losers have their hype bonus reset to 0
-- Creates strategic depth and comeback potential
-
-### Match Rewards
-
-- **Winner**: +1 Victory Token (guaranteed pack)
-- **Loser**: Small consolation reward
-- **Both Players**: Updated stats and leaderboard position
+- `/battle <@opponent>` — Challenge with wager selection
+- `/battle_stats [user]` — View battle record
 
 ---
 
-## Pack Creation & Economy
+## Economy
 
-### Creator Pack System
+### Daily Streak Rewards
 
-Users can create and sell custom card packs:
+| Streak | Gold | Tickets |
+|--------|------|---------|
+| Day 1 (default) | 100 | 0 |
+| Day 3 | 150 | 0 |
+| Day 7 | 300 | 1 |
+| Day 14 | 600 | 2 |
+| Day 30 | 1,100 | 5 |
 
-#### Pack Sizes & Pricing
-- **Micro Pack** (5 cards): $10.00
-- **Mini Pack** (10 cards): $25.00  
-- **Event Pack** (15 cards): $50.00
+Each daily claim also grants **1 free random card** and **+50 XP**.
 
-#### Creator Restrictions
-- **1 live pack** per creator at a time
-- **7-day cooldown** between publications
-- **Maximum 92** stats per card (creator packs only)
-- **No Mythic rarity** cards in creator packs
+### Card Sell Prices
 
-#### Revenue Split
-- **Platform**: 70% of revenue
-- **Creator**: 30% of revenue
-- **Payment Processing**: Handled via Stripe
+| Rarity | Base | Duplicate Bonus (1.5x) |
+|--------|------|------------------------|
+| Common | 10g | 15g |
+| Rare | 25g | 38g |
+| Epic | 75g | 113g |
+| Legendary | 200g | 300g |
 
-### Pack Creation Process
+### Rank Progression
 
-1. **Create Draft**: `/pack_create <name> <description> <size>`
-2. **Add Artists**: 
-   - Smart selection: `/pack_add_artist_smart` (Spotify integration)
-   - Manual entry: `/pack_add_artist` (custom stats)
-3. **Preview**: `/pack_preview` to validate
-4. **Publish**: `/pack_publish` (requires payment)
-5. **Sales**: Pack goes live in marketplace
+| Rank | XP Required | Wins Required | Emoji |
+|------|-------------|---------------|-------|
+| Bronze | 0 | 0 | 🥉 |
+| Silver | 100 | 10 | 🥈 |
+| Gold | 250 | 25 | 🥇 |
+| Platinum | 500 | 50 | 💎 |
+| Diamond | 1,000 | 100 | 💠 |
+| Legend | 2,500 | 250 | 👑 |
 
-### Smart Artist Selection
-
-The bot integrates with both Spotify and YouTube to:
-- **Spotify**: Search for artists, auto-generate stats based on popularity/followers, determine appropriate rarity, enrich cards with real data (images, genres, links)
-- **YouTube**: Find official music videos, provide visual content, enhance card displays with video thumbnails, offer multimedia artist content
-
----
-
-## Player Progression
-
-### User Statistics
-
-Tracked metrics include:
-- **Total Battles**: Overall match count
-- **Win/Loss Record**: Battle performance
-- **Win Rate**: Percentage of victories
-- **Cards Collected**: Total unique cards owned
-- **Packs Opened**: Total packs claimed
-- **Victory Tokens**: Current token balance
-
-### Leaderboard System
-
-Multiple leaderboard categories:
-- **Most Wins**: Total victory count
-- **Highest Win Rate**: Best win percentage (min 5 battles)
-- **Most Battles**: Most matches played
-- **Largest Collection**: Most cards owned
-- **Pack Opener**: Most packs opened
-
-### Achievement System (Planned)
-
-Future achievements may include:
-- **First Victory**: Win your first battle
-- **Collector**: Collect 100 cards
-- **Creator**: Publish first pack
-- **Master**: Reach 80% win rate
-- **Legend**: Collect a Mythic card
+### Starting Resources
+- 500 Gold, 0 Tickets, 0 Dust, 0 Gems
 
 ---
 
-## Season System
+## Season / Battle Pass
 
-**Music Legends** features competitive seasonal events that run for 60 days. Each season offers exclusive rewards, rankings, and limited-time cards.
+### Season 1: Rhythm Rising (`config/battle_pass.py`)
 
-### Season Structure
+| Setting | Value |
+|---------|-------|
+| Duration | 60 days |
+| Total Tiers | 50 |
+| Premium Price | $9.99 |
+| Tier Skip | $1.00 or 10 tickets |
+| Total XP Required | 14,500 |
 
-```
-Season Duration: 60 days
-XP per Level: 100 XP
-Max Level: No limit
-```
+### XP Sources
 
-### Experience (XP) Earning
+| Activity | XP |
+|----------|-----|
+| Daily Claim | +50 |
+| Battle Win | +25 |
+| Battle Loss | +5 |
+| Quest Complete | +100 |
+| First Win of Day | +50 |
+| Friend Battle | +10 |
 
-Players earn XP through various activities:
+### XP Per Tier (Progressive)
 
-| Activity | XP Earned | Notes |
-|----------|-----------|-------|
-| **Open Pack** | +10 per card | Main XP source |
-| **Win Battle** | +25 per win | PvP reward |
-| **Complete Trade** | +15 per trade | Trading bonus |
-| **Unique Artist** | +50 bonus | First time collecting |
-| **Daily Claim** | +Bonus XP | Daily participation |
+| Tiers | XP Each |
+|-------|---------|
+| 1–5 | 100 |
+| 6–10 | 150 |
+| 11–15 | 200 |
+| 16–20 | 250 |
+| 21–30 | 300 |
+| 31–40 | 400 |
+| 41–50 | 500 |
 
-### Rank System
+### Reward Tracks
 
-Players advance through five ranks based on total XP:
+**Free Track** (all players):
+- Gold rewards scaling from 100 to 4,000
+- Common, Rare, Epic, Legendary card drops at various tiers
+- XP boosts (10%–50% duration)
+- Community Packs at tiers 10, 20, 30, 40
+- Tickets (1–3)
+- **Tier 50**: "Rhythm Rising Champion" Mythic exclusive card
 
-| Rank | Total XP Required | Emoji |
-|------|-------------------|-------|
-| **Bronze** | 0-499 XP | 🥉 |
-| **Silver** | 500-1,999 XP | 🥈 |
-| **Gold** | 2,000-4,999 XP | 🥇 |
-| **Platinum** | 5,000-9,999 XP | 💎 |
-| **Diamond** | 10,000+ XP | 💠 |
+**Premium Track** ($9.99 unlock):
+- All free track rewards plus:
+- Exclusive cosmetics (card backs, badges, emotes, profile frames)
+- Gold Packs (1–10 packs total)
+- Extra tickets (5–50 total)
+- Exclusive cards ("Rhythm Rising Elite", "Master", "Legend", "Ultimate")
+- **Tier 50**: Ultimate bundle — 10,000 gold, 100 tickets, 10 Gold Packs
 
-### Season Commands
+### Commands
 
-```
-/season_info          - View current season details
-/season_progress      - Check your level and XP
-/season_rewards       - Browse available rewards
-/season_leaderboard   - Top 25 players
-/claim_reward <id>    - Claim earned rewards
-```
-
-### Reward Types
-
-1. **Currency Rewards**: Gold, Dust, Tickets
-2. **Card Rewards**: Guaranteed rarity cards
-3. **Cosmetic Rewards**: Frames, foils, badges
-4. **Title Rewards**: Special profile titles
-5. **Season-Exclusive Cards**: Only available during that season
-
-### Season End
-
-When a season concludes:
-- Leaderboard rankings are finalized
-- Top 10 players receive bonus rewards
-- Season-exclusive cards become unavailable
-- Player collections remain intact
-- New season begins with fresh rewards
-
-### Audio & Visual Feedback
-
-Enhanced player experience with:
-- 🌟 **Sound Effects**: Legendary pulls, daily claims, purchases
-- 🎨 **Animated GIFs**: Celebrations and milestones
-- 💎 **Emoji Reactions**: Fireworks for special moments
-- 🖼️ **Full-Size Images**: Enhanced card displays
+| Command | Description |
+|---------|-------------|
+| `/battlepass` | View tier progress, claim rewards |
+| `/season_info` | Season details and countdown |
+| `/season_progress` | Level, XP, and rank |
+| `/season_rewards` | Browse all rewards |
+| `/season_leaderboard` | Top 25 players |
+| `/claim_reward <id>` | Claim earned reward |
 
 ---
 
-## Database Architecture
+## VIP Membership
+
+**$4.99/month** or **50 tickets** (`config/vip.py`)
+
+### Daily Bonuses
+| Perk | VIP | Non-VIP |
+|------|-----|---------|
+| Daily Gold | 200 | 100 |
+| Daily Tickets | +1 | 0 |
+| Monthly Pack | Free Gold Pack | — |
+| XP Boost | +50% | — |
+
+### Battle Bonuses
+| Perk | VIP | Non-VIP |
+|------|-----|---------|
+| Gold Multiplier | 1.5x | 1.0x |
+| XP Multiplier | 1.5x | 1.0x |
+| Wager Protection | Lose only 50% | Lose full |
+| Win Streak Bonus | +25g/win (max +250) | — |
+
+### Marketplace Perks
+| Perk | VIP | Non-VIP |
+|------|-----|---------|
+| Listing Fee | 0% | 10% |
+| Trade Fee | 0g | 50g |
+| Trade Limit | 20/day | 5/day |
+| Marketplace Slots | 10 | 3 |
+| Priority Placement | Yes | No |
+
+### Cosmetics
+- Gold username color, VIP Crown Badge, exclusive profile frame
+- Monthly rotating card backs, 5 exclusive emotes
+- Gold battle entrance animation, gold leaderboard highlight
+
+---
+
+## Marketplace & Trading
+
+### Marketplace Commands
+
+| Command | Description |
+|---------|-------------|
+| `/sell <card_id> <price>` | List a card for sale |
+| `/buy <card_id>` | Purchase a card |
+| `/market` | View all listings |
+
+### Trading Rules (`config/economy.py`)
+
+| Setting | Value |
+|---------|-------|
+| Direct Trade Fee | 10% (both sides) |
+| Trade Cooldown | 24 hours (same card) |
+| Max Trades/Day | 5 (20 for VIP) |
+| Marketplace Listing Fee | 5% |
+| Marketplace Sale Fee | 10% |
+| Max Active Listings | 10 |
+
+---
+
+## Stripe Payments
+
+### Checkout Types (`stripe_payments.py`)
+
+| Type | Metadata Key | Handler |
+|------|-------------|---------|
+| Built-in tier pack | `tier_pack_purchase` | `_fulfill_tier_pack_purchase()` |
+| Creator pack | `pack_purchase` | `_fulfill_pack_purchase()` |
+| Battle Pass Premium | `battlepass_purchase` | `_fulfill_battlepass_purchase()` |
+
+### Webhook Flow (`webhooks/stripe_hook.py`)
+
+1. Stripe sends `checkout.session.completed` event
+2. Webhook reads `metadata.type` to route to correct handler
+3. Handler grants cards/items, records purchase in `purchases` table
+4. For tier packs: calls `db.generate_tier_pack_cards()` which rolls random cards by rarity
+
+---
+
+## Database Schema
 
 ### Core Tables
 
-#### Users
-```sql
-CREATE TABLE users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    discord_tag TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    total_battles INTEGER DEFAULT 0,
-    wins INTEGER DEFAULT 0,
-    losses INTEGER DEFAULT 0,
-    packs_opened INTEGER DEFAULT 0,
-    victory_tokens INTEGER DEFAULT 0
-);
+```
+users               — User profiles (user_id, username, discord_tag)
+user_inventory      — Economy (gold, tickets, dust, gems, xp, level, daily_streak)
+cards               — Master card catalog (card_id, name, rarity, tier, stats, image_url)
+user_cards          — Ownership (user_id, card_id, acquired_from)
+creator_packs       — Pack metadata (pack_id, creator_id, name, cards_data JSON, status, price)
+purchases           — Transaction audit (purchase_id, user_id, pack_id, amount_cents, payment_method)
+battle_matches      — Battle history and results
+season_progress     — Battle Pass tier tracking, claimed rewards
+marketplace_listings — Card sales
+audit_logs          — Action logging
 ```
 
-#### Cards
-```sql
-CREATE TABLE cards (
-    card_id TEXT PRIMARY KEY,
-    type TEXT NOT NULL DEFAULT 'artist',
-    spotify_artist_id TEXT,
-    name TEXT NOT NULL,
-    rarity TEXT NOT NULL,
-    impact INTEGER,
-    skill INTEGER,
-    longevity INTEGER,
-    culture INTEGER,
-    hype INTEGER,
-    image_url TEXT,
-    spotify_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+### Relationships
 
-#### Matches
-```sql
-CREATE TABLE matches (
-    match_id TEXT PRIMARY KEY,
-    player_a_id INTEGER,
-    player_b_id INTEGER,
-    winner_id INTEGER,
-    final_score_a INTEGER,
-    final_score_b INTEGER,
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP,
-    match_type TEXT DEFAULT 'casual'
-);
-```
-
-#### Creator Packs
-```sql
-CREATE TABLE creator_packs (
-    pack_id TEXT PRIMARY KEY,
-    creator_id INTEGER,
-    name TEXT NOT NULL,
-    description TEXT,
-    pack_size INTEGER DEFAULT 10,
-    status TEXT DEFAULT 'DRAFT',
-    price_cents INTEGER DEFAULT 500,
-    total_purchases INTEGER DEFAULT 0,
-    cards_data TEXT, -- JSON array
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    published_at TIMESTAMP
-);
-```
-
-### Data Relationships
-
-- **Users** → **user_cards** → **cards** (ownership)
-- **Users** → **matches** (participation)
-- **Users** → **creator_packs** (creation)
-- **creator_packs** → **pack_purchases** (sales)
-- **matches** → **match_rounds** (detailed results)
+- `users` → `user_inventory` (1:1 economy data)
+- `users` → `user_cards` → `cards` (collection ownership)
+- `users` → `battle_matches` (battle history)
+- `users` → `creator_packs` (pack creation)
+- `creator_packs` → `purchases` (sales tracking)
+- `users` → `season_progress` (Battle Pass state)
 
 ---
 
-## API Reference
+## Slash Commands Reference
 
-### Discord Slash Commands
+### Player Commands
 
-#### Player Commands
+| Command | Cog File | Description |
+|---------|----------|-------------|
+| `/buy_pack` | `cogs/marketplace.py` | Purchase tier pack (Community/Gold/Platinum) |
+| `/packs [genre]` | `cogs/marketplace.py` | Browse creator packs by genre |
+| `/buy <card_id>` | `cogs/marketplace.py` | Buy card from marketplace |
+| `/sell <card_id> <price>` | `cogs/marketplace.py` | List card for sale |
+| `/market` | `cogs/marketplace.py` | View marketplace listings |
+| `/pack` | `cogs/marketplace.py` | View your available packs |
+| `/open_pack <pack_id>` | `cogs/card_game.py` | Open a pack |
+| `/deck` | `cogs/card_game.py` | View battle deck (top 3 cards) |
+| `/stats` | `cogs/card_game.py` | View battle statistics |
+| `/leaderboard [metric]` | `cogs/card_game.py` | Global rankings |
+| `/battle <@opponent>` | `cogs/battle_commands.py` | Challenge to battle |
+| `/battle_stats [user]` | `cogs/battle_commands.py` | Battle record |
+| `/drop` | `cogs/gameplay.py` | Spawn card drop in channel |
+| `/grab <card_number>` | `cogs/gameplay.py` | Grab card from active drop |
+
+### Season Commands
+
+| Command | Cog File | Description |
+|---------|----------|-------------|
+| `/battlepass` | `cogs/battlepass_commands.py` | Battle Pass progress and rewards |
+| `/season_info` | `cogs/battlepass_commands.py` | Season details and countdown |
+| `/season_progress` | `cogs/battlepass_commands.py` | Level, XP, rank |
+| `/season_rewards` | `cogs/battlepass_commands.py` | Browse rewards |
+| `/season_leaderboard` | `cogs/battlepass_commands.py` | Top 25 players |
+| `/claim_reward <id>` | `cogs/battlepass_commands.py` | Claim earned reward |
+
+### Admin Commands
+
+| Command | Cog File | Description |
+|---------|----------|-------------|
+| `/setup_user_hub` | `cogs/menu_system.py` | Post persistent User Hub |
+| `/start_game` | `cogs/start_game.py` | Initialize bot in server |
+| `/server_analytics [days]` | `cogs/admin_commands.py` | Usage analytics (premium) |
+| `/server_info` | `cogs/card_game.py` | Server subscription status |
+| `/premium_subscribe` | `cogs/card_game.py` | Upgrade to Premium |
+| `/create_pack <artist>` | `cogs/card_game.py` | Create pack (dev server) |
+
+---
+
+## Project Structure
+
 ```
-/pack [type]                    - Open a card pack
-/collection                     - View your card collection
-/deck                          - View your battle deck
-/stats                         - View your statistics
-/leaderboard [metric]          - View global rankings
-/battle <opponent>             - Challenge to battle
-/battle_accept <match_id>      - Accept battle challenge
-/card <card_id>                - View specific card
-```
-
-#### Creator Commands
-```
-/pack_create <name> <desc> <size>  - Create new pack draft
-/pack_add_artist_smart              - Smart artist selection
-/pack_add_artist <details>          - Manual artist addition
-/pack_preview                       - Preview draft pack
-/pack_publish                      - Publish pack (payment)
-/pack_cancel                       - Cancel draft pack
-/packs                             - Browse available packs
-```
-
-### Database Methods
-
-#### User Management
-```python
-db.get_or_create_user(user_id, username, discord_tag)
-db.get_user_collection(user_id)
-db.get_user_deck(user_id, limit=3)
-db.get_user_stats(user_id)
-```
-
-#### Battle System
-```python
-db.record_match(match_data)
-db.get_leaderboard(metric, limit)
-```
-
-#### Pack Management
-```python
-db.create_creator_pack(creator_id, name, description, pack_size)
-db.add_card_to_pack(pack_id, card_data)
-db.validate_pack_rules(pack_id)
-db.publish_pack(pack_id, stripe_payment_id)
-db.get_live_packs(limit)
+├── main.py                     # Bot entry point, DB init, cog loader
+├── database.py                 # DatabaseManager — all DB operations
+├── stripe_payments.py          # Stripe checkout session creation
+├── battle_engine.py            # Battle logic, stat comparison, crits
+├── card_data.py                # Card data management
+├── discord_cards.py            # Card display components
+│
+├── config/
+│   ├── economy.py              # Daily rewards, wagers, ranks, pack pricing
+│   ├── battle_pass.py          # Season config, tier rewards, XP sources
+│   └── vip.py                  # VIP membership config
+│
+├── schemas/
+│   └── pack_definition.py      # PackDefinition dataclass, PACK_DEFINITIONS registry
+│
+├── cogs/
+│   ├── card_game.py            # /deck, /stats, /leaderboard, /open_pack, /create_pack
+│   ├── marketplace.py          # /buy_pack, /packs, /sell, /buy, /market + tier views
+│   ├── menu_system.py          # /setup_user_hub, ShopView, BattleView, User Hub
+│   ├── battle_commands.py      # /battle, /battle_stats
+│   ├── battlepass_commands.py  # /battlepass, /season_info, /season_progress, etc.
+│   ├── gameplay.py             # /drop, /grab
+│   ├── start_game.py           # /start_game
+│   ├── admin_commands.py       # /server_analytics
+│   └── admin_bulk_import.py    # /import_packs (dev only)
+│
+├── views/
+│   └── pack_opening.py         # PackOpeningAnimator, open_pack_with_animation()
+│
+├── webhooks/
+│   └── stripe_hook.py          # Stripe webhook handlers
+│
+├── infrastructure/             # Bot infrastructure utilities
+├── scheduler/                  # Background jobs
+├── Dockerfile                  # Production container
+├── railway.toml                # Railway config
+├── nixpacks.toml               # Alt build system
+└── requirements.txt            # Python dependencies
 ```
 
 ---
 
-## Development Guide
-
-### Environment Setup
-
-1. **Clone Repository**
-```bash
-git clone https://github.com/samuraifrenchienft/Music-Legends.git
-cd Music-Legends
-```
-
-2. **Install Dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-3. **Environment Variables**
-```bash
-cp .env.txt.example .env.txt
-# Edit .env.txt with your credentials
-```
-
-### Required Environment Variables
-
-```env
-# Discord Bot
-BOT_TOKEN=your_discord_bot_token
-APPLICATION_ID=your_application_id
-TEST_SERVER_ID=your_test_server_id
-
-# Optional Integrations
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-STRIPE_SECRET_KEY=sk_test_your_stripe_key
-STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
-YOUTUBE_API_KEY=your_youtube_api_key
-```
-
-### Project Structure
-
-```
-discordpy-v2-bot-template-main/
-├── main.py                 # Bot entry point
-├── database.py            # Database management
-├── battle_engine.py       # Battle logic
-├── card_data.py          # Card data management
-├── discord_cards.py      # Card display components
-├── cogs/                 # Discord command modules
-│   ├── card_game.py      # Core game commands
-│   ├── example.py        # Example cog
-│   └── ...
-├── infrastructure/        # Bot infrastructure
-├── scheduler/           # Background jobs
-└── requirements.txt     # Dependencies
-```
-
-### Key Components
-
-#### Battle Engine (`battle_engine.py`)
-- Core battle logic and resolution
-- Stat comparison and tie-breaking
-- Momentum system implementation
-- Match state management
-
-#### Database Manager (`database.py`)
-- SQLite database operations
-- User data persistence
-- Pack creation and validation
-- Revenue tracking
-
-#### Card Game Cog (`cogs/card_game.py`)
-- Discord slash command handlers
-- User interaction flows
-- Pack creation interface
-- Battle matchmaking
-
-### Testing
-
-```bash
-# Run basic bot test
-python test_bot.py
-
-# Test individual components
-python -m pytest tests/
-```
-
-### Deployment Considerations
-
-1. **Database**: SQLite (file-based) - no external DB required
-2. **Webhooks**: Stripe webhook endpoint for payment processing
-3. **Background Jobs**: APScheduler for daily pack resets
-4. **Queue System**: Redis + RQ for async processing
-5. **Scaling**: Horizontal scaling via Redis shared state
-
----
-
-## Contributing
-
-### Code Style
-- Follow PEP 8 Python standards
-- Use type hints where appropriate
-- Document complex logic with comments
-- Write unit tests for new features
-
-### Development Workflow
-1. Fork the repository
-2. Create feature branch
-3. Implement changes with tests
-4. Submit pull request
-5. Code review and merge
-
-### Feature Ideas
-- Song cards with special effects
-- Tournament mode with brackets
-- Card trading marketplace
-- Guild/team system
-- Mobile app companion
-- NFT integration for rare cards
-
----
-
-## Support & Community
-
-- **Discord Server**: [Join our community](https://discord.gg/yourserver)
-- **GitHub Issues**: [Report bugs and request features](https://github.com/samuraifrenchienft/Music-Legends/issues)
-- **Documentation Wiki**: [Extended documentation](https://github.com/samuraifrenchienft/Music-Legends/wiki)
-
----
-
-**Built with ❤️ for the Discord music community**
+**Last Updated**: February 2026
+**Version**: 3.0
