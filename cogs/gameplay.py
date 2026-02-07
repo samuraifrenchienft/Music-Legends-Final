@@ -629,11 +629,14 @@ class GameplayCommands(commands.Cog):
         """Claim daily rewards with streak bonuses, free card, and audio feedback"""
         from pathlib import Path
 
+        # Defer immediately — DB + card lookup can exceed 3s interaction timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Use the new database method that includes free card
         result = self.db.claim_daily_reward(interaction.user.id)
 
         if not result.get('success'):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ {result.get('error', 'Already claimed today!')}",
                 ephemeral=True
             )
@@ -709,11 +712,11 @@ class GameplayCommands(commands.Cog):
         
         embed.set_footer(text="Come back tomorrow to keep your streak!")
         
-        # Send with audio if available
+        # Send with audio if available (use followup since we deferred)
         if audio_file:
-            await interaction.response.send_message(embed=embed, file=audio_file, ephemeral=True)
+            await interaction.followup.send(embed=embed, file=audio_file, ephemeral=True)
         else:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):

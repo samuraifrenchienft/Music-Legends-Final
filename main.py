@@ -228,19 +228,13 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"⚠️ Bot logger init failed (non-critical): {e}")
 
-        # Clean up old seed packs from marketplace
+        # Seed marketplace packs on startup (idempotent — skips existing packs)
         try:
-            from database import DatabaseManager
-            _cleanup_db = DatabaseManager()
-            with _cleanup_db._get_connection() as _conn:
-                _cur = _conn.cursor()
-                _cur.execute("DELETE FROM creator_packs WHERE stripe_payment_id = 'SEED_PACK'")
-                _deleted = _cur.rowcount
-                _conn.commit()
-                if _deleted > 0:
-                    print(f"🗑️ Cleaned up {_deleted} old seed packs from marketplace")
+            from services.seed_packs import seed_packs_into_db
+            result = seed_packs_into_db()
+            print(f"🎵 Seed packs: {result.get('inserted', 0)} inserted, {result.get('skipped', 0)} skipped, {result.get('failed', 0)} failed")
         except Exception as e:
-            print(f"⚠️ Seed pack cleanup (non-critical): {e}")
+            print(f"⚠️ Seed pack loading (non-critical): {e}")
 
         # Send any pending restart alerts that were queued during startup
         try:

@@ -376,14 +376,13 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     genre TEXT
                 )
             """)
-            # Ensure genre column exists on old tables (SQLite-safe)
-            try:
-                cursor.execute("PRAGMA table_info(creator_packs)")
-                existing_cols = {row[1] for row in cursor.fetchall()}
-                if "genre" not in existing_cols:
-                    cursor.execute("ALTER TABLE creator_packs ADD COLUMN genre TEXT")
-            except Exception:
-                pass
+            # Ensure extra columns exist on old PostgreSQL tables
+            for col, col_def in [("genre", "TEXT"), ("price_gold", "INTEGER DEFAULT 500"), ("pack_tier", "TEXT DEFAULT 'community'")]:
+                try:
+                    cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN {col} {col_def}")
+                except Exception:
+                    pass  # column already exists
+            conn.commit()
             # Ensure cards table exists
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cards (
@@ -413,6 +412,15 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            conn.commit()
+        else:
+            # SQLite: ensure required columns exist (database.py usually handles this,
+            # but be defensive in case seed_packs runs in isolation)
+            cursor.execute("PRAGMA table_info(creator_packs)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            for col, col_def in [("genre", "TEXT"), ("price_gold", "INTEGER DEFAULT 500"), ("pack_tier", "TEXT DEFAULT 'community'")]:
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN {col} {col_def}")
             conn.commit()
 
         # Initialize APIs — these are optional, packs will be created regardless
