@@ -2741,18 +2741,22 @@ class DatabaseManager:
 
         total_gold = base_gold + bonus_gold
 
-        # === NEW: DAILY FREE CARD ===
+        # === DAILY FREE CARD ===
         # Rarity weights: 70% common, 25% rare, 5% epic
-        daily_card = self._get_random_daily_card()
+        daily_card = self._get_random_daily_card(user_id)
 
         if daily_card:
             # Add card to user's collection
-            self.add_card_to_collection(
+            added = self.add_card_to_collection(
                 user_id=user_id,
                 card_id=daily_card['card_id'],
                 acquired_from='daily_claim'
             )
-            print(f"[DAILY] User {user_id} received {daily_card['rarity']} card: {daily_card['name']}")
+            if not added:
+                # User already owns this card — card was not granted
+                daily_card = None
+            else:
+                print(f"[DAILY] User {user_id} received {daily_card['rarity']} card: {daily_card['name']}")
 
         # Update economy - uses user_inventory table
         with self._get_connection() as conn:
@@ -2775,9 +2779,10 @@ class DatabaseManager:
             "card": daily_card  # NEW: Include card in response
         }
 
-    def _get_random_daily_card(self) -> Optional[Dict]:
+    def _get_random_daily_card(self, user_id: int = None) -> Optional[Dict]:
         """
         Get a random card for daily claim using rarity + tier weighted selection.
+        Excludes cards the user already owns so they always receive something new.
 
         Rarity Distribution:
         - 70% Common (most frequent, encourages trading)
@@ -2797,6 +2802,14 @@ class DatabaseManager:
         try:
             cursor = conn.cursor()
 
+            # Sub-query to exclude cards the user already owns
+            if user_id:
+                exclude = "AND card_id NOT IN (SELECT card_id FROM user_cards WHERE user_id = ?)"
+                exclude_all = "WHERE card_id NOT IN (SELECT card_id FROM user_cards WHERE user_id = ?)"
+            else:
+                exclude = ""
+                exclude_all = ""
+
             # Determine rarity based on weighted random
             rand = random.random()
             if rand < 0.70:
@@ -2809,26 +2822,32 @@ class DatabaseManager:
             # Tier weighting: 90% community, 10% any
             if random.random() < 0.90:
                 cursor.execute(
-                    "SELECT * FROM cards WHERE rarity = ? AND tier = 'community' ORDER BY RANDOM() LIMIT 1",
-                    (rarity,)
+                    f"SELECT * FROM cards WHERE rarity = ? AND tier = 'community' {exclude} ORDER BY RANDOM() LIMIT 1",
+                    (rarity, user_id) if user_id else (rarity,)
                 )
             else:
                 cursor.execute(
-                    "SELECT * FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1",
-                    (rarity,)
+                    f"SELECT * FROM cards WHERE rarity = ? {exclude} ORDER BY RANDOM() LIMIT 1",
+                    (rarity, user_id) if user_id else (rarity,)
                 )
             row = cursor.fetchone()
 
             if row:
                 columns = [desc[0] for desc in cursor.description]
-                card = dict(zip(columns, row))
-                return card
+                return dict(zip(columns, row))
 
-            # Fallback: get any community card if specific rarity not found
-            cursor.execute("SELECT * FROM cards WHERE tier = 'community' ORDER BY RANDOM() LIMIT 1")
+            # Fallback: any community card the user doesn't own
+            cursor.execute(
+                f"SELECT * FROM cards WHERE tier = 'community' {exclude} ORDER BY RANDOM() LIMIT 1",
+                (user_id,) if user_id else ()
+            )
             row = cursor.fetchone()
             if not row:
-                cursor.execute("SELECT * FROM cards ORDER BY RANDOM() LIMIT 1")
+                # Fallback: any card the user doesn't own
+                cursor.execute(
+                    f"SELECT * FROM cards {exclude_all} ORDER BY RANDOM() LIMIT 1",
+                    (user_id,) if user_id else ()
+                )
                 row = cursor.fetchone()
             if row:
                 columns = [desc[0] for desc in cursor.description]

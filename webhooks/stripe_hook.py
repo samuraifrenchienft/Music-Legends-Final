@@ -97,6 +97,10 @@ async def handle_checkout_session_completed(event: Dict[str, Any]) -> Dict[str, 
         metadata = session.get("metadata", {})
         session_id = session.get("id")
 
+        # --- Battle Pass purchase flow ---
+        if metadata.get("type") == "battlepass_purchase":
+            return await _fulfill_battlepass_purchase(session, metadata, session_id)
+
         # --- Pack purchase flow (from marketplace) ---
         if metadata.get("type") == "pack_purchase":
             return await _fulfill_pack_purchase(session, metadata, session_id)
@@ -216,6 +220,95 @@ async def _fulfill_pack_purchase(session: Dict, metadata: Dict, session_id: str)
         import traceback
         traceback.print_exc()
         return {"error": "Fulfillment failed"}, 500
+
+async def _fulfill_battlepass_purchase(session: Dict, metadata: Dict, session_id: str) -> Dict[str, Any]:
+    """Grant premium battle pass — sets premium_expires to now + SEASON_DURATION_DAYS."""
+    from datetime import datetime, timedelta
+    import uuid as _uuid
+    from config.battle_pass import BattlePass
+
+    try:
+        user_id = int(metadata.get("user_id"))
+        expires_at = (datetime.now() + timedelta(days=BattlePass.SEASON_DURATION_DAYS)).isoformat()
+        amount_cents = session.get("amount_total", 0)
+
+        logger.info(f"Fulfilling battlepass purchase: user={user_id}, session={session_id}")
+
+        from database import DatabaseManager
+        db = DatabaseManager()
+
+        # Ensure user row exists, then set premium_expires
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO user_inventory (user_id, premium_expires) VALUES (?, ?) "
+                "ON CONFLICT (user_id) DO UPDATE SET premium_expires = ?",
+                (user_id, expires_at, expires_at)
+            )
+            conn.commit()
+
+        # Record in purchases audit table
+        purchase_id = str(_uuid.uuid4())
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO purchases (purchase_id, user_id, pack_id, amount_cents, payment_method, stripe_session_id, status) "
+                "VALUES (?, ?, ?, ?, 'stripe', ?, 'completed')",
+                (purchase_id, user_id, 'battlepass_premium', amount_cents, session_id)
+            )
+            conn.commit()
+
+        AuditLog.record(
+            event="battlepass_purchased",
+            user_id=user_id,
+            target_id=session_id,
+            details={"expires_at": expires_at, "amount_cents": amount_cents}
+        )
+
+        # Send Discord notifications
+        try:
+            from main import bot
+
+            # DM buyer a receipt
+            user = bot.get_user(user_id)
+            if user:
+                receipt = purchase_embed(
+                    user=user,
+                    pack_type="Battle Pass Premium",
+                    session_id=session_id,
+                    amount=amount_cents
+                )
+                await user.send(embed=receipt)
+                logger.info(f"Battle pass receipt sent to user {user_id}")
+            else:
+                logger.warning(f"Could not find user {user_id} for battle pass receipt")
+
+            # Post to admin sales channel
+            SALES_CHANNEL = os.getenv("SALES_CHANNEL_ID")
+            if SALES_CHANNEL:
+                sales_channel = bot.get_channel(int(SALES_CHANNEL))
+                if sales_channel:
+                    admin_embed = admin_sale_embed(
+                        pack_type="Battle Pass Premium",
+                        session_id=session_id,
+                        user_id=user_id,
+                        amount=amount_cents
+                    )
+                    await sales_channel.send(embed=admin_embed)
+                    logger.info(f"Battle pass sale logged to channel {SALES_CHANNEL}")
+        except Exception as e:
+            logger.error(f"Failed to send battle pass notifications: {e}")
+
+        logger.info(f"Battlepass purchase fulfilled: user={user_id}, expires={expires_at}")
+
+        return {"status": "fulfilled", "product": "battlepass", "user_id": user_id, "premium_expires": expires_at}
+
+    except Exception as e:
+        logger.error(f"Battlepass purchase fulfillment failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": "Fulfillment failed"}, 500
+
 
 async def handle_charge_refunded(event: Dict[str, Any]) -> Dict[str, Any]:
     """Handle charge refund event."""

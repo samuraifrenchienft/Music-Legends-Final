@@ -580,20 +580,38 @@ class BattlePassView(discord.ui.View):
         embed = discord.Embed(title="📜 Battle Pass Tiers (Free Track)", description=tiers_text, color=discord.Color.blue())
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="💎 Upgrade to Premium", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Upgrade to Premium", style=discord.ButtonStyle.primary, emoji="💎")
     async def upgrade_premium(self, interaction: Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "💎 **Upgrade to Premium Battle Pass**\n\n"
-            "Price: **$9.99**\n\n"
-            "Unlock exclusive rewards including:\n"
-            "• 4 Mythic Cards\n"
-            "• 1 Ultra Mythic Card\n"
-            "• 50,000+ Gold\n"
-            "• 250+ Tickets\n"
-            "• Exclusive Cosmetics\n\n"
-            "Use `/buy battlepass` to purchase!",
-            ephemeral=True
-        )
+        try:
+            from stripe_payments import stripe_manager
+            result = stripe_manager.create_battlepass_checkout(interaction.user.id)
+
+            if result.get('success'):
+                embed = discord.Embed(
+                    title="Battle Pass Premium",
+                    description=(
+                        "**Price: $9.99** | Season: Rhythm Rising\n\n"
+                        "Premium rewards include:\n"
+                        "- 4 Mythic Cards\n"
+                        "- 1 Ultra Mythic Card\n"
+                        "- 50,000+ Gold\n"
+                        "- 250+ Tickets\n"
+                        "- Exclusive Cosmetics\n\n"
+                        f"[Click here to checkout]({result['checkout_url']})"
+                    ),
+                    color=discord.Color.purple()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    f"Could not create checkout: {result.get('error', 'Unknown error')}",
+                    ephemeral=True
+                )
+        except Exception as e:
+            await interaction.response.send_message(
+                "Failed to create checkout. Please try again later.",
+                ephemeral=True
+            )
 
 
 class VIPView(discord.ui.View):

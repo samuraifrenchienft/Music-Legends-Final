@@ -225,6 +225,198 @@ class TestStripeFlow:
             
             print("✅ Stripe session expiration test passed")
 
+class TestBattlePassPurchase:
+    """Test Battle Pass premium purchase flow via Stripe webhook."""
+
+    @pytest.fixture
+    def sample_battlepass_checkout_event(self):
+        """Sample Stripe checkout event for battlepass purchase."""
+        return {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "sess_bp_001",
+                    "object": "checkout.session",
+                    "status": "complete",
+                    "payment_status": "paid",
+                    "amount_total": 999,
+                    "currency": "usd",
+                    "metadata": {
+                        "user_id": "42",
+                        "type": "battlepass_purchase"
+                    },
+                    "payment_intent": "pi_bp_001"
+                }
+            }
+        }
+
+    def test_battlepass_fulfillment(self, sample_battlepass_checkout_event):
+        """
+        Test battlepass webhook routes to _fulfill_battlepass_purchase and sets premium_expires.
+
+        PASS CRITERIA:
+        - metadata type 'battlepass_purchase' is routed correctly
+        - premium_expires is written to user_inventory
+        - Purchase is recorded in purchases table
+        - AuditLog entry created
+        - Returns fulfilled status with premium_expires
+        """
+        print("\n🧪 Testing Battle Pass Fulfillment...")
+
+        mock_cursor = Mock()
+        mock_conn = Mock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = Mock(return_value=mock_conn)
+        mock_conn.__exit__ = Mock(return_value=False)
+
+        mock_db = Mock()
+        mock_db._get_connection.return_value = mock_conn
+
+        # Pre-mock modules that fail to import locally
+        import sys as _sys
+        _mocked_modules = {}
+        for mod_name in ['services.payment_service', 'services.refund_service',
+                         'models.audit_minimal', 'ui.receipts', 'database']:
+            if mod_name not in _sys.modules:
+                _mocked_modules[mod_name] = Mock()
+
+        with patch.dict('sys.modules', _mocked_modules):
+            # Re-import after mocking deps
+            import importlib
+            import webhooks.stripe_hook as _sh
+            importlib.reload(_sh)
+
+            with patch.object(_sh, 'AuditLog') as mock_audit_cls:
+                mock_audit = mock_audit_cls.record
+
+                # Patch DatabaseManager inside the fulfillment function
+                with patch('database.DatabaseManager', return_value=mock_db):
+                    result = asyncio.run(_sh.handle_checkout_session_completed(sample_battlepass_checkout_event))
+
+            # Should be fulfilled, not routed to legacy pack flow
+            assert result["status"] == "fulfilled", f"Expected 'fulfilled', got '{result.get('status')}'"
+            assert result["product"] == "battlepass"
+            assert result["user_id"] == 42
+            assert "premium_expires" in result
+
+            # DB should have been called (INSERT ... ON CONFLICT for user_inventory + INSERT into purchases)
+            assert mock_cursor.execute.call_count == 2, f"Expected 2 DB calls, got {mock_cursor.execute.call_count}"
+
+            # First call: upsert premium_expires
+            first_sql = mock_cursor.execute.call_args_list[0][0][0]
+            assert "user_inventory" in first_sql
+            assert "premium_expires" in first_sql
+
+            # Second call: insert into purchases
+            second_sql = mock_cursor.execute.call_args_list[1][0][0]
+            assert "purchases" in second_sql
+
+            # Audit log recorded
+            mock_audit.assert_called_once()
+
+            print("✅ Battle Pass fulfillment test passed")
+
+    def test_battlepass_not_routed_to_pack_purchase(self, sample_battlepass_checkout_event):
+        """
+        Test that battlepass events do NOT fall through to pack purchase or legacy flow.
+
+        PASS CRITERIA:
+        - handle_payment is never called
+        - _fulfill_pack_purchase is never called
+        """
+        print("\n🧪 Testing Battle Pass routing isolation...")
+
+        mock_cursor = Mock()
+        mock_conn = Mock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = Mock(return_value=mock_conn)
+        mock_conn.__exit__ = Mock(return_value=False)
+        mock_db = Mock()
+        mock_db._get_connection.return_value = mock_conn
+
+        import sys as _sys
+        _mocked_modules = {}
+        for mod_name in ['services.payment_service', 'services.refund_service',
+                         'models.audit_minimal', 'ui.receipts', 'database']:
+            if mod_name not in _sys.modules:
+                _mocked_modules[mod_name] = Mock()
+
+        with patch.dict('sys.modules', _mocked_modules):
+            import importlib
+            import webhooks.stripe_hook as _sh
+            importlib.reload(_sh)
+
+            with patch.object(_sh, 'AuditLog'), \
+                 patch.object(_sh, 'handle_payment') as mock_handle_payment, \
+                 patch('database.DatabaseManager', return_value=mock_db):
+
+                asyncio.run(_sh.handle_checkout_session_completed(sample_battlepass_checkout_event))
+                mock_handle_payment.assert_not_called()
+
+            print("✅ Battle Pass routing isolation verified")
+
+    def test_battlepass_checkout_creation(self):
+        """
+        Test create_battlepass_checkout() creates a valid Stripe session.
+
+        PASS CRITERIA:
+        - Stripe Session.create called with correct metadata
+        - Returns success with checkout_url and session_id
+        - Price is 999 cents ($9.99)
+        """
+        print("\n🧪 Testing Battle Pass Checkout Creation...")
+
+        with patch('stripe_payments.stripe.checkout.Session.create') as mock_create:
+            mock_session = Mock()
+            mock_session.id = "sess_bp_test"
+            mock_session.url = "https://checkout.stripe.com/pay/sess_bp_test"
+            mock_create.return_value = mock_session
+
+            from stripe_payments import StripePaymentManager
+            manager = StripePaymentManager()
+            result = manager.create_battlepass_checkout(user_id=12345)
+
+            assert result["success"] is True
+            assert result["checkout_url"] == "https://checkout.stripe.com/pay/sess_bp_test"
+            assert result["session_id"] == "sess_bp_test"
+
+            # Verify Stripe was called correctly
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args[1]
+
+            assert call_kwargs["mode"] == "payment"
+            assert call_kwargs["metadata"]["user_id"] == "12345"
+            assert call_kwargs["metadata"]["type"] == "battlepass_purchase"
+
+            # Verify price
+            line_items = call_kwargs["line_items"]
+            assert len(line_items) == 1
+            assert line_items[0]["price_data"]["unit_amount"] == 999
+            assert line_items[0]["price_data"]["currency"] == "usd"
+            assert "Battle Pass Premium" in line_items[0]["price_data"]["product_data"]["name"]
+
+            print("✅ Battle Pass checkout creation test passed")
+
+    def test_battlepass_checkout_failure(self):
+        """
+        Test create_battlepass_checkout() handles Stripe errors gracefully.
+
+        PASS CRITERIA:
+        - Returns success=False with error message on Stripe failure
+        """
+        print("\n🧪 Testing Battle Pass Checkout Failure Handling...")
+
+        with patch('stripe_payments.stripe.checkout.Session.create', side_effect=Exception("Stripe API unavailable")):
+            from stripe_payments import StripePaymentManager
+            manager = StripePaymentManager()
+            result = manager.create_battlepass_checkout(user_id=12345)
+
+            assert result["success"] is False
+            assert "Stripe API unavailable" in result["error"]
+
+            print("✅ Battle Pass checkout failure handling test passed")
+
+
 class TestStripeCheckout:
     """Test Stripe checkout session creation."""
     

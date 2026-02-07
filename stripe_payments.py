@@ -178,6 +178,51 @@ class StripePaymentManager:
                 'error': str(e)
             }
     
+    def create_battlepass_checkout(self, user_id: int) -> Dict:
+        """Create Stripe Checkout session for Battle Pass Premium ($9.99)"""
+        try:
+            from config.battle_pass import BattlePass
+
+            checkout_session = stripe.checkout.Session.create(
+                payment_intent_data={
+                    'metadata': {
+                        'user_id': str(user_id),
+                        'type': 'battlepass_purchase'
+                    }
+                },
+                customer_email=None,
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': f'Battle Pass Premium - {BattlePass.SEASON_NAME}',
+                            'description': f'Unlock premium rewards for Season {BattlePass.SEASON_NUMBER} ({BattlePass.SEASON_DURATION_DAYS} days)',
+                        },
+                        'unit_amount': BattlePass.PREMIUM_PRICE_CENTS,
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url='https://discord.com/channels/@me',
+                cancel_url='https://discord.com/channels/@me',
+                metadata={
+                    'user_id': str(user_id),
+                    'type': 'battlepass_purchase'
+                }
+            )
+
+            return {
+                'success': True,
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def create_stripe_connect_account(self, creator_id: int, email: str) -> Dict:
         """Create Stripe Connect account for creator"""
         try:
