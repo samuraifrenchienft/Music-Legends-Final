@@ -897,49 +897,5 @@ class MarketplaceCommands(commands.Cog):
         except discord.errors.HTTPException:
             await interaction.followup.send(embed=embed, view=view)
 
-    @app_commands.command(name="unlist", description="Remove your card from the marketplace")
-    @app_commands.describe(card_id="Card ID to remove from sale")
-    async def unlist_command(self, interaction: Interaction, card_id: str):
-        """Remove a card listing from the marketplace"""
-
-        conn = self.db._get_connection()
-        try:
-            cursor = conn.cursor()
-
-            # Check if user owns this listing
-            cursor.execute("""
-                SELECT listing_id, asking_gold FROM market_listings
-                WHERE card_id = ? AND seller_user_id = ? AND status = 'active'
-            """, (card_id, interaction.user.id))
-            listing = cursor.fetchone()
-
-            if not listing:
-                conn.close()
-                await interaction.response.send_message(
-                    "You don't have this card listed for sale!",
-                    ephemeral=True
-                )
-                return
-
-            listing_id, price = listing
-
-            # Remove listing
-            cursor.execute("""
-                UPDATE market_listings SET status = 'cancelled' WHERE listing_id = ?
-            """, (listing_id,))
-            conn.commit()
-        finally:
-            conn.close()
-
-        embed = discord.Embed(
-            title="LISTING REMOVED",
-            description=f"Your card has been removed from the marketplace.",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="Card ID", value=f"`{card_id}`", inline=True)
-
-        await interaction.response.send_message(embed=embed)
-
-
 async def setup(bot):
     await bot.add_cog(MarketplaceCommands(bot))
