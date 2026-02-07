@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 load_dotenv('.env.txt')
 
 # Configure Stripe
-stripe.api_key = os.getenv('STRIPE_SECRET')
-STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
+stripe.api_key = (os.getenv('STRIPE_SECRET') or '').strip()
+STRIPE_WEBHOOK_SECRET = (os.getenv('STRIPE_WEBHOOK_SECRET') or '').strip()
 
 class StripePaymentManager:
     def __init__(self):

@@ -464,6 +464,15 @@ class PackDetailView(discord.ui.View):
             if not received_cards:
                 return await interaction.followup.send("This pack has no cards.", ephemeral=True)
 
+            # Grant pack purchase bonuses (gold + tickets)
+            from config.economy import PACK_PRICING as ECON_PRICING
+            pack_tier = pack_row[7] if len(pack_row) > 7 else 'community'
+            pack_bonus = ECON_PRICING.get(pack_tier, {})
+            bonus_gold = pack_bonus.get('bonus_gold', 0)
+            bonus_tickets = pack_bonus.get('bonus_tickets', 0)
+            if bonus_gold or bonus_tickets:
+                self.db.update_user_economy(interaction.user.id, gold_change=bonus_gold, tickets_change=bonus_tickets)
+
             # Record purchase
             purchase_id = str(uuid.uuid4())
             with self.db._get_connection() as conn:
@@ -478,6 +487,13 @@ class PackDetailView(discord.ui.View):
             pack_name = pack_row[1]
             pack_type = 'gold' if any(c.get('rarity') in ['legendary', 'epic'] for c in received_cards) else 'community'
 
+            # Build bonus text for the opening animation
+            bonus_text = ""
+            if bonus_gold:
+                bonus_text += f"+{bonus_gold:,} Gold "
+            if bonus_tickets:
+                bonus_text += f"+{bonus_tickets} Tickets"
+
             from views.pack_opening import open_pack_with_animation
             await open_pack_with_animation(
                 interaction=interaction,
@@ -487,13 +503,15 @@ class PackDetailView(discord.ui.View):
                 pack_id=self.pack_id,
                 delay=2.0,
             )
+            if bonus_text:
+                await interaction.followup.send(f"**Bonus rewards:** {bonus_text.strip()}", ephemeral=True)
         except Exception as e:
             print(f"Error buying pack with gold: {e}")
             import traceback
             traceback.print_exc()
             await interaction.followup.send(f"Failed to purchase pack: {e}", ephemeral=True)
 
-    @discord.ui.button(label="Buy with Card", style=discord.ButtonStyle.primary, emoji="💳", row=0)
+    @discord.ui.button(label="Buy Pack", style=discord.ButtonStyle.primary, emoji="💳", row=0)
     async def buy_stripe_button(self, interaction: Interaction, button: discord.ui.Button):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)

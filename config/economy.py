@@ -128,8 +128,10 @@ PACK_PRICING = {
         "create_usd": None,       # Dev only
         "create_tickets": None,
         "cards_per_pack": 5,
+        "bonus_gold": 100,
+        "bonus_tickets": 0,
         "marketplace": True,
-        "description": "5 cards, mostly Common/Rare"
+        "description": "5 cards, mostly Common/Rare + 100 bonus gold"
     },
     "gold": {
         "buy_usd": 4.99,
@@ -142,8 +144,23 @@ PACK_PRICING = {
         "create_tickets": 150,    # OR create with 150 tickets only
         "create_gold_tickets": 10, # Tickets needed when using gold to create
         "cards_per_pack": 5,
+        "bonus_gold": 250,
+        "bonus_tickets": 2,
         "marketplace": True,
-        "description": "5 cards, guaranteed Rare+, chance for Legendary"
+        "description": "5 cards, guaranteed Rare+, chance for Legendary + 250 gold & 2 tickets"
+    },
+    "platinum": {
+        "buy_usd": 6.99,
+        "buy_usd_cents": 699,
+        "buy_gold": 2500,
+        "buy_tickets": 200,
+        "create_usd": None,       # Not creator-creatable
+        "create_tickets": None,
+        "cards_per_pack": 10,
+        "bonus_gold": 500,
+        "bonus_tickets": 5,
+        "marketplace": True,
+        "description": "10 premium cards, top-tier artists, bonus gold & tickets"
     }
 }
 

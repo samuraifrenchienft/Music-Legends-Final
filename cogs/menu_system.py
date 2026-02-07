@@ -165,9 +165,9 @@ def create_shop_embed() -> discord.Embed:
     
     embed.add_field(
         name="📦 Packs",
-        value="• **Community Pack** - $2.99 (500 gold)\n"
-              "• **Gold Pack** - $4.99 (1,000 gold)\n"
-              "• **Platinum Pack** - $9.99 (2,500 gold)",
+        value="• **Community Pack** - $2.99 (500 gold) — 5 cards + 100 bonus gold\n"
+              "• **Gold Pack** - $4.99 (1,000 gold) — 5 cards + 250 gold & 2 tickets\n"
+              "• **Platinum Pack** - $6.99 (2,500 gold) — 10 cards + 500 gold & 5 tickets",
         inline=False
     )
     
@@ -649,9 +649,9 @@ class ShopView(discord.ui.View):
         await interaction.response.send_message(
             "📦 **Buy Packs**\n\n"
             "Use these commands:\n"
-            "• `/buy community` - $2.99\n"
-            "• `/buy gold` - $4.99\n"
-            "• `/buy platinum` - $9.99",
+            "• `/buy community` - $2.99 — 5 cards + 100 gold\n"
+            "• `/buy gold` - $4.99 — 5 cards + 250 gold & 2 tickets\n"
+            "• `/buy platinum` - $6.99 — 10 cards + 500 gold & 5 tickets",
             ephemeral=True
         )
     

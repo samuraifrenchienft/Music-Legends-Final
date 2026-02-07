@@ -25,8 +25,8 @@ from models.audit_minimal import AuditLog
 from ui.receipts import purchase_embed, delivery_embed, refund_embed, admin_sale_embed, admin_refund_embed
 
 # Configure Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET")
-WH_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+stripe.api_key = (os.getenv("STRIPE_SECRET") or '').strip()
+WH_SECRET = (os.getenv("STRIPE_WEBHOOK_SECRET") or '').strip()
 
 # Configure logging
 logger = logging.getLogger(__name__)

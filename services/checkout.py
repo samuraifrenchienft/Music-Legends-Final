@@ -19,7 +19,7 @@ except ImportError:
     pass
 
 # Configure Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET")
+stripe.api_key = (os.getenv("STRIPE_SECRET") or '').strip()
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # Pack pricing configuration (in cents)
 PACK_PRICING = {
     "black": 999,      # $9.99
+    "platinum": 699,   # $6.99
     "gold": 699,       # $6.99
     "silver": 499,     # $4.99
     "starter": 299,    # $2.99
@@ -37,7 +38,8 @@ PACK_PRICING = {
 # Pack display names
 PACK_NAMES = {
     "black": "Black Pack",
-    "gold": "Gold Pack", 
+    "platinum": "Platinum Pack",
+    "gold": "Gold Pack",
     "silver": "Silver Pack",
     "starter": "Starter Pack",
     "founder_black": "Founder Black Pack",

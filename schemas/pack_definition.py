@@ -105,7 +105,9 @@ PACK_DEFINITIONS: Dict[str, PackDefinition] = {
         cards_per_pack=3,
         guarantees={
             "min_rarity": "community",
-            "hero_slot": False
+            "hero_slot": False,
+            "bonus_gold": 50,
+            "bonus_tickets": 0
         },
         odds={
             "community": 0.80,
@@ -127,7 +129,9 @@ PACK_DEFINITIONS: Dict[str, PackDefinition] = {
         cards_per_pack=4,
         guarantees={
             "min_rarity": "gold",
-            "hero_slot": False
+            "hero_slot": False,
+            "bonus_gold": 100,
+            "bonus_tickets": 0
         },
         odds={
             "community": 0.60,
@@ -150,7 +154,9 @@ PACK_DEFINITIONS: Dict[str, PackDefinition] = {
         cards_per_pack=5,
         guarantees={
             "min_rarity": "gold",
-            "hero_slot": False
+            "hero_slot": False,
+            "bonus_gold": 250,
+            "bonus_tickets": 2
         },
         odds={
             "community": 0.40,
@@ -167,6 +173,32 @@ PACK_DEFINITIONS: Dict[str, PackDefinition] = {
         description="Premium experience with epic chances"
     ),
     
+    "platinum": PackDefinition(
+        key="platinum",
+        display_name="Platinum Pack",
+        tier=PackTier.PREMIUM,
+        cards_per_pack=10,
+        guarantees={
+            "min_rarity": "gold",
+            "hero_slot": True,
+            "bonus_gold": 500,
+            "bonus_tickets": 5
+        },
+        odds={
+            "community": 0.25,
+            "gold": 0.35,
+            "platinum": 0.25,
+            "legendary": 0.15
+        },
+        visuals={
+            "pack_color": "#E5E4E2",
+            "accent": "#8C8C8C",
+            "style": "luxury"
+        },
+        price_cents=699,
+        description="10 premium cards with top-tier artists, bonus gold & tickets"
+    ),
+
     "black": PackDefinition(
         key="black",
         display_name="Black Pack",

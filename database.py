@@ -2286,14 +2286,14 @@ class DatabaseManager:
             
             # Get pack data and creator
             cursor.execute("""
-                SELECT cards_data, creator_id, name FROM creator_packs 
+                SELECT cards_data, creator_id, name, COALESCE(pack_tier, 'community') FROM creator_packs
                 WHERE pack_id = ? AND status = 'LIVE'
             """, (pack_id,))
             result = cursor.fetchone()
             if not result:
                 return None
-            
-            cards_json, creator_id, pack_name = result[0], result[1], result[2]
+
+            cards_json, creator_id, pack_name, pack_tier = result[0], result[1], result[2], result[3]
 
             # Parse cards JSON if it's a string
             if isinstance(cards_json, str):
@@ -2336,11 +2336,19 @@ class DatabaseManager:
             
             # Record creator revenue (legacy table for compatibility)
             cursor.execute("""
-                INSERT INTO creator_revenue 
+                INSERT INTO creator_revenue
                 (creator_id, pack_id, purchase_id, revenue_type, gross_amount_cents, net_amount_cents)
                 VALUES (?, ?, ?, 'pack_purchase', ?, ?)
             """, (creator_id, pack_id, purchase_id, amount_cents, revenue_split['creator_cents']))
-            
+
+            # Grant pack purchase bonuses (gold + tickets)
+            from config.economy import PACK_PRICING as ECON_PRICING
+            pack_bonus = ECON_PRICING.get(pack_tier, {})
+            bonus_gold = pack_bonus.get('bonus_gold', 0)
+            bonus_tickets = pack_bonus.get('bonus_tickets', 0)
+            if bonus_gold or bonus_tickets:
+                self.update_user_economy(buyer_id, gold_change=bonus_gold, tickets_change=bonus_tickets)
+
             conn.commit()
             return purchase_id
     
@@ -2819,36 +2827,23 @@ class DatabaseManager:
             else:
                 rarity = 'epic'
 
-            # Tier weighting: 90% community, 10% any
-            if random.random() < 0.90:
-                cursor.execute(
-                    f"SELECT * FROM cards WHERE rarity = ? AND tier = 'community' {exclude} ORDER BY RANDOM() LIMIT 1",
-                    (rarity, user_id) if user_id else (rarity,)
-                )
-            else:
-                cursor.execute(
-                    f"SELECT * FROM cards WHERE rarity = ? {exclude} ORDER BY RANDOM() LIMIT 1",
-                    (rarity, user_id) if user_id else (rarity,)
-                )
+            # Primary query: match rarity, exclude owned cards
+            cursor.execute(
+                f"SELECT * FROM cards WHERE rarity = ? {exclude} ORDER BY RANDOM() LIMIT 1",
+                (rarity, user_id) if user_id else (rarity,)
+            )
             row = cursor.fetchone()
 
             if row:
                 columns = [desc[0] for desc in cursor.description]
                 return dict(zip(columns, row))
 
-            # Fallback: any community card the user doesn't own
+            # Fallback: any card the user doesn't own (ignore rarity)
             cursor.execute(
-                f"SELECT * FROM cards WHERE tier = 'community' {exclude} ORDER BY RANDOM() LIMIT 1",
+                f"SELECT * FROM cards {exclude_all} ORDER BY RANDOM() LIMIT 1",
                 (user_id,) if user_id else ()
             )
             row = cursor.fetchone()
-            if not row:
-                # Fallback: any card the user doesn't own
-                cursor.execute(
-                    f"SELECT * FROM cards {exclude_all} ORDER BY RANDOM() LIMIT 1",
-                    (user_id,) if user_id else ()
-                )
-                row = cursor.fetchone()
             if row:
                 columns = [desc[0] for desc in cursor.description]
                 return dict(zip(columns, row))
