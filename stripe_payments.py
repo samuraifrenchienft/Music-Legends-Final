@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv('.env.txt')
 
 # Configure Stripe
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+stripe.api_key = os.getenv('STRIPE_SECRET')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
 
 class StripePaymentManager:

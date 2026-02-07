@@ -67,7 +67,10 @@ def _fetch_pack_detail(db, pack_id: str):
     with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT pack_id, name, description, cards_data, genre
+            SELECT pack_id, name, description, cards_data, genre,
+                   COALESCE(price_cents, 299) AS price_cents,
+                   COALESCE(price_gold, 500) AS price_gold,
+                   COALESCE(pack_tier, 'community') AS pack_tier
             FROM creator_packs
             WHERE pack_id = ? AND status = 'LIVE'
         """, (pack_id,))
@@ -101,13 +104,21 @@ def _build_pack_list_embed(packs, genre, page, total_pages, total_count):
 
 
 def _build_pack_detail_embed(pack_row):
-    pack_id, name, description, cards_data, genre = pack_row
+    pack_id, name, description, cards_data, genre = pack_row[:5]
+    price_cents = pack_row[5] if len(pack_row) > 5 else 299
+    price_gold = pack_row[6] if len(pack_row) > 6 else 500
+    pack_tier = pack_row[7] if len(pack_row) > 7 else "community"
     cards = json.loads(cards_data) if cards_data else []
     emoji = GENRE_EMOJI.get(genre, "📦")
 
+    price_usd = f"${price_cents / 100:.2f}"
     embed = discord.Embed(
         title=f"{emoji} {name}",
-        description=description or "No description",
+        description=(
+            f"{description or 'No description'}\n\n"
+            f"**Price:** {price_gold:,} Gold or {price_usd}\n"
+            f"**Tier:** {pack_tier.title()}"
+        ),
         color=discord.Color.purple(),
     )
 
@@ -347,70 +358,142 @@ class PackDetailView(discord.ui.View):
         self.total_pages = total_pages
         self.total_count = total_count
 
-    @discord.ui.button(label="Open Pack", style=discord.ButtonStyle.success, emoji="🎴", row=0)
-    async def open_pack_button(self, interaction: Interaction, button: discord.ui.Button):
+    def _grant_pack_cards(self, user_id: int, pack_row) -> list:
+        """Grant all cards from a pack to a user. Returns list of received cards."""
+        cards_data_json = pack_row[3]
+        cards_data = json.loads(cards_data_json) if cards_data_json else []
+        received_cards = []
+        import random
+        for card_data in cards_data:
+            if card_data.get('rarity') in ['legendary', 'epic']:
+                if random.random() < 0.1:
+                    variant_frames = ['holographic', 'crystal', 'neon']
+                    card_data['frame_style'] = random.choice(variant_frames)
+                    card_data['foil'] = True
+                    card_data['foil_effect'] = 'rainbow'
+            if 'card_id' not in card_data:
+                card_data['card_id'] = str(uuid.uuid4())
+            self.db.add_card_to_master(card_data)
+            self.db.add_card_to_collection(
+                user_id=user_id,
+                card_id=card_data['card_id'],
+                acquired_from='pack_purchase',
+            )
+            received_cards.append(card_data)
+
+        # Increment total_purchases
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE creator_packs SET total_purchases = total_purchases + 1 WHERE pack_id = ?",
+                (self.pack_id,),
+            )
+            conn.commit()
+        return received_cards
+
+    @discord.ui.button(label="Buy with Gold", style=discord.ButtonStyle.success, emoji="🪙", row=0)
+    async def buy_gold_button(self, interaction: Interaction, button: discord.ui.Button):
         if interaction.user.id != self.author_id:
             return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
 
-        # Delegate to the existing /open_pack command logic
-        # Find the CardGameCog to call its open_pack method
-        card_game_cog = interaction.client.get_cog("CardGameCog")
-        if card_game_cog:
-            # Create a fake-ish interaction flow: defer, then call the pack opening
-            await interaction.response.defer(ephemeral=False)
-            try:
-                pack_row = _fetch_pack_detail(self.db, self.pack_id)
-                if not pack_row:
-                    return await interaction.followup.send("Pack not found or no longer available.", ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
+        try:
+            pack_row = _fetch_pack_detail(self.db, self.pack_id)
+            if not pack_row:
+                return await interaction.followup.send("Pack not found or no longer available.", ephemeral=True)
 
-                pack_id, pack_name, desc, cards_data_json, genre = pack_row
-                cards_data = json.loads(cards_data_json) if cards_data_json else []
+            price_gold = pack_row[6] if len(pack_row) > 6 else 500
 
-                if not cards_data:
-                    return await interaction.followup.send("This pack has no cards.", ephemeral=True)
+            # Check user gold
+            economy = self.db.get_user_economy(interaction.user.id)
+            user_gold = economy.get('gold', 0)
 
-                import random
-                received_cards = []
-                for card_data in cards_data:
-                    if card_data.get('rarity') in ['legendary', 'epic']:
-                        if random.random() < 0.1:
-                            variant_frames = ['holographic', 'crystal', 'neon']
-                            card_data['frame_style'] = random.choice(variant_frames)
-                            card_data['foil'] = True
-                            card_data['foil_effect'] = 'rainbow'
-
-                    if 'card_id' not in card_data:
-                        card_data['card_id'] = str(uuid.uuid4())
-
-                    self.db.add_card_to_master(card_data)
-                    self.db.add_card_to_collection(
-                        user_id=interaction.user.id,
-                        card_id=card_data['card_id'],
-                        acquired_from='pack_opening',
-                    )
-                    received_cards.append(card_data)
-
-                pack_type = 'gold' if any(c.get('rarity') in ['legendary', 'epic'] for c in received_cards) else 'community'
-
-                from views.pack_opening import open_pack_with_animation
-                await open_pack_with_animation(
-                    interaction=interaction,
-                    pack_name=pack_name,
-                    pack_type=pack_type,
-                    cards=received_cards,
-                    pack_id=pack_id,
-                    delay=2.0,
+            if user_gold < price_gold:
+                return await interaction.followup.send(
+                    f"Insufficient gold! You need **{price_gold:,}** Gold but only have **{user_gold:,}**.",
+                    ephemeral=True,
                 )
-            except Exception as e:
-                print(f"Error opening pack from browse: {e}")
-                import traceback
-                traceback.print_exc()
-                await interaction.followup.send(f"Failed to open pack: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"Use `/open_pack {self.pack_id}` to open this pack.",
-                ephemeral=True,
+
+            # Deduct gold
+            self.db.update_user_economy(interaction.user.id, gold_change=-price_gold)
+
+            # Grant cards
+            received_cards = self._grant_pack_cards(interaction.user.id, pack_row)
+
+            if not received_cards:
+                return await interaction.followup.send("This pack has no cards.", ephemeral=True)
+
+            # Record purchase
+            purchase_id = str(uuid.uuid4())
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """INSERT INTO purchases (purchase_id, user_id, pack_id, amount_cents, payment_method, status)
+                       VALUES (?, ?, ?, 0, 'gold', 'completed')""",
+                    (purchase_id, interaction.user.id, self.pack_id),
+                )
+                conn.commit()
+
+            pack_name = pack_row[1]
+            pack_type = 'gold' if any(c.get('rarity') in ['legendary', 'epic'] for c in received_cards) else 'community'
+
+            from views.pack_opening import open_pack_with_animation
+            await open_pack_with_animation(
+                interaction=interaction,
+                pack_name=pack_name,
+                pack_type=pack_type,
+                cards=received_cards,
+                pack_id=self.pack_id,
+                delay=2.0,
             )
+        except Exception as e:
+            print(f"Error buying pack with gold: {e}")
+            import traceback
+            traceback.print_exc()
+            await interaction.followup.send(f"Failed to purchase pack: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Buy with Card", style=discord.ButtonStyle.primary, emoji="💳", row=0)
+    async def buy_stripe_button(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+
+        try:
+            pack_row = _fetch_pack_detail(self.db, self.pack_id)
+            if not pack_row:
+                return await interaction.response.send_message("Pack not found.", ephemeral=True)
+
+            pack_name = pack_row[1]
+            price_cents = pack_row[5] if len(pack_row) > 5 else 299
+
+            from stripe_payments import stripe_manager
+            result = stripe_manager.create_pack_purchase_checkout(
+                pack_id=self.pack_id,
+                buyer_id=interaction.user.id,
+                pack_name=pack_name,
+                price_cents=price_cents,
+            )
+
+            if result.get('success'):
+                checkout_url = result['checkout_url']
+                embed = discord.Embed(
+                    title="Checkout",
+                    description=f"[Click here to pay ${price_cents/100:.2f}]({checkout_url})\n\nYour cards will be delivered automatically after payment.",
+                    color=discord.Color.blue(),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    f"Failed to create checkout: {result.get('error', 'Unknown error')}",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            print(f"Error creating Stripe checkout: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(f"Failed to create checkout: {e}", ephemeral=True)
+            except Exception:
+                await interaction.followup.send(f"Failed to create checkout: {e}", ephemeral=True)
 
     @discord.ui.button(label="Back to Browse", style=discord.ButtonStyle.secondary, emoji="🔙", row=0)
     async def back_button(self, interaction: Interaction, button: discord.ui.Button):

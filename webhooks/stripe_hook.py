@@ -25,7 +25,7 @@ from models.audit_minimal import AuditLog
 from ui.receipts import purchase_embed, delivery_embed, refund_embed, admin_sale_embed, admin_refund_embed
 
 # Configure Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+stripe.api_key = os.getenv("STRIPE_SECRET")
 WH_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 # Configure logging
@@ -94,79 +94,128 @@ async def handle_checkout_session_completed(event: Dict[str, Any]) -> Dict[str, 
     """Handle successful checkout session completion."""
     try:
         session = event["data"]["object"]
-        
-        # Extract metadata
         metadata = session.get("metadata", {})
+        session_id = session.get("id")
+
+        # --- Pack purchase flow (from marketplace) ---
+        if metadata.get("type") == "pack_purchase":
+            return await _fulfill_pack_purchase(session, metadata, session_id)
+
+        # --- Legacy generic pack flow ---
         user_id = metadata.get("user_id")
         pack_type = metadata.get("pack")
-        session_id = session.get("id")
-        
+
         if not user_id or not pack_type:
             logger.error(f"Missing metadata in session {session_id}")
             return {"error": "Missing metadata"}, 400
-        
-        # Convert user_id to integer
+
         try:
             user_id = int(user_id)
         except ValueError:
             logger.error(f"Invalid user_id in metadata: {user_id}")
             return {"error": "Invalid user_id"}, 400
-        
+
         logger.info(f"Processing payment for user {user_id}, pack {pack_type}, session {session_id}")
-        
-        # 1) Send purchase receipt to user (skip for testing)
-        try:
-            # Skip Discord bot for testing
-            logger.info(f"Skipping Discord receipt for user {user_id} (test mode)")
-        except Exception as e:
-            logger.error(f"Failed to send purchase receipt: {e}")
-            # Continue with payment processing even if receipt fails
-        
-        # Process the payment
+
         result = handle_payment(
             user_id=user_id,
             pack_type=pack_type,
-            payment_id=session_id  # idempotency key
+            payment_id=session_id
         )
-        
-        # 2) Send delivery embed after cards are processed (skip for testing)
-        try:
-            if result.get("status") == "completed":
-                # Skip Discord bot for testing
-                logger.info(f"Skipping Discord delivery for user {user_id} (test mode)")
-        except Exception as e:
-            logger.error(f"Failed to send delivery receipt: {e}")
-            # Continue with processing even if delivery receipt fails
-        
-        # 3) Log sale to admin channel (skip for testing)
-        try:
-            # Skip Discord bot for testing
-            logger.info(f"Skipping admin sale logging (test mode)")
-        except Exception as e:
-            logger.error(f"Failed to log admin sale: {e}")
-        
-        # Log successful capture (skip for testing)
-        try:
-            # Skip audit logging for testing
-            logger.info(f"Skipping audit logging (test mode)")
-        except Exception as e:
-            logger.error(f"Failed to log audit: {e}")
-        
+
         logger.info(f"Stripe payment processed: {session_id} -> {result}")
-        
+
         return {
             "status": "processed",
             "result": result,
             "session_id": session_id,
             "user_id": user_id,
             "pack_type": pack_type,
-            "receipt_sent": True,
-            "delivery_sent": True
         }
-        
+
     except Exception as e:
         logger.error(f"Checkout session processing failed: {e}")
         return {"error": "Payment processing failed"}, 500
+
+
+async def _fulfill_pack_purchase(session: Dict, metadata: Dict, session_id: str) -> Dict[str, Any]:
+    """Fulfill a marketplace pack purchase after Stripe payment succeeds."""
+    import uuid as _uuid
+    try:
+        pack_id = metadata.get("pack_id")
+        buyer_id = metadata.get("buyer_id")
+        amount_cents = session.get("amount_total", 0)
+
+        if not pack_id or not buyer_id:
+            logger.error(f"Missing pack_id or buyer_id in session {session_id}")
+            return {"error": "Missing pack purchase metadata"}, 400
+
+        buyer_id = int(buyer_id)
+        logger.info(f"Fulfilling pack purchase: pack={pack_id}, buyer={buyer_id}, session={session_id}")
+
+        from database import DatabaseManager
+        db = DatabaseManager()
+
+        # Fetch pack data
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT cards_data, name FROM creator_packs WHERE pack_id = ? AND status = 'LIVE'",
+                (pack_id,),
+            )
+            row = cursor.fetchone()
+
+        if not row:
+            logger.error(f"Pack {pack_id} not found for fulfillment")
+            return {"error": "Pack not found"}, 404
+
+        cards_data_json, pack_name = row
+        cards_data = json.loads(cards_data_json) if cards_data_json else []
+
+        # Grant cards to buyer
+        for card in cards_data:
+            if 'card_id' not in card:
+                card['card_id'] = str(_uuid.uuid4())
+            db.add_card_to_master(card)
+            db.add_card_to_collection(buyer_id, card['card_id'], 'pack_purchase')
+
+        # Increment total_purchases
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE creator_packs SET total_purchases = total_purchases + 1 WHERE pack_id = ?",
+                (pack_id,),
+            )
+            conn.commit()
+
+        # Record in purchases audit table
+        purchase_id = str(_uuid.uuid4())
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO purchases
+                   (purchase_id, user_id, pack_id, amount_cents, payment_method, stripe_session_id, status)
+                   VALUES (?, ?, ?, ?, 'stripe', ?, 'completed')""",
+                (purchase_id, buyer_id, pack_id, amount_cents, session_id),
+            )
+            conn.commit()
+
+        logger.info(f"Pack purchase fulfilled: {len(cards_data)} cards granted to user {buyer_id}")
+
+        return {
+            "status": "fulfilled",
+            "pack_id": pack_id,
+            "buyer_id": buyer_id,
+            "cards_granted": len(cards_data),
+            "session_id": session_id,
+            "purchase_id": purchase_id,
+        }
+
+    except Exception as e:
+        logger.error(f"Pack purchase fulfillment failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": "Fulfillment failed"}, 500
 
 async def handle_charge_refunded(event: Dict[str, Any]) -> Dict[str, Any]:
     """Handle charge refund event."""

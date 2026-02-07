@@ -358,8 +358,11 @@ class DatabaseManager:
                     published_at TIMESTAMP,
                     stripe_payment_id TEXT,
                     price_cents INTEGER DEFAULT 500, -- $5.00 default
+                    price_gold INTEGER DEFAULT 500,
+                    pack_tier TEXT DEFAULT 'community',
                     total_purchases INTEGER DEFAULT 0,
                     cards_data TEXT, -- JSON array of card definitions
+                    genre TEXT,
                     FOREIGN KEY (creator_id) REFERENCES users(user_id)
                 )
             """)
@@ -394,8 +397,22 @@ class DatabaseManager:
                 )
             """)
             
+            # Purchases audit trail
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS purchases (
+                    purchase_id TEXT PRIMARY KEY,
+                    user_id INTEGER,
+                    pack_id TEXT,
+                    amount_cents INTEGER,
+                    payment_method TEXT,
+                    stripe_session_id TEXT,
+                    status TEXT DEFAULT 'completed',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # ===== NEW RELATIONAL SCHEMA =====
-            
+
             # 1. YouTubeVideos - Stores raw metadata from YouTube
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS youtube_videos (
@@ -830,8 +847,11 @@ class DatabaseManager:
                     published_at TIMESTAMP,
                     stripe_payment_id TEXT,
                     price_cents INTEGER DEFAULT 500,
+                    price_gold INTEGER DEFAULT 500,
+                    pack_tier TEXT DEFAULT 'community',
                     total_purchases INTEGER DEFAULT 0,
-                    cards_data TEXT
+                    cards_data TEXT,
+                    genre TEXT
                 )
             """)
 
@@ -889,6 +909,20 @@ class DatabaseManager:
                     last_daily TEXT,
                     last_daily_claim TEXT,
                     premium_expires TEXT
+                )
+            """)
+
+            # -- Purchases audit trail --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS purchases (
+                    purchase_id TEXT PRIMARY KEY,
+                    user_id BIGINT,
+                    pack_id TEXT,
+                    amount_cents INTEGER,
+                    payment_method TEXT,
+                    stripe_session_id TEXT,
+                    status TEXT DEFAULT 'completed',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -1401,11 +1435,30 @@ class DatabaseManager:
                 "total_purchases INTEGER DEFAULT 0",
                 "cards_data TEXT",
                 "genre TEXT",
+                "price_gold INTEGER DEFAULT 500",
+                "pack_tier TEXT DEFAULT 'community'",
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE creator_packs ADD COLUMN IF NOT EXISTS {col_def}")
                 except Exception:
                     pass
+
+            # purchases table — audit trail for pack purchases
+            try:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS purchases (
+                        purchase_id TEXT PRIMARY KEY,
+                        user_id BIGINT,
+                        pack_id TEXT,
+                        amount_cents INTEGER,
+                        payment_method TEXT,
+                        stripe_session_id TEXT,
+                        status TEXT DEFAULT 'completed',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            except Exception:
+                pass
 
             # Backfill genre for existing seed packs that have it in description
             for genre_name in ['EDM Bangers', 'Rock Classics', 'R&B Soul Pack', 'Pop Hits 2024', 'Hip Hop Legends']:
@@ -2724,13 +2777,17 @@ class DatabaseManager:
 
     def _get_random_daily_card(self) -> Optional[Dict]:
         """
-        Get a random card for daily claim using rarity-weighted selection.
+        Get a random card for daily claim using rarity + tier weighted selection.
 
         Rarity Distribution:
         - 70% Common (most frequent, encourages trading)
         - 25% Rare (nice bonus)
         - 5% Epic (exciting when you get it)
         - 0% Legendary (too valuable for free daily)
+
+        Tier Distribution:
+        - 90% community tier cards only
+        - 10% any tier (allows gold/platinum cards to appear rarely)
 
         Returns random card or None if no cards available.
         """
@@ -2749,11 +2806,17 @@ class DatabaseManager:
             else:
                 rarity = 'epic'
 
-            # Get all cards of this rarity
-            cursor.execute(
-                "SELECT * FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1",
-                (rarity,)
-            )
+            # Tier weighting: 90% community, 10% any
+            if random.random() < 0.90:
+                cursor.execute(
+                    "SELECT * FROM cards WHERE rarity = ? AND tier = 'community' ORDER BY RANDOM() LIMIT 1",
+                    (rarity,)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM cards WHERE rarity = ? ORDER BY RANDOM() LIMIT 1",
+                    (rarity,)
+                )
             row = cursor.fetchone()
 
             if row:
@@ -2761,9 +2824,12 @@ class DatabaseManager:
                 card = dict(zip(columns, row))
                 return card
 
-            # Fallback: get any card if specific rarity not found
-            cursor.execute("SELECT * FROM cards ORDER BY RANDOM() LIMIT 1")
+            # Fallback: get any community card if specific rarity not found
+            cursor.execute("SELECT * FROM cards WHERE tier = 'community' ORDER BY RANDOM() LIMIT 1")
             row = cursor.fetchone()
+            if not row:
+                cursor.execute("SELECT * FROM cards ORDER BY RANDOM() LIMIT 1")
+                row = cursor.fetchone()
             if row:
                 columns = [desc[0] for desc in cursor.description]
                 return dict(zip(columns, row))

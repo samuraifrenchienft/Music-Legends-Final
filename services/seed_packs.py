@@ -48,6 +48,47 @@ RARITY_STAT_RANGES = {
     "legendary": (65, 92),
 }
 
+# Artist power rankings (0-100) based on career sales, cultural impact, streaming
+ARTIST_POWER = {
+    # Hip Hop Legends
+    "2Pac": 96, "The Notorious B.I.G.": 95, "Jay-Z": 94, "Eminem": 93,
+    "Kanye West": 92, "Kendrick Lamar": 91, "Nas": 90, "Lil Wayne": 89,
+    "Dr. Dre": 88, "Snoop Dogg": 87, "OutKast": 86, "Ice Cube": 85,
+    "A Tribe Called Quest": 84, "Public Enemy": 83, "Rakim": 82,
+    "Wu-Tang Clan": 81,
+    # EDM Bangers
+    "Daft Punk": 96, "Avicii": 94, "Calvin Harris": 91, "Deadmau5": 90,
+    "Tiesto": 89, "Skrillex": 88, "Martin Garrix": 87, "Diplo": 86,
+    "Marshmello": 85, "Odesza": 84, "Flume": 83, "Porter Robinson": 82,
+    "Eric Prydz": 81, "Disclosure": 80, "Bonobo": 79,
+    "Rüfüs Du Sol": 78, "Lane 8": 77,
+    # Rock Classics
+    "Led Zeppelin": 97, "Pink Floyd": 96, "Queen": 95,
+    "The Rolling Stones": 94, "Jimi Hendrix": 93, "AC/DC": 92,
+    "The Who": 90, "Fleetwood Mac": 89, "Eagles": 88,
+    "Aerosmith": 87, "The Doors": 86, "Rush": 85, "Deep Purple": 84,
+    "Santana": 83, "Cream": 82,
+    # R&B Soul Pack
+    "Prince": 97, "Stevie Wonder": 96, "Aretha Franklin": 95,
+    "Marvin Gaye": 94, "Whitney Houston": 93, "Lauryn Hill": 92,
+    "Earth, Wind & Fire": 91, "Al Green": 90, "Luther Vandross": 88,
+    "The Isley Brothers": 87, "Chaka Khan": 86, "Sade": 85,
+    "D'Angelo": 84, "Erykah Badu": 83, "Anita Baker": 82,
+    # Pop Hits 2024
+    "Taylor Swift": 96, "Bruno Mars": 94, "The Weeknd": 93,
+    "Ed Sheeran": 92, "Ariana Grande": 91, "Dua Lipa": 90,
+    "Billie Eilish": 89, "Harry Styles": 88, "Post Malone": 87,
+    "Justin Bieber": 86, "Doja Cat": 85, "SZA": 84,
+    "Olivia Rodrigo": 83, "Sabrina Carpenter": 80, "Tate McRae": 78,
+}
+
+# Pack tier pricing
+PACK_TIER_PRICING = {
+    "community": {"price_cents": 299, "price_gold": 500},
+    "gold":      {"price_cents": 499, "price_gold": 900},
+    "platinum":  {"price_cents": 699, "price_gold": 1500},
+}
+
 # Genre → emoji for pack display
 GENRE_EMOJI = {
     "EDM Bangers":           "🎧",
@@ -141,9 +182,28 @@ def _deterministic_stat(artist_name: str, stat_name: str, lo: int, hi: int) -> i
     """Generate a repeatable stat from the artist+stat name so values
     don't change across restarts."""
     seed = hashlib.md5(f"{artist_name}:{stat_name}".encode()).hexdigest()
-    # Use first 8 hex chars → 0..4294967295, then scale to range
     val = int(seed[:8], 16)
     return lo + (val % (hi - lo + 1))
+
+
+def _merit_based_stats(artist_name: str, song_title: str, rarity: str) -> dict:
+    """Generate merit-based stats using artist power ranking.
+
+    Stronger artists produce stronger cards. A small MD5-derived offset
+    per stat keeps individual stats from being identical.
+    """
+    power = ARTIST_POWER.get(artist_name, 50)
+    lo, hi = RARITY_STAT_RANGES[rarity]
+    range_size = hi - lo
+    center = lo + int(range_size * (power / 100))
+
+    stats = {}
+    for stat_name in ("impact", "skill", "longevity", "culture", "hype"):
+        md5_hex = hashlib.md5(f"{song_title}:{stat_name}".encode()).hexdigest()
+        offset = (int(md5_hex[:4], 16) % 7) - 3  # -3 to +3
+        value = max(lo, min(hi, center + offset))
+        stats[stat_name] = value
+    return stats
 
 
 def _deterministic_uuid(genre: str, vol: int, artist: str) -> str:
@@ -392,9 +452,9 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                     cards = []
                     for slot_idx, song in enumerate(songs[:5]):
                         rarity = SLOT_RARITIES[slot_idx]
-                        lo, hi = RARITY_STAT_RANGES[rarity]
                         song_title = song.get('title', f"{artist_name} - Song {slot_idx+1}")
                         card_id = _deterministic_uuid(genre, artist_idx, song_title)
+                        merit_stats = _merit_based_stats(artist_name, song_title, rarity)
 
                         cards.append({
                             "card_id":       card_id,
@@ -406,11 +466,11 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                             "serial_number": card_id,
                             "print_number":  slot_idx + 1,
                             "quality":       "standard",
-                            "impact":        _deterministic_stat(song_title, "impact", lo, hi),
-                            "skill":         _deterministic_stat(song_title, "skill", lo, hi),
-                            "longevity":     _deterministic_stat(song_title, "longevity", lo, hi),
-                            "culture":       _deterministic_stat(song_title, "culture", lo, hi),
-                            "hype":          _deterministic_stat(song_title, "hype", lo, hi),
+                            "impact":        merit_stats["impact"],
+                            "skill":         merit_stats["skill"],
+                            "longevity":     merit_stats["longevity"],
+                            "culture":       merit_stats["culture"],
+                            "hype":          merit_stats["hype"],
                             "image_url":     song.get('thumbnail_url', ''),
                             "youtube_url":   song.get('youtube_url', ''),
                             "pack_id":       pack_id,
@@ -418,33 +478,50 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
 
                     cards_json = json.dumps(cards)
 
+                    # Determine pack tier from highest rarity card
+                    best_rarity = max(cards, key=lambda c: list(RARITY_STAT_RANGES.keys()).index(c["rarity"]))["rarity"]
+                    pack_tier = _rarity_to_tier(best_rarity)
+                    tier_pricing = PACK_TIER_PRICING.get(pack_tier, PACK_TIER_PRICING["community"])
+                    price_cents = tier_pricing["price_cents"]
+                    price_gold = tier_pricing["price_gold"]
+
                     # Insert pack as LIVE
                     if db_type == "postgresql":
                         cursor.execute(f"""
                             INSERT INTO creator_packs
                             (pack_id, creator_id, name, description, pack_size,
-                             status, cards_data, published_at, price_cents, stripe_payment_id, genre)
-                            VALUES ({ph}, 0, {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP, 0, 'SEED_PACK', {ph})
+                             status, cards_data, published_at, price_cents, price_gold,
+                             pack_tier, stripe_payment_id, genre)
+                            VALUES ({ph}, 0, {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP,
+                                    {ph}, {ph}, {ph}, 'SEED_PACK', {ph})
                         """, (
                             pack_id,
                             pack_name,
                             f"Official {artist_name} pack from {genre} with 5 songs",
                             len(cards),
                             cards_json,
+                            price_cents,
+                            price_gold,
+                            pack_tier,
                             genre,
                         ))
                     else:
                         cursor.execute("""
                             INSERT INTO creator_packs
                             (pack_id, creator_id, name, description, pack_size,
-                             status, cards_data, published_at, price_cents, stripe_payment_id, genre)
-                            VALUES (?, 0, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP, 0, 'SEED_PACK', ?)
+                             status, cards_data, published_at, price_cents, price_gold,
+                             pack_tier, stripe_payment_id, genre)
+                            VALUES (?, 0, ?, ?, ?, 'LIVE', ?, CURRENT_TIMESTAMP,
+                                    ?, ?, ?, 'SEED_PACK', ?)
                         """, (
                             pack_id,
                             pack_name,
                             f"Official {artist_name} pack from {genre} with 5 songs",
                             len(cards),
                             cards_json,
+                            price_cents,
+                            price_gold,
+                            pack_tier,
                             genre,
                         ))
 
