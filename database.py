@@ -2351,6 +2351,103 @@ class DatabaseManager:
             print(f"[DROP] Error awarding card {card_id} to user {user_id}: {e}")
             return False
 
+    def get_random_live_pack_by_tier(self, tier: str) -> Dict:
+        """Get a random LIVE pack matching the given tier for a drop."""
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT pack_id, name, pack_tier, pack_size, cards_data, genre
+                    FROM creator_packs
+                    WHERE status = 'LIVE' AND LOWER(pack_tier) = LOWER({ph})
+                    ORDER BY RANDOM() LIMIT 1
+                """, (tier,))
+                row = cursor.fetchone()
+                if not row:
+                    # Fallback: any LIVE pack
+                    cursor.execute("""
+                        SELECT pack_id, name, pack_tier, pack_size, cards_data, genre
+                        FROM creator_packs WHERE status = 'LIVE'
+                        ORDER BY RANDOM() LIMIT 1
+                    """)
+                    row = cursor.fetchone()
+                if not row:
+                    return {}
+                import json
+                cards_data = []
+                if row[4]:
+                    try:
+                        cards_data = json.loads(row[4])
+                    except Exception:
+                        pass
+                return {
+                    'pack_id': row[0],
+                    'name': row[1],
+                    'tier': (row[2] or tier).lower(),
+                    'pack_size': row[3] or len(cards_data),
+                    'cards_data': cards_data,
+                    'genre': row[5] or '',
+                }
+        except Exception as e:
+            print(f"[DROP] Error fetching pack for tier {tier}: {e}")
+            return {}
+
+    def open_pack_for_drop(self, pack_id: str, user_id: int) -> Dict:
+        """Grant all cards from a pack to a user (drop award, no supply tracking)."""
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT cards_data, name FROM creator_packs WHERE pack_id = {ph}
+                """, (pack_id,))
+                row = cursor.fetchone()
+                if not row or not row[0]:
+                    return {'success': False, 'error': 'Pack not found or has no cards'}
+
+                import json
+                cards_data = json.loads(row[0])
+                pack_name = row[1]
+
+                # Ensure user exists
+                cursor.execute(f"""
+                    INSERT INTO users (user_id, username, discord_tag)
+                    VALUES ({ph}, {ph}, {ph})
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (user_id, f'User_{user_id}', f'User#{user_id}'))
+
+                granted = []
+                for card in cards_data:
+                    card_id = card.get('card_id', '')
+                    if not card_id:
+                        continue
+                    # Upsert card into master cards table
+                    rarity = card.get('rarity', 'common').lower()
+                    tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                                'legendary': 'legendary', 'mythic': 'legendary'}
+                    tier = card.get('tier') or tier_map.get(rarity, 'community')
+                    cursor.execute(f"""
+                        INSERT OR IGNORE INTO cards
+                        (card_id, name, artist_name, title, rarity, tier, image_url)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                    """, (card_id, card.get('name', ''), card.get('artist_name', card.get('name', '')),
+                          card.get('title', ''), rarity, tier, card.get('image_url', '')))
+                    cursor.execute(f"""
+                        INSERT INTO user_cards (user_id, card_id, acquired_from)
+                        VALUES ({ph}, {ph}, 'drop')
+                        ON CONFLICT (user_id, card_id) DO NOTHING
+                    """, (user_id, card_id))
+                    if cursor.rowcount > 0:
+                        granted.append(card)
+                conn.commit()
+
+            print(f"[DROP] Pack '{pack_name}' opened for user {user_id} ({len(granted)} new cards)")
+            return {'success': True, 'cards': granted, 'pack_name': pack_name}
+        except Exception as e:
+            print(f"[DROP] Error opening pack {pack_id} for user {user_id}: {e}")
+            return {'success': False, 'error': str(e)}
+
     def grant_pack_to_user(self, pack_id: str, target_user_id: int) -> Dict:
         """Use 1 copy from dev supply to open a pack for a target user.
         Returns dict with success, cards granted, and error if any."""

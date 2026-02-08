@@ -13,25 +13,25 @@ from database import DatabaseManager
 
 
 
+
 class CardDropView(discord.ui.View):
-    """Button view for card drops — first click claims the card."""
+    """Button view for pack drops — first click claims the full pack."""
 
     TIER_COLORS = {
         "community": discord.Color.light_gray(),
         "gold": discord.Color.gold(),
         "platinum": discord.Color.purple(),
     }
-    RARITY_EMOJI = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "🌟"}
     TIER_EMOJI = {"community": "⚪", "gold": "🟡", "platinum": "🟣"}
 
-    def __init__(self, card: dict, db, timeout: int = 300):
+    def __init__(self, pack: dict, db, timeout: int = 300):
         super().__init__(timeout=timeout)
-        self.card = card
+        self.pack = pack
         self.db = db
         self.claimed_by = None
         self.message = None
 
-    @discord.ui.button(label="🎴 Claim Card!", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="🎁 Claim Pack!", style=discord.ButtonStyle.success)
     async def claim_button(self, interaction: Interaction, button: discord.ui.Button):
         if self.claimed_by is not None:
             await interaction.response.send_message("Already claimed!", ephemeral=True)
@@ -42,24 +42,41 @@ class CardDropView(discord.ui.View):
         button.label = f"Claimed by {interaction.user.display_name}!"
         button.style = discord.ButtonStyle.secondary
 
-        awarded = self.db.award_drop_card(interaction.user.id, self.card["card_id"])
+        result = self.db.open_pack_for_drop(self.pack["pack_id"], interaction.user.id)
 
-        rarity_emoji = self.RARITY_EMOJI.get(self.card["rarity"], "⚪")
-        tier_emoji = self.TIER_EMOJI.get(self.card["tier"], "⚪")
-
-        embed = discord.Embed(
-            title=f"{tier_emoji} Card Claimed! {tier_emoji}",
-            description=f"{interaction.user.mention} grabbed **{self.card['artist_name']}**!",
-            color=self.TIER_COLORS.get(self.card["tier"], discord.Color.green())
-        )
-        embed.add_field(name="Artist", value=self.card["artist_name"], inline=True)
-        embed.add_field(name="Rarity", value=f"{rarity_emoji} {self.card['rarity'].title()}", inline=True)
-        embed.add_field(name="Tier", value=self.card["tier"].title(), inline=True)
-        if self.card.get("image_url"):
-            embed.set_thumbnail(url=self.card["image_url"])
-        embed.set_footer(text="Check /collection to see your cards!")
+        tier_emoji = self.TIER_EMOJI.get(self.pack["tier"], "⚪")
+        if result.get("success"):
+            embed = discord.Embed(
+                title=f"{tier_emoji} Pack Claimed!",
+                description=f"{interaction.user.mention} grabbed **{self.pack['name']}**!\nOpening {len(result['cards'])} cards...",
+                color=self.TIER_COLORS.get(self.pack["tier"], discord.Color.green())
+            )
+        else:
+            embed = discord.Embed(
+                title=f"{tier_emoji} Pack Claimed!",
+                description=f"{interaction.user.mention} grabbed **{self.pack['name']}**!",
+                color=self.TIER_COLORS.get(self.pack["tier"], discord.Color.green())
+            )
+        embed.set_footer(text="Check /collection for your new cards!")
 
         await interaction.response.edit_message(embed=embed, view=self)
+
+        # Run pack opening animation as followup
+        if result.get("success") and result.get("cards"):
+            try:
+                from views.pack_opening import open_pack_with_animation
+                pack_type = self.pack["tier"] if self.pack["tier"] in ("community", "gold", "platinum") else "community"
+                await open_pack_with_animation(
+                    interaction=interaction,
+                    pack_name=self.pack["name"],
+                    pack_type=pack_type,
+                    cards=result["cards"],
+                    pack_id=self.pack["pack_id"],
+                    delay=1.5
+                )
+            except Exception as e:
+                print(f"[DROP] Animation error: {e}")
+
         self.stop()
 
     async def on_timeout(self):
@@ -98,25 +115,25 @@ class GameplayCommands(commands.Cog):
         else:
             return "🌱 **ROOKIE** - Growing Potential!"
 
-    @app_commands.command(name="drop", description="[DEV] Drop a random card in this channel")
-    @app_commands.describe(tier="Card tier to drop")
+    @app_commands.command(name="drop", description="[DEV] Drop a pack in this channel")
+    @app_commands.describe(tier="Pack tier to drop")
     @app_commands.choices(tier=[
-        app_commands.Choice(name="Community (Common/Rare)", value="community"),
-        app_commands.Choice(name="Gold (Rare/Epic)", value="gold"),
-        app_commands.Choice(name="Platinum (Epic/Legendary)", value="platinum"),
+        app_commands.Choice(name="Community (5 cards)", value="community"),
+        app_commands.Choice(name="Gold (5 cards, Rare+)", value="gold"),
+        app_commands.Choice(name="Platinum (10 cards, Epic+)", value="platinum"),
     ])
     async def drop_command(self, interaction: Interaction, tier: str = "community"):
-        """Dev-only: drop a random card from LIVE packs into this channel."""
+        """Dev-only: drop a random LIVE pack into this channel."""
         import os
         dev_ids = os.getenv("DEV_USER_IDS", "").split(",")
         if str(interaction.user.id) not in [uid.strip() for uid in dev_ids if uid.strip()]:
             await interaction.response.send_message("❌ Dev only.", ephemeral=True)
             return
 
-        card = self.db.get_random_card_from_tier(tier)
-        if not card:
+        pack = self.db.get_random_live_pack_by_tier(tier)
+        if not pack:
             await interaction.response.send_message(
-                f"❌ No cards found for tier **{tier}**. Make sure LIVE packs exist.",
+                f"❌ No LIVE packs found for **{tier}** tier. Create and publish packs first.",
                 ephemeral=True
             )
             return
@@ -127,21 +144,19 @@ class GameplayCommands(commands.Cog):
             "platinum": discord.Color.purple()
         }
         tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣"}.get(tier, "⚪")
-        rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "🌟"}.get(card["rarity"], "⚪")
 
         embed = discord.Embed(
-            title=f"{tier_emoji} CARD DROP! {tier_emoji}",
-            description="First to click claims it!",
+            title=f"{tier_emoji} PACK DROP! {tier_emoji}",
+            description=f"**{pack['name']}**\nFirst to click claims all {pack['pack_size']} cards!",
             color=tier_colors.get(tier, discord.Color.gold())
         )
-        embed.add_field(name="Artist", value=card["artist_name"], inline=True)
-        embed.add_field(name="Rarity", value=f"{rarity_emoji} {card['rarity'].title()}", inline=True)
         embed.add_field(name="Tier", value=tier.title(), inline=True)
-        if card.get("image_url"):
-            embed.set_thumbnail(url=card["image_url"])
+        embed.add_field(name="Cards", value=str(pack['pack_size']), inline=True)
+        if pack.get("genre"):
+            embed.add_field(name="Genre", value=pack["genre"], inline=True)
         embed.set_footer(text=f"Dropped by {interaction.user.display_name} • Expires in 5 min")
 
-        view = CardDropView(card=card, db=self.db, timeout=300)
+        view = CardDropView(pack=pack, db=self.db, timeout=300)
         await interaction.response.send_message(embed=embed, view=view)
         view.message = await interaction.original_response()
 
