@@ -11,6 +11,69 @@ import random
 from card_economy import CardEconomyManager
 from database import DatabaseManager
 
+
+
+class CardDropView(discord.ui.View):
+    """Button view for card drops — first click claims the card."""
+
+    TIER_COLORS = {
+        "community": discord.Color.light_gray(),
+        "gold": discord.Color.gold(),
+        "platinum": discord.Color.purple(),
+    }
+    RARITY_EMOJI = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "🌟"}
+    TIER_EMOJI = {"community": "⚪", "gold": "🟡", "platinum": "🟣"}
+
+    def __init__(self, card: dict, db, timeout: int = 300):
+        super().__init__(timeout=timeout)
+        self.card = card
+        self.db = db
+        self.claimed_by = None
+        self.message = None
+
+    @discord.ui.button(label="🎴 Claim Card!", style=discord.ButtonStyle.success)
+    async def claim_button(self, interaction: Interaction, button: discord.ui.Button):
+        if self.claimed_by is not None:
+            await interaction.response.send_message("Already claimed!", ephemeral=True)
+            return
+
+        self.claimed_by = interaction.user.id
+        button.disabled = True
+        button.label = f"Claimed by {interaction.user.display_name}!"
+        button.style = discord.ButtonStyle.secondary
+
+        awarded = self.db.award_drop_card(interaction.user.id, self.card["card_id"])
+
+        rarity_emoji = self.RARITY_EMOJI.get(self.card["rarity"], "⚪")
+        tier_emoji = self.TIER_EMOJI.get(self.card["tier"], "⚪")
+
+        embed = discord.Embed(
+            title=f"{tier_emoji} Card Claimed! {tier_emoji}",
+            description=f"{interaction.user.mention} grabbed **{self.card['artist_name']}**!",
+            color=self.TIER_COLORS.get(self.card["tier"], discord.Color.green())
+        )
+        embed.add_field(name="Artist", value=self.card["artist_name"], inline=True)
+        embed.add_field(name="Rarity", value=f"{rarity_emoji} {self.card['rarity'].title()}", inline=True)
+        embed.add_field(name="Tier", value=self.card["tier"].title(), inline=True)
+        if self.card.get("image_url"):
+            embed.set_thumbnail(url=self.card["image_url"])
+        embed.set_footer(text="Check /collection to see your cards!")
+
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
+
+    async def on_timeout(self):
+        if self.claimed_by is None and self.message:
+            for child in self.children:
+                child.disabled = True
+                child.label = "Expired"
+                child.style = discord.ButtonStyle.secondary
+            try:
+                await self.message.edit(content="⏰ Drop expired — nobody claimed it.", view=self)
+            except Exception:
+                pass
+
+
 class GameplayCommands(commands.Cog):
     """Main gameplay commands - drops, collection, viewing, trading"""
     
@@ -18,7 +81,6 @@ class GameplayCommands(commands.Cog):
         self.bot = bot
         self.db = DatabaseManager()
         self.economy = CardEconomyManager()
-        self.active_drop_messages = {}  # Store active drop messages
         self.economy.initialize_economy_tables()
         
     def _get_power_tier(self, power: int) -> str:
@@ -36,89 +98,52 @@ class GameplayCommands(commands.Cog):
         else:
             return "🌱 **ROOKIE** - Growing Potential!"
 
-    @app_commands.command(name="drop", description="Spawn a card drop in this channel")
-    async def drop_command(self, interaction: Interaction):
-        """Create a card drop in the current channel"""
-        # Check if user can drop (cooldown)
-        if not self.economy._can_drop(interaction.guild.id):
-            await interaction.response.send_message("⏰ Drop is on cooldown for this server!", ephemeral=True)
+    @app_commands.command(name="drop", description="[DEV] Drop a random card in this channel")
+    @app_commands.describe(tier="Card tier to drop")
+    @app_commands.choices(tier=[
+        app_commands.Choice(name="Community (Common/Rare)", value="community"),
+        app_commands.Choice(name="Gold (Rare/Epic)", value="gold"),
+        app_commands.Choice(name="Platinum (Epic/Legendary)", value="platinum"),
+    ])
+    async def drop_command(self, interaction: Interaction, tier: str = "community"):
+        """Dev-only: drop a random card from LIVE packs into this channel."""
+        import os
+        dev_ids = os.getenv("DEV_USER_IDS", "").split(",")
+        if str(interaction.user.id) not in [uid.strip() for uid in dev_ids if uid.strip()]:
+            await interaction.response.send_message("❌ Dev only.", ephemeral=True)
             return
-        
-        # Create the drop
-        drop_result = self.economy.create_drop(
-            interaction.channel.id, 
-            interaction.guild.id, 
-            interaction.user.id
-        )
-        
-        if not drop_result['success']:
-            await interaction.response.send_message(f"❌ {drop_result['error']}", ephemeral=True)
-            return
-        
-        # Create drop embed
-        embed = discord.Embed(
-            title="🎴 CARD DROP! 🎴",
-            description=f"React with the number to grab the card you want!\n\nDrop expires in 5 minutes!",
-            color=discord.Color.gold()
-        )
-        
-        # Add cards to embed
-        cards = drop_result['cards']
-        for i, card in enumerate(cards, 1):
-            tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣", "legendary": "🔴"}.get(card['tier'], "⚪")
-            embed.add_field(
-                name=f"{tier_emoji} Card {i}: {card['artist_name']}",
-                value=f"Tier: {card['tier'].title()}\nSerial: {card['serial_number']}\nReact with {i} to grab!",
-                inline=False
-            )
-        
-        embed.set_footer(text=f"Drop initiated by {interaction.user.display_name}")
-        embed.set_thumbnail(url="https://i.imgur.com/your_drop_icon.png")
-        
-        # Send drop message
-        message = await interaction.channel.send(embed=embed)
-        
-        # Add reactions
-        for i in range(1, len(cards) + 1):
-            await message.add_reaction(f"{i}\u20e3")  # 1️⃣, 2️⃣, 3️⃣
-        
-        # Store for reaction handling
-        self.active_drop_messages[message.id] = {
-            'drop_id': drop_result['drop_id'],
-            'channel_id': interaction.channel.id,
-            'cards': cards,
-            'expires_at': drop_result['expires_at']
-        }
-        
-        await interaction.response.send_message("✨ Drop created! React quickly to grab a card!", ephemeral=True)
 
-    @app_commands.command(name="grab", description="Attempt to grab a card from an active drop")
-    async def grab_command(self, interaction: Interaction, card_number: int):
-        """Manual grab command (backup for reactions)"""
-        result = self.economy.claim_drop(interaction.channel.id, interaction.user.id, card_number)
-        
-        if result['success']:
-            card = result['card']
-            tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣", "legendary": "🔴"}.get(card['tier'], "⚪")
-            
-            embed = discord.Embed(
-                title=f"{tier_emoji} CARD GRABBED! {tier_emoji}",
-                description=f"You successfully grabbed {card['artist_name']}!",
-                color=discord.Color.green()
+        card = self.db.get_random_card_from_tier(tier)
+        if not card:
+            await interaction.response.send_message(
+                f"❌ No cards found for tier **{tier}**. Make sure LIVE packs exist.",
+                ephemeral=True
             )
-            
-            embed.add_field(
-                name="Card Details",
-                value=f"Artist: {card['artist_name']}\n"
-                      f"Tier: {card['tier'].title()}\n"
-                      f"Serial: {card['serial_number']}\n"
-                      f"Quality: {card['quality'].title()}",
-                inline=False
-            )
-            
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+            return
+
+        tier_colors = {
+            "community": discord.Color.light_gray(),
+            "gold": discord.Color.gold(),
+            "platinum": discord.Color.purple()
+        }
+        tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣"}.get(tier, "⚪")
+        rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "🌟"}.get(card["rarity"], "⚪")
+
+        embed = discord.Embed(
+            title=f"{tier_emoji} CARD DROP! {tier_emoji}",
+            description="First to click claims it!",
+            color=tier_colors.get(tier, discord.Color.gold())
+        )
+        embed.add_field(name="Artist", value=card["artist_name"], inline=True)
+        embed.add_field(name="Rarity", value=f"{rarity_emoji} {card['rarity'].title()}", inline=True)
+        embed.add_field(name="Tier", value=tier.title(), inline=True)
+        if card.get("image_url"):
+            embed.set_thumbnail(url=card["image_url"])
+        embed.set_footer(text=f"Dropped by {interaction.user.display_name} • Expires in 5 min")
+
+        view = CardDropView(card=card, db=self.db, timeout=300)
+        await interaction.response.send_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
 
     @app_commands.command(name="collection", description="View your card collection")
     async def collection_command(self, interaction: Interaction, user: discord.User = None):
@@ -717,66 +742,6 @@ class GameplayCommands(commands.Cog):
             await interaction.followup.send(embed=embed, file=audio_file, ephemeral=True)
         else:
             await interaction.followup.send(embed=embed, ephemeral=True)
-
-    @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload):
-        """Handle reactions for card drops"""
-        # Check if this is a reaction to a drop message
-        if payload.message_id not in self.active_drop_messages:
-            return
-        
-        # Only handle number reactions (1️⃣, 2️⃣, 3️⃣)
-        if payload.emoji.name not in ['1️⃣', '2️⃣', '3️⃣']:
-            return
-        
-        drop_data = self.active_drop_messages[payload.message_id]
-        
-        # Convert emoji to number
-        card_number = int(payload.emoji.name[0])
-        
-        # Try to claim the card
-        result = self.economy.claim_drop(drop_data['channel_id'], payload.user_id, card_number)
-        
-        if result['success']:
-            card = result['card']
-            tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣", "legendary": "🔴"}.get(card['tier'], "⚪")
-            
-            # Get audio file if available
-            from pathlib import Path
-            audio_path = Path('assets/sounds/card_pickup.mp3')
-            audio_file = None
-            if audio_path.exists():
-                audio_file = discord.File(str(audio_path), filename='card_pickup.mp3')
-            
-            # Send success message
-            channel = self.bot.get_channel(drop_data['channel_id'])
-            if channel:
-                embed = discord.Embed(
-                    title=f"{tier_emoji} CARD GRABBED! {tier_emoji}",
-                    description=f"<@{payload.user_id}> successfully grabbed {card['artist_name']}!",
-                    color=discord.Color.green()
-                )
-                
-                embed.add_field(
-                    name="Card Details",
-                    value=f"Artist: {card['artist_name']}\n"
-                          f"Tier: {card['tier'].title()}\n"
-                          f"Serial: {card['serial_number']}",
-                    inline=False
-                )
-                
-                # Send with audio if available
-                if audio_file:
-                    await channel.send(embed=embed, file=audio_file)
-                else:
-                    await channel.send(embed=embed)
-            
-            # Remove from active drops
-            del self.active_drop_messages[payload.message_id]
-        
-        # Remove the reaction
-        message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
-        await message.remove_reaction(payload.emoji, payload.user)
 
     @app_commands.command(name="rank", description="View your rank and XP progress")
     async def rank_command(self, interaction: Interaction, user: discord.User = None):

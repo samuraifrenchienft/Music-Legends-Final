@@ -353,6 +353,7 @@ class DevWebhookCommandsCog(commands.Cog):
                     WHERE pack_id = ?
                 """, (pack_id,))
                 conn.commit()
+            self.db.add_to_dev_supply(pack_id)
             
             # Trigger backup
             try:

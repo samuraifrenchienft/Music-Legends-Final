@@ -1499,6 +1499,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                     WHERE pack_id = ?
                 """, (pack_id,))
                 conn.commit()
+            self.db.add_to_dev_supply(pack_id)
             
             # Trigger backup after pack is published to marketplace
             try:

@@ -147,6 +147,7 @@ class Bot(commands.Bot):
             'cogs.admin_bulk_import',         # Dev-only bulk pack import (TEST_SERVER)
             'cogs.admin_commands',            # Admin commands (all servers)
             'cogs.dev_webhook_commands',      # Dev webhook channel commands (TEST_SERVER)
+            'cogs.dev_supply_commands',       # Dev pack supply — grant packs for prizes/giveaways
             'cogs.battle_commands',           # Battle system (/battle, /battle_stats)
             'cogs.battlepass_commands',       # Battle Pass + Daily Quests
         ]

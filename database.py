@@ -830,7 +830,18 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_battle_history_date ON battle_history(battle_date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_user ON user_quests(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_quests_date ON user_quests(quest_date)")
-            
+
+            # Dev pack supply — tracks copies held for giveaways/prizes
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dev_pack_supply (
+                    pack_id TEXT PRIMARY KEY,
+                    quantity INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (pack_id) REFERENCES creator_packs(pack_id)
+                )
+            """)
+
             conn.commit()
     
     def _init_postgresql(self):
@@ -1623,6 +1634,16 @@ class DatabaseManager:
 
             print("✅ [DATABASE] Schema migrations complete")
 
+            # Dev pack supply — tracks copies held for giveaways/prizes
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dev_pack_supply (
+                    pack_id TEXT PRIMARY KEY,
+                    quantity INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.commit()
             print("✅ [DATABASE] All PostgreSQL tables created successfully")
         except Exception as e:
@@ -2211,8 +2232,181 @@ class DatabaseManager:
             """, (pack_id, pack_id))
             
             conn.commit()
+            # Auto-stock dev supply whenever a pack goes LIVE
+            self.add_to_dev_supply(pack_id)
             return cursor.rowcount > 0
     
+    # ------------------------------------------------------------------
+    # Dev pack supply — auto-copy every new LIVE pack for prizes/giveaways
+    # ------------------------------------------------------------------
+
+    def add_to_dev_supply(self, pack_id: str, quantity: int = None) -> bool:
+        """Add copies of a pack to dev supply. Called whenever a pack goes LIVE."""
+        import os
+        if quantity is None:
+            quantity = int(os.getenv("DEV_PACK_COPIES", "3"))
+        if quantity <= 0:
+            return True
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if self._database_url:
+                    cursor.execute(f"""
+                        INSERT INTO dev_pack_supply (pack_id, quantity, last_updated)
+                        VALUES ({ph}, {ph}, CURRENT_TIMESTAMP)
+                        ON CONFLICT (pack_id) DO UPDATE
+                        SET quantity = dev_pack_supply.quantity + EXCLUDED.quantity,
+                            last_updated = CURRENT_TIMESTAMP
+                    """, (pack_id, quantity))
+                else:
+                    cursor.execute(f"""
+                        INSERT INTO dev_pack_supply (pack_id, quantity, last_updated)
+                        VALUES ({ph}, {ph}, CURRENT_TIMESTAMP)
+                        ON CONFLICT (pack_id) DO UPDATE
+                        SET quantity = quantity + {ph}, last_updated = CURRENT_TIMESTAMP
+                    """, (pack_id, quantity, quantity))
+                conn.commit()
+            print(f"[DEV SUPPLY] +{quantity} copies of pack {pack_id} (auto-stocked)")
+            return True
+        except Exception as e:
+            print(f"[DEV SUPPLY] Error adding to supply: {e}")
+            return False
+
+    def get_dev_supply(self) -> List[Dict]:
+        """Get current dev pack supply with pack names."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT s.pack_id, s.quantity, s.last_updated,
+                           COALESCE(p.name, s.pack_id) as pack_name, p.pack_tier
+                    FROM dev_pack_supply s
+                    LEFT JOIN creator_packs p ON s.pack_id = p.pack_id
+                    WHERE s.quantity > 0
+                    ORDER BY s.last_updated DESC
+                """)
+                cols = ['pack_id', 'quantity', 'last_updated', 'pack_name', 'pack_tier']
+                return [dict(zip(cols, row)) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DEV SUPPLY] Error fetching supply: {e}")
+            return []
+
+    def get_random_card_from_tier(self, tier: str) -> Dict:
+        """Get a random card from LIVE packs matching the given tier.
+        tier: 'community', 'gold', or 'platinum'"""
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                # Pull random card from cards table filtered by tier
+                cursor.execute(f"""
+                    SELECT card_id, name, artist_name, title, rarity, tier, image_url
+                    FROM cards
+                    WHERE LOWER(tier) = LOWER({ph})
+                    ORDER BY RANDOM() LIMIT 1
+                """, (tier,))
+                row = cursor.fetchone()
+                if not row:
+                    # Fallback: any card if tier has none
+                    cursor.execute("""
+                        SELECT card_id, name, artist_name, title, rarity, tier, image_url
+                        FROM cards ORDER BY RANDOM() LIMIT 1
+                    """)
+                    row = cursor.fetchone()
+                if not row:
+                    return {}
+                return {
+                    'card_id': row[0],
+                    'name': row[1],
+                    'artist_name': row[2] or row[1],
+                    'title': row[3] or '',
+                    'rarity': (row[4] or 'common').lower(),
+                    'tier': (row[5] or tier).lower(),
+                    'image_url': row[6] or '',
+                }
+        except Exception as e:
+            print(f"[DROP] Error fetching card for tier {tier}: {e}")
+            return {}
+
+    def award_drop_card(self, user_id: int, card_id: str) -> bool:
+        """Award a dropped card to a user. Returns True if newly added."""
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    INSERT INTO users (user_id, username, discord_tag)
+                    VALUES ({ph}, {ph}, {ph})
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (user_id, f'User_{user_id}', f'User#{user_id}'))
+                cursor.execute(f"""
+                    INSERT INTO user_cards (user_id, card_id, acquired_from)
+                    VALUES ({ph}, {ph}, 'drop')
+                    ON CONFLICT (user_id, card_id) DO NOTHING
+                """, (user_id, card_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"[DROP] Error awarding card {card_id} to user {user_id}: {e}")
+            return False
+
+    def grant_pack_to_user(self, pack_id: str, target_user_id: int) -> Dict:
+        """Use 1 copy from dev supply to open a pack for a target user.
+        Returns dict with success, cards granted, and error if any."""
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                # Check supply
+                cursor.execute(f"SELECT quantity FROM dev_pack_supply WHERE pack_id = {ph}", (pack_id,))
+                row = cursor.fetchone()
+                if not row or row[0] <= 0:
+                    return {"success": False, "error": "No copies left in dev supply"}
+
+                # Get pack cards_data
+                cursor.execute(f"SELECT cards_data, name FROM creator_packs WHERE pack_id = {ph}", (pack_id,))
+                pack_row = cursor.fetchone()
+                if not pack_row or not pack_row[0]:
+                    return {"success": False, "error": "Pack not found or has no cards"}
+
+                import json
+                cards_data = json.loads(pack_row[0])
+                pack_name = pack_row[1]
+
+                # Ensure target user exists
+                cursor.execute(f"""
+                    INSERT INTO users (user_id, username, discord_tag)
+                    VALUES ({ph}, {ph}, {ph})
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (target_user_id, f'User_{target_user_id}', f'User#{target_user_id}'))
+
+                # Grant cards
+                granted = []
+                for card in cards_data:
+                    card_id = card.get('card_id', '')
+                    if not card_id:
+                        continue
+                    cursor.execute(f"""
+                        INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
+                        VALUES ({ph}, {ph}, 'dev_grant')
+                    """, (target_user_id, card_id))
+                    if cursor.rowcount > 0:
+                        granted.append(card)
+
+                # Decrement supply
+                cursor.execute(f"""
+                    UPDATE dev_pack_supply SET quantity = quantity - 1,
+                    last_updated = CURRENT_TIMESTAMP WHERE pack_id = {ph}
+                """, (pack_id,))
+                conn.commit()
+
+            print(f"[DEV SUPPLY] Granted pack '{pack_name}' to user {target_user_id} ({len(granted)} cards)")
+            return {"success": True, "cards": granted, "pack_name": pack_name}
+        except Exception as e:
+            print(f"[DEV SUPPLY] Error granting pack: {e}")
+            return {"success": False, "error": str(e)}
+
     def get_live_packs(self, limit: int = 20) -> List[Dict]:
         """Get all live packs for browsing"""
         conn = self._get_connection()
@@ -2761,7 +2955,8 @@ class DatabaseManager:
 
         # Check if can claim
         if economy['last_daily_claim']:
-            last_claim = datetime.fromisoformat(economy['last_daily_claim'])
+            ldc = economy['last_daily_claim']
+            last_claim = ldc if isinstance(ldc, datetime) else datetime.fromisoformat(str(ldc))
             time_since = datetime.now() - last_claim
             if time_since < timedelta(hours=20):
                 return {

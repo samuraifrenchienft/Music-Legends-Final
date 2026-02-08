@@ -467,6 +467,7 @@ class CardGameCog(Cog):
                 """, (json.dumps(cards_created), pack_id))
                 conn.commit()
                 print(f"🔥 DEBUG: Pack status updated to LIVE successfully")
+            self.db.add_to_dev_supply(pack_id)
             
             # Trigger backup after pack is published to marketplace
             try:

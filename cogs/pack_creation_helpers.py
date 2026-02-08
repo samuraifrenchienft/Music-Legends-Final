@@ -481,6 +481,7 @@ async def finalize_pack_creation_lastfm(
                 WHERE pack_id = ?
             """, (pack_id,))
             conn.commit()
+        db.add_to_dev_supply(pack_id)
         
         # Trigger backup after pack is published to marketplace
         try:
