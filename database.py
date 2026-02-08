@@ -3092,31 +3092,31 @@ class DatabaseManager:
         total_gold = base_gold + bonus_gold
 
         # === DAILY FREE CARD ===
-        # Rarity weights: 70% common, 25% rare, 5% epic
-        # First verify cards table is not empty
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM cards")
-            card_count = cursor.fetchone()[0]
+        daily_card = None
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM cards")
+                row = cursor.fetchone()
+                card_count = row[0] if row else 0
 
-        if card_count == 0:
-            print(f"[DAILY] ERROR: Cards table is empty, cannot grant daily card to user {user_id}")
-            daily_card = None
-        else:
-            daily_card = self._get_random_daily_card(user_id)
-
-        if daily_card:
-            # Add card to user's collection
-            added = self.add_card_to_collection(
-                user_id=user_id,
-                card_id=daily_card['card_id'],
-                acquired_from='daily_claim'
-            )
-            if not added:
-                # User already owns this card — card was not granted
-                daily_card = None
+            if card_count > 0:
+                daily_card = self._get_random_daily_card(user_id)
+                if daily_card:
+                    added = self.add_card_to_collection(
+                        user_id=user_id,
+                        card_id=daily_card['card_id'],
+                        acquired_from='daily_claim'
+                    )
+                    if not added:
+                        daily_card = None
+                    else:
+                        print(f"[DAILY] User {user_id} received {daily_card.get('rarity','?')} card: {daily_card.get('name','?')}")
             else:
-                print(f"[DAILY] User {user_id} received {daily_card['rarity']} card: {daily_card['name']}")
+                print(f"[DAILY] No cards in DB yet, skipping daily card for user {user_id}")
+        except Exception as _daily_card_err:
+            print(f"[DAILY] Free card error (non-critical): {_daily_card_err}")
+            daily_card = None
 
         # Update economy - uses user_inventory table
         with self._get_connection() as conn:
