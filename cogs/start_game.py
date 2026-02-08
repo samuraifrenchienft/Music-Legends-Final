@@ -13,9 +13,7 @@ class StartGameCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         from database import DatabaseManager
-        from card_economy import get_economy_manager
         self.db = DatabaseManager()
-        self.economy = get_economy_manager()
 
     @app_commands.command(name="start_game", description="🎮 Start Music Legends in this server!")
     async def start_game(self, interaction: Interaction):
@@ -98,35 +96,25 @@ class StartGameCog(commands.Cog):
 
         await interaction.followup.send("@everyone", embed=embed)
 
-        # Try to create a welcome drop
+        # Drop a welcome pack using the same mechanism as /drop
         try:
-            drop_result = self.economy.create_drop(
-                interaction.channel_id,
-                interaction.guild.id,
-                interaction.user.id
-            )
-
-            if drop_result.get('success'):
+            from cogs.gameplay import CardDropView
+            pack = self.db.get_random_live_pack_by_tier("community")
+            if pack:
                 drop_embed = discord.Embed(
-                    title="🎴 WELCOME DROP! 🎴",
-                    description="First card drop created! React quickly to grab cards!",
-                    color=discord.Color.gold()
+                    title="⚪ WELCOME PACK DROP! ⚪",
+                    description=f"**{pack['name']}**\nFirst to click claims all {pack['pack_size']} cards!",
+                    color=discord.Color.light_gray()
                 )
+                drop_embed.add_field(name="Tier", value="Community", inline=True)
+                drop_embed.add_field(name="Cards", value=str(pack['pack_size']), inline=True)
+                if pack.get("genre"):
+                    drop_embed.add_field(name="Genre", value=pack["genre"], inline=True)
+                drop_embed.set_footer(text="Welcome drop! • Expires in 5 min")
 
-                cards = drop_result.get('cards', [])
-                for i, card in enumerate(cards[:6], 1):
-                    tier_emoji = {
-                        "common": "⚪", "rare": "🟡",
-                        "epic": "🟣", "legendary": "🔴"
-                    }.get(card.get('rarity', 'common'), "⚪")
-                    drop_embed.add_field(
-                        name=f"{tier_emoji} Card {i}",
-                        value=f"{card.get('name', 'Unknown')}\nRarity: {card.get('rarity', 'common').title()}",
-                        inline=True
-                    )
-
-                await interaction.followup.send(embed=drop_embed)
-
+                view = CardDropView(pack=pack, db=self.db, timeout=300)
+                msg = await interaction.followup.send(embed=drop_embed, view=view)
+                view.message = msg
         except Exception as e:
             print(f"⚠️ Welcome drop failed (non-critical): {e}")
 
