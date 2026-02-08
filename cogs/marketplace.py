@@ -30,31 +30,32 @@ PACKS_PER_PAGE = 5
 # ─── Helper: fetch packs for a genre (or all) with pagination ───────────────
 
 def _fetch_packs(db, genre: str | None, offset: int, limit: int):
-    """Return (packs_list, total_count) for the given genre filter."""
+    """Return (packs_list, total_count) for the given genre filter.
+    Only returns user-created packs (creator_id != 0); seed packs are for drops only."""
     with db._get_connection() as conn:
         cursor = conn.cursor()
         if genre:
             cursor.execute(
-                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND genre = ?",
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND genre = ? AND creator_id != 0",
                 (genre,),
             )
             total = cursor.fetchone()[0]
             cursor.execute("""
                 SELECT pack_id, name, description, cards_data, genre
                 FROM creator_packs
-                WHERE status = 'LIVE' AND genre = ?
+                WHERE status = 'LIVE' AND genre = ? AND creator_id != 0
                 ORDER BY name
                 LIMIT ? OFFSET ?
             """, (genre, limit, offset))
         else:
             cursor.execute(
-                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'"
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND creator_id != 0"
             )
             total = cursor.fetchone()[0]
             cursor.execute("""
                 SELECT pack_id, name, description, cards_data, genre
                 FROM creator_packs
-                WHERE status = 'LIVE'
+                WHERE status = 'LIVE' AND creator_id != 0
                 ORDER BY name
                 LIMIT ? OFFSET ?
             """, (limit, offset))
@@ -178,8 +179,11 @@ class GenreSelectView(discord.ui.View):
 
             if not packs:
                 embed = discord.Embed(
-                    title="No Packs Found",
-                    description=f"No packs available for **{genre or 'All Genres'}** yet.",
+                    title="No Creator Packs Yet",
+                    description=(
+                        f"No community packs in **{genre or 'All Genres'}** yet.\n\n"
+                        "Be the first! Use `/create_pack` to publish your pack."
+                    ),
                     color=discord.Color.greyple(),
                 )
                 view = GenreSelectView(self.db, self.author_id)
@@ -1120,17 +1124,17 @@ class MarketplaceCommands(commands.Cog):
             color=discord.Color.gold(),
         )
 
-        # Show genre counts in the initial embed
+        # Show genre counts for user-created packs only (seed packs are for drops)
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT genre, COUNT(*) FROM creator_packs
-                WHERE status = 'LIVE' AND genre IS NOT NULL
+                WHERE status = 'LIVE' AND genre IS NOT NULL AND creator_id != 0
                 GROUP BY genre ORDER BY genre
             """)
             genre_counts = cursor.fetchall()
             cursor.execute(
-                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'"
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND creator_id != 0"
             )
             total = cursor.fetchone()[0]
 

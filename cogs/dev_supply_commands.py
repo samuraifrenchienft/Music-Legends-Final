@@ -69,5 +69,32 @@ class DevSupplyCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
+    @app_commands.command(name="dev_reset_daily", description="[DEV] Reset a user's daily claim for testing")
+    @app_commands.describe(user="User to reset (defaults to yourself)")
+    async def dev_reset_daily(self, interaction: Interaction, user: discord.Member = None):
+        if not _is_dev(interaction.user.id):
+            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
+            return
+
+        target = user or interaction.user
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE user_inventory SET last_daily_claim = NULL, daily_streak = 0 WHERE user_id = ?",
+                (target.id,)
+            )
+            conn.commit()
+            changed = cursor.rowcount
+
+        if changed:
+            await interaction.response.send_message(
+                f"✅ Daily claim reset for {target.mention}. They can claim again now.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"⚠️ No inventory row found for {target.mention}. They may not have played yet.", ephemeral=True
+            )
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(DevSupplyCog(bot))
