@@ -24,3 +24,17 @@ verify_*.py
 fix_*.py
 list_*.py
 clear_*.py
+
+# IDE/Editor directories
+.cursor/
+.windsurf/
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+startup_log.txt
+
+# Temp files
+nul
