@@ -33,27 +33,20 @@ class BackupService:
         (self.backup_dir / "critical").mkdir(exist_ok=True)
         (self.backup_dir / "shutdown").mkdir(exist_ok=True)
         
-        # Check database type - disable PostgreSQL backups on Railway until tables are set up
         self.database_url = os.getenv("DATABASE_URL")
         self.is_railway = os.getenv("RAILWAY_ENVIRONMENT") is not None
+        # On Railway use pg_dump if available; SQLite file won't exist there
         self.is_postgresql = bool(self.database_url and (
-            "postgresql://" in self.database_url or 
+            "postgresql://" in self.database_url or
             "postgres://" in self.database_url or
             "postgresql+asyncpg://" in self.database_url
-        )) and not self.is_railway  # Disable on Railway for now
-        # #region agent log
-        with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"B","location":"backup_service.py:37","message":"Database type detection","data":{"database_url_set":self.database_url is not None,"is_postgresql":self.is_postgresql,"url_preview":self.database_url[:50] if self.database_url else None},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
-        
+        ))
+
         self.postgres_backup_url = os.getenv("POSTGRES_BACKUP_URL")
         self.last_backup_time = None
         self.backup_metadata_file = self.backup_dir / "backup_metadata.json"
-        
-        if self.is_railway:
-            logger.info("🚂 Railway environment detected - using SQLite fallback backups")
-        elif self.is_postgresql:
+
+        if self.is_postgresql:
             logger.info("🗄️ PostgreSQL detected - using pg_dump for backups")
         else:
             logger.info("🗄️ SQLite detected - using file-based backups")
@@ -117,22 +110,12 @@ class BackupService:
             # Parse DATABASE_URL to extract connection details
             # Format: postgresql://user:password@host:port/database
             # or: postgresql+asyncpg://user:password@host:port/database
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"A","location":"backup_service.py:109","message":"PostgreSQL backup entry","data":{"database_url_exists":self.database_url is not None,"url_length":len(self.database_url) if self.database_url else 0},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             db_url = self.database_url.replace("postgresql+asyncpg://", "postgresql://")
             db_url = db_url.replace("postgres://", "postgresql://")
             
             # Extract components
             if not db_url.startswith("postgresql://"):
                 logger.error(f"Invalid PostgreSQL URL format: {self.database_url}")
-                # #region agent log
-                with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"A","location":"backup_service.py:116","message":"Invalid URL format","data":{"db_url":db_url[:100]},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                # #endregion
                 return None
             
             # Remove protocol
@@ -144,11 +127,6 @@ class BackupService:
                 return None
             
             auth_part, host_part = url_part.split("@", 1)
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"A","location":"backup_service.py:128","message":"URL parsing","data":{"auth_part_length":len(auth_part),"host_part_length":len(host_part),"has_colon":":" in auth_part},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             if ":" in auth_part:
                 user, password = auth_part.split(":", 1)
             else:
@@ -195,11 +173,6 @@ class BackupService:
             
             def run_pg_dump():
                 try:
-                    # #region agent log
-                    with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        import json
-                        f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"C","location":"backup_service.py:173","message":"pg_dump start","data":{"cmd":pg_dump_cmd[:5],"temp_path":str(temp_backup_path)},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                    # #endregion
                     # Write output directly to temp file
                     with open(temp_backup_path, 'w', encoding='utf-8') as f:
                         result = subprocess.run(
@@ -210,27 +183,12 @@ class BackupService:
                             text=True,
                             check=True
                         )
-                    # #region agent log
-                    with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        import json
-                        f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"C","location":"backup_service.py:185","message":"pg_dump success","data":{"returncode":result.returncode if 'result' in locals() else None},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                    # #endregion
                     return True
                 except subprocess.CalledProcessError as e:
                     logger.error(f"pg_dump failed: {e.stderr}")
-                    # #region agent log
-                    with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        import json
-                        f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"C","location":"backup_service.py:187","message":"pg_dump error","data":{"returncode":e.returncode,"stderr":str(e.stderr)[:200]},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                    # #endregion
                     return False
                 except FileNotFoundError:
                     logger.error("pg_dump not found. Install PostgreSQL client tools.")
-                    # #region agent log
-                    with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                        import json
-                        f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"C","location":"backup_service.py:190","message":"pg_dump not found","data":{},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                    # #endregion
                     return False
             
             success = await loop.run_in_executor(None, run_pg_dump)
@@ -242,43 +200,18 @@ class BackupService:
             
             # Compress SQL backup
             compressed_path = backup_path.with_suffix('.sql.gz')
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"D","location":"backup_service.py:201","message":"Before compression","data":{"temp_exists":temp_backup_path.exists(),"temp_size":temp_backup_path.stat().st_size if temp_backup_path.exists() else 0},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             try:
                 with open(temp_backup_path, 'rb') as f_in:
                     with gzip.open(compressed_path, 'wb') as f_out:
                         shutil.copyfileobj(f_in, f_out)
-                # #region agent log
-                with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"D","location":"backup_service.py:207","message":"After compression","data":{"compressed_exists":compressed_path.exists(),"compressed_size":compressed_path.stat().st_size if compressed_path.exists() else 0},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                # #endregion
             except Exception as comp_err:
-                # #region agent log
-                with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"D","location":"backup_service.py:210","message":"Compression error","data":{"error":str(comp_err)},"timestamp":int(__import__('time').time()*1000)})+'\n')
-                # #endregion
                 raise
             
             # Remove uncompressed temp file
             temp_backup_path.unlink()
             
             # Verify backup
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"E","location":"backup_service.py:215","message":"Before integrity check","data":{"compressed_path":str(compressed_path)},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             integrity_result = self.verify_backup_integrity(compressed_path)
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"E","location":"backup_service.py:217","message":"After integrity check","data":{"integrity_passed":integrity_result},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             if not integrity_result:
                 logger.error(f"PostgreSQL backup integrity check failed: {compressed_path}")
                 compressed_path.unlink()
@@ -334,11 +267,6 @@ class BackupService:
         Returns:
             Path to backup file if successful, None otherwise
         """
-        # #region agent log
-        with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"D","location":"backup_service.py:323","message":"backup_to_local entry","data":{"backup_type":backup_type,"suffix":suffix,"is_postgresql":self.is_postgresql,"db_path":self.db_path},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
         # Determine backup directory
         if backup_type == "daily":
             backup_subdir = self.backup_dir / "daily"
@@ -353,26 +281,11 @@ class BackupService:
         
         # Use PostgreSQL backup if DATABASE_URL is set
         if self.is_postgresql:
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"B","location":"backup_service.py:340","message":"Using PostgreSQL backup","data":{},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
             return await self._backup_postgresql(backup_type, suffix, backup_subdir)
         
         # Otherwise use SQLite backup
-        # #region agent log
-        with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            import json
-            f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"D","location":"backup_service.py:346","message":"Using SQLite backup","data":{"db_path":self.db_path,"db_exists":os.path.exists(self.db_path)},"timestamp":int(__import__('time').time()*1000)})+'\n')
-        # #endregion
         if not os.path.exists(self.db_path):
-            logger.error(f"Database file not found: {self.db_path}")
-            # #region agent log
-            with open(r'c:\Users\AbuBa\Downloads\discordpy-v2-bot-template-main\discordpy-v2-bot-template-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                import json
-                f.write(json.dumps({"sessionId":"debug-session","runId":"init","hypothesisId":"D","location":"backup_service.py:351","message":"Database file not found","data":{"db_path":self.db_path},"timestamp":int(__import__('time').time()*1000)})+'\n')
-            # #endregion
+            logger.debug(f"SQLite backup skipped - db file not found: {self.db_path}")
             return None
         
         if not self._check_disk_space():
