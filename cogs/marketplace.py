@@ -30,32 +30,31 @@ PACKS_PER_PAGE = 5
 # ─── Helper: fetch packs for a genre (or all) with pagination ───────────────
 
 def _fetch_packs(db, genre: str | None, offset: int, limit: int):
-    """Return (packs_list, total_count) for the given genre filter.
-    Excludes seed packs (creator_id=0) — those are for drops only."""
+    """Return (packs_list, total_count) for the given genre filter."""
     with db._get_connection() as conn:
         cursor = conn.cursor()
         if genre:
             cursor.execute(
-                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND genre = ? AND creator_id != 0",
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND genre = ?",
                 (genre,),
             )
             total = cursor.fetchone()[0]
             cursor.execute("""
                 SELECT pack_id, name, description, cards_data, genre
                 FROM creator_packs
-                WHERE status = 'LIVE' AND genre = ? AND creator_id != 0
+                WHERE status = 'LIVE' AND genre = ?
                 ORDER BY name
                 LIMIT ? OFFSET ?
             """, (genre, limit, offset))
         else:
             cursor.execute(
-                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND creator_id != 0"
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'"
             )
             total = cursor.fetchone()[0]
             cursor.execute("""
                 SELECT pack_id, name, description, cards_data, genre
                 FROM creator_packs
-                WHERE status = 'LIVE' AND creator_id != 0
+                WHERE status = 'LIVE'
                 ORDER BY name
                 LIMIT ? OFFSET ?
             """, (limit, offset))
@@ -1121,17 +1120,17 @@ class MarketplaceCommands(commands.Cog):
             color=discord.Color.gold(),
         )
 
-        # Show genre counts in the initial embed (exclude seed packs)
+        # Show genre counts in the initial embed
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT genre, COUNT(*) FROM creator_packs
-                WHERE status = 'LIVE' AND genre IS NOT NULL AND creator_id != 0
+                WHERE status = 'LIVE' AND genre IS NOT NULL
                 GROUP BY genre ORDER BY genre
             """)
             genre_counts = cursor.fetchall()
             cursor.execute(
-                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE' AND creator_id != 0"
+                "SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'"
             )
             total = cursor.fetchone()[0]
 
