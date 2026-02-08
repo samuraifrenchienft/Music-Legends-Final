@@ -2801,7 +2801,17 @@ class DatabaseManager:
 
         # === DAILY FREE CARD ===
         # Rarity weights: 70% common, 25% rare, 5% epic
-        daily_card = self._get_random_daily_card(user_id)
+        # First verify cards table is not empty
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM cards")
+            card_count = cursor.fetchone()[0]
+
+        if card_count == 0:
+            print(f"[DAILY] ERROR: Cards table is empty, cannot grant daily card to user {user_id}")
+            daily_card = None
+        else:
+            daily_card = self._get_random_daily_card(user_id)
 
         if daily_card:
             # Add card to user's collection
