@@ -3054,7 +3054,10 @@ class DatabaseManager:
         if economy['last_daily_claim']:
             ldc = economy['last_daily_claim']
             last_claim = ldc if isinstance(ldc, datetime) else datetime.fromisoformat(str(ldc))
-            time_since = datetime.now() - last_claim
+            # Strip timezone so naive datetime.utcnow() can be subtracted
+            if last_claim.tzinfo is not None:
+                last_claim = last_claim.replace(tzinfo=None)
+            time_since = datetime.utcnow() - last_claim
             if time_since < timedelta(hours=20):
                 return {
                     "success": False,
@@ -3064,7 +3067,7 @@ class DatabaseManager:
 
         # Calculate streak
         if economy['last_daily_claim']:
-            time_since_claim = datetime.now() - last_claim
+            time_since_claim = datetime.utcnow() - last_claim
             if time_since_claim <= timedelta(hours=48):
                 new_streak = economy['daily_streak'] + 1
             else:
