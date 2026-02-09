@@ -118,7 +118,42 @@ class DatabaseManager:
     def _get_placeholder(self):
         """Get placeholder for queries - %s for PostgreSQL, ? for SQLite."""
         return "%s" if self._database_url else "?"
-    
+
+    def log_transaction(self, event_type: str, user_id: int, transaction_id: str = None, details: str = None, success: bool = True, conn=None):
+        """Log a critical transaction to audit trail
+
+        Args:
+            event_type: Type of transaction (daily_claim, pack_purchase, battle, etc)
+            user_id: User involved in transaction
+            transaction_id: Optional transaction/purchase/battle ID
+            details: Optional JSON string with transaction details
+            success: Whether transaction succeeded
+            conn: Optional database connection (for transaction atomicity)
+        """
+        owns_connection = conn is None
+        if owns_connection:
+            conn = self._get_connection()
+
+        ph = self._get_placeholder()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                INSERT INTO transaction_audit_log
+                (event_type, user_id, transaction_id, details, success)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+            """, (event_type, user_id, transaction_id, details, success))
+
+            if owns_connection:
+                conn.commit()
+        except Exception as e:
+            print(f"[AUDIT] Error logging transaction: {e}")
+            if owns_connection:
+                conn.rollback()
+            # Don't raise - audit logging should never break main transaction
+        finally:
+            if owns_connection:
+                conn.close()
+
     def init_database(self):
         """Initialize all database tables"""
         if self._database_url:
@@ -854,6 +889,21 @@ class DatabaseManager:
                     FOREIGN KEY (pack_id) REFERENCES creator_packs(pack_id)
                 )
             """)
+
+            # Transaction audit log — tracks all critical transactions
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS transaction_audit_log (
+                    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    transaction_id TEXT,
+                    details TEXT,
+                    success BOOLEAN DEFAULT 1,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_user_id ON transaction_audit_log(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON transaction_audit_log(timestamp)")
 
             conn.commit()
     
@@ -1663,6 +1713,21 @@ class DatabaseManager:
                 )
             """)
 
+            # Transaction audit log — tracks all critical transactions
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS transaction_audit_log (
+                    audit_id SERIAL PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    transaction_id TEXT,
+                    details TEXT,
+                    success BOOLEAN DEFAULT TRUE,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_user_id ON transaction_audit_log(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON transaction_audit_log(timestamp)")
+
             conn.commit()
             print("✅ [DATABASE] All PostgreSQL tables created successfully")
         except Exception as e:
@@ -1892,9 +1957,22 @@ class DatabaseManager:
             traceback.print_exc()
             return False
     
-    def add_card_to_collection(self, user_id: int, card_id: str, acquired_from: str = 'pack') -> bool:
-        """Add a card to user's collection"""
-        conn = self._get_connection()
+    def add_card_to_collection(self, user_id: int, card_id: str, acquired_from: str = 'pack', conn=None) -> bool:
+        """Add a card to user's collection
+
+        Args:
+            user_id: Discord user ID
+            card_id: Card identifier
+            acquired_from: Source of acquisition (pack, daily_claim, etc)
+            conn: Optional database connection (for transaction atomicity)
+
+        Returns:
+            True if card was added, False if already owned or error
+        """
+        owns_connection = conn is None
+        if owns_connection:
+            conn = self._get_connection()
+
         ph = self._get_placeholder()
         try:
             cursor = conn.cursor()
@@ -1917,13 +1995,18 @@ class DatabaseManager:
                     """,
                     (user_id, card_id, acquired_from)
                 )
-            conn.commit()
+
+            if owns_connection:
+                conn.commit()
             return cursor.rowcount > 0
         except Exception as e:
             print(f"Error adding card to collection: {e}")
-            return False
+            if owns_connection:
+                conn.rollback()
+            raise
         finally:
-            conn.close()
+            if owns_connection:
+                conn.close()
     
     def get_user_collection(self, user_id: int) -> List[Dict]:
         """Get all cards owned by a user"""
@@ -2647,90 +2730,121 @@ class DatabaseManager:
         revenue_split = stripe_manager.calculate_revenue_split(amount_cents)
         
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-            
-            # Get pack data and creator
-            cursor.execute("""
-                SELECT cards_data, creator_id, name, COALESCE(pack_tier, 'community') FROM creator_packs
-                WHERE pack_id = ? AND status = 'LIVE'
-            """, (pack_id,))
-            result = cursor.fetchone()
-            if not result:
-                return None
+            try:
+                cursor = conn.cursor()
 
-            cards_json, creator_id, pack_name, pack_tier = result[0], result[1], result[2], result[3]
+                # Get pack data and creator
+                cursor.execute("""
+                    SELECT cards_data, creator_id, name, COALESCE(pack_tier, 'community') FROM creator_packs
+                    WHERE pack_id = ? AND status = 'LIVE'
+                """, (pack_id,))
+                result = cursor.fetchone()
+                if not result:
+                    return None
 
-            # Parse cards JSON if it's a string
-            if isinstance(cards_json, str):
-                cards_data = json.loads(cards_json)
-            else:
-                cards_data = cards_json or []
+                cards_json, creator_id, pack_name, pack_tier = result[0], result[1], result[2], result[3]
 
-            # Generate cards for buyer (add to their collection)
-            received_cards = []
-            for card_data in cards_data:
-                card_id = self.add_card_to_master_list(card_data)
-                self.add_card_to_collection(buyer_id, card_id, 'pack')
-                received_cards.append(card_id)
-            
-            # Record purchase with revenue split
-            cursor.execute("""
-                INSERT INTO pack_purchases 
-                (purchase_id, pack_id, buyer_id, purchase_amount_cents, 
-                 platform_revenue_cents, creator_revenue_cents, stripe_payment_id, cards_received)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (purchase_id, pack_id, buyer_id, amount_cents, 
-                  revenue_split['platform_cents'], revenue_split['creator_cents'], 
-                  payment_id, json.dumps(received_cards)))
-            
-            # Update pack purchase count
-            cursor.execute("UPDATE creator_packs SET total_purchases = total_purchases + 1 WHERE pack_id = ?", (pack_id,))
-            
-            # Create ledger entry (source of truth)
-            cursor.execute("""
-                INSERT INTO revenue_ledger 
-                (event_type, pack_id, creator_user_id, buyer_user_id, amount_gross_cents,
-                 platform_amount_cents, creator_amount_cents, stripe_payment_intent_id, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, ('PACK_PURCHASE', pack_id, creator_id, buyer_id, amount_cents,
-                  revenue_split['platform_cents'], revenue_split['creator_cents'], 
-                  payment_id, 'completed'))
-            
-            # Update creator balance (pending until refund window passes)
-            self._update_creator_balance(creator_id, revenue_split['creator_cents'], 'pending')
-            
-            # Record creator revenue (legacy table for compatibility)
-            cursor.execute("""
-                INSERT INTO creator_revenue
-                (creator_id, pack_id, purchase_id, revenue_type, gross_amount_cents, net_amount_cents)
-                VALUES (?, ?, ?, 'pack_purchase', ?, ?)
-            """, (creator_id, pack_id, purchase_id, amount_cents, revenue_split['creator_cents']))
+                # Parse cards JSON if it's a string
+                if isinstance(cards_json, str):
+                    cards_data = json.loads(cards_json)
+                else:
+                    cards_data = cards_json or []
 
-            # Grant pack purchase bonuses (gold + tickets)
-            from config.economy import PACK_PRICING as ECON_PRICING
-            pack_bonus = ECON_PRICING.get(pack_tier, {})
-            bonus_gold = pack_bonus.get('bonus_gold', 0)
-            bonus_tickets = pack_bonus.get('bonus_tickets', 0)
-            if bonus_gold or bonus_tickets:
-                self.update_user_economy(buyer_id, gold_change=bonus_gold, tickets_change=bonus_tickets)
+                # Generate cards for buyer (add to their collection) - SAME CONNECTION
+                received_cards = []
+                for card_data in cards_data:
+                    card_id = self.add_card_to_master_list(card_data, conn=conn)
+                    self.add_card_to_collection(buyer_id, card_id, 'pack', conn=conn)
+                    received_cards.append(card_id)
 
-            conn.commit()
-            return purchase_id
+                # Record purchase with revenue split
+                cursor.execute("""
+                    INSERT INTO pack_purchases
+                    (purchase_id, pack_id, buyer_id, purchase_amount_cents,
+                     platform_revenue_cents, creator_revenue_cents, stripe_payment_id, cards_received)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (purchase_id, pack_id, buyer_id, amount_cents,
+                      revenue_split['platform_cents'], revenue_split['creator_cents'],
+                      payment_id, json.dumps(received_cards)))
+
+                # Update pack purchase count
+                cursor.execute("UPDATE creator_packs SET total_purchases = total_purchases + 1 WHERE pack_id = ?", (pack_id,))
+
+                # Create ledger entry (source of truth)
+                cursor.execute("""
+                    INSERT INTO revenue_ledger
+                    (event_type, pack_id, creator_user_id, buyer_user_id, amount_gross_cents,
+                     platform_amount_cents, creator_amount_cents, stripe_payment_intent_id, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, ('PACK_PURCHASE', pack_id, creator_id, buyer_id, amount_cents,
+                      revenue_split['platform_cents'], revenue_split['creator_cents'],
+                      payment_id, 'completed'))
+
+                # Update creator balance (pending until refund window passes) - SAME CONNECTION
+                self._update_creator_balance(creator_id, revenue_split['creator_cents'], 'pending', conn=conn)
+
+                # Record creator revenue (legacy table for compatibility)
+                cursor.execute("""
+                    INSERT INTO creator_revenue
+                    (creator_id, pack_id, purchase_id, revenue_type, gross_amount_cents, net_amount_cents)
+                    VALUES (?, ?, ?, 'pack_purchase', ?, ?)
+                """, (creator_id, pack_id, purchase_id, amount_cents, revenue_split['creator_cents']))
+
+                # Grant pack purchase bonuses (gold + tickets) - SAME CONNECTION
+                from config.economy import PACK_PRICING as ECON_PRICING
+                pack_bonus = ECON_PRICING.get(pack_tier, {})
+                bonus_gold = pack_bonus.get('bonus_gold', 0)
+                bonus_tickets = pack_bonus.get('bonus_tickets', 0)
+                if bonus_gold or bonus_tickets:
+                    self.update_user_economy(buyer_id, gold_change=bonus_gold, tickets_change=bonus_tickets, conn=conn)
+
+                conn.commit()
+
+                # Log successful purchase for audit trail
+                audit_details = json.dumps({
+                    'pack_id': pack_id,
+                    'pack_name': pack_name,
+                    'creator_id': creator_id,
+                    'amount_cents': amount_cents,
+                    'cards_count': len(received_cards),
+                    'payment_id': payment_id
+                })
+                self.log_transaction('pack_purchase', buyer_id, purchase_id, audit_details, success=True)
+
+                return purchase_id
+
+            except Exception as e:
+                conn.rollback()
+                print(f"[PURCHASE] Error during pack purchase transaction: {e}")
+                # Log failed purchase
+                self.log_transaction('pack_purchase', buyer_id, purchase_id, str(e), success=False)
+                raise
     
-    def _update_creator_balance(self, creator_id: int, amount_cents: int, balance_type: str):
-        """Update creator balance (pending or available)"""
-        with self._get_connection() as conn:
+    def _update_creator_balance(self, creator_id: int, amount_cents: int, balance_type: str, conn=None):
+        """Update creator balance (pending or available)
+
+        Args:
+            creator_id: Creator user ID
+            amount_cents: Amount in cents to add
+            balance_type: Either 'pending' or 'available'
+            conn: Optional database connection (for transaction atomicity)
+        """
+        owns_connection = conn is None
+        if owns_connection:
+            conn = self._get_connection()
+
+        try:
             cursor = conn.cursor()
-            
+
             # Get current balance or create new record
             cursor.execute("SELECT * FROM creator_balances WHERE creator_user_id = ?", (creator_id,))
             balance = cursor.fetchone()
-            
+
             if balance:
                 # Update existing balance
                 if balance_type == 'pending':
                     cursor.execute("""
-                        UPDATE creator_balances 
+                        UPDATE creator_balances
                         SET pending_balance_cents = pending_balance_cents + ?,
                             lifetime_earned_cents = lifetime_earned_cents + ?,
                             updated_at = CURRENT_TIMESTAMP
@@ -2738,7 +2852,7 @@ class DatabaseManager:
                     """, (amount_cents, amount_cents, creator_id))
                 elif balance_type == 'available':
                     cursor.execute("""
-                        UPDATE creator_balances 
+                        UPDATE creator_balances
                         SET available_balance_cents = available_balance_cents + ?,
                             pending_balance_cents = pending_balance_cents - ?,
                             updated_at = CURRENT_TIMESTAMP
@@ -2748,18 +2862,27 @@ class DatabaseManager:
                 # Create new balance record
                 if balance_type == 'pending':
                     cursor.execute("""
-                        INSERT INTO creator_balances 
+                        INSERT INTO creator_balances
                         (creator_user_id, pending_balance_cents, lifetime_earned_cents)
                         VALUES (?, ?, ?)
                     """, (creator_id, amount_cents, amount_cents))
                 elif balance_type == 'available':
                     cursor.execute("""
-                        INSERT INTO creator_balances 
+                        INSERT INTO creator_balances
                         (creator_user_id, available_balance_cents, lifetime_earned_cents)
                         VALUES (?, ?, ?)
                     """, (creator_id, amount_cents, amount_cents))
-            
-            conn.commit()
+
+            if owns_connection:
+                conn.commit()
+        except Exception as e:
+            print(f"Error updating creator balance: {e}")
+            if owns_connection:
+                conn.rollback()
+            raise
+        finally:
+            if owns_connection:
+                conn.close()
     
     def get_creator_balance(self, creator_id: int) -> Dict:
         """Get creator balance information"""
@@ -2932,18 +3055,30 @@ class DatabaseManager:
                 'metrics': usage_dict
             }
     
-    def add_card_to_master_list(self, card_data: Dict) -> str:
-        """Add card to master cards table with minimal storage"""
-        # Use existing card_id if provided, otherwise generate one
-        card_id = card_data.get('card_id') or f"{card_data['name'].lower().replace(' ', '_')}_{card_data.get('rarity', 'Common').lower()}"
+    def add_card_to_master_list(self, card_data: Dict, conn=None) -> str:
+        """Add card to master cards table with minimal storage
 
-        # Map rarity to tier if not provided
-        rarity = card_data.get('rarity', 'Common').lower()
-        tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
-                    'legendary': 'legendary', 'mythic': 'legendary'}
-        tier = card_data.get('tier') or tier_map.get(rarity, 'community')
+        Args:
+            card_data: Dictionary with card data
+            conn: Optional database connection (for transaction atomicity)
 
-        with self._get_connection() as conn:
+        Returns:
+            Card ID string
+        """
+        owns_connection = conn is None
+        if owns_connection:
+            conn = self._get_connection()
+
+        try:
+            # Use existing card_id if provided, otherwise generate one
+            card_id = card_data.get('card_id') or f"{card_data['name'].lower().replace(' ', '_')}_{card_data.get('rarity', 'Common').lower()}"
+
+            # Map rarity to tier if not provided
+            rarity = card_data.get('rarity', 'Common').lower()
+            tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                        'legendary': 'legendary', 'mythic': 'legendary'}
+            tier = card_data.get('tier') or tier_map.get(rarity, 'community')
+
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR IGNORE INTO cards
@@ -2977,8 +3112,17 @@ class DatabaseManager:
                 card_data.get('created_by_user_id')
             ))
 
-            conn.commit()
+            if owns_connection:
+                conn.commit()
             return card_id
+        except Exception as e:
+            print(f"Error adding card to master list: {e}")
+            if owns_connection:
+                conn.rollback()
+            raise
+        finally:
+            if owns_connection:
+                conn.close()
     
     def get_all_artists(self, limit: int = 100) -> List[Dict]:
         """Get all unique artists from the cards table"""
@@ -3051,33 +3195,53 @@ class DatabaseManager:
             columns = ['user_id', 'gold', 'tickets', 'last_daily_claim', 'daily_streak']
             return dict(zip(columns, result)) if result else {'user_id': user_id, 'gold': 500, 'tickets': 0, 'last_daily_claim': None, 'daily_streak': 0}
     
-    def update_user_economy(self, user_id: int, gold_change: int = 0, tickets_change: int = 0) -> bool:
-        """Update user's gold and tickets - uses user_inventory table"""
+    def update_user_economy(self, user_id: int, gold_change: int = 0, tickets_change: int = 0, conn=None) -> bool:
+        """Update user's gold and tickets - uses user_inventory table
+
+        Args:
+            user_id: Discord user ID
+            gold_change: Amount of gold to add/subtract
+            tickets_change: Amount of tickets to add/subtract
+            conn: Optional database connection (for transaction atomicity)
+
+        Returns:
+            True if update successful, False otherwise
+        """
+        owns_connection = conn is None
+        if owns_connection:
+            conn = self._get_connection()
+
         try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                # Ensure user exists in users table first (FK constraint)
-                cursor.execute("""
-                    INSERT INTO users (user_id, username, discord_tag)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT (user_id) DO NOTHING
-                """, (user_id, f'User_{user_id}', f'User#{user_id}'))
-                # Ensure user_inventory row exists
-                cursor.execute("""
-                    INSERT INTO user_inventory (user_id, gold, tickets)
-                    VALUES (?, 500, 0)
-                    ON CONFLICT(user_id) DO NOTHING
-                """, (user_id,))
-                cursor.execute("""
-                    UPDATE user_inventory
-                    SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?
-                    WHERE user_id = ?
-                """, (gold_change, tickets_change, user_id))
+            cursor = conn.cursor()
+            # Ensure user exists in users table first (FK constraint)
+            cursor.execute("""
+                INSERT INTO users (user_id, username, discord_tag)
+                VALUES (?, ?, ?)
+                ON CONFLICT (user_id) DO NOTHING
+            """, (user_id, f'User_{user_id}', f'User#{user_id}'))
+            # Ensure user_inventory row exists
+            cursor.execute("""
+                INSERT INTO user_inventory (user_id, gold, tickets)
+                VALUES (?, 500, 0)
+                ON CONFLICT(user_id) DO NOTHING
+            """, (user_id,))
+            cursor.execute("""
+                UPDATE user_inventory
+                SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?
+                WHERE user_id = ?
+            """, (gold_change, tickets_change, user_id))
+
+            if owns_connection:
                 conn.commit()
-                return cursor.rowcount > 0
+            return cursor.rowcount > 0
         except sqlite3.Error as e:
             print(f"Error updating user economy: {e}")
-            return False
+            if owns_connection:
+                conn.rollback()
+            raise
+        finally:
+            if owns_connection:
+                conn.close()
     
     def claim_daily_reward(self, user_id: int) -> Dict:
         """Process daily reward claim - NOW WITH FREE CARD!"""
@@ -3130,43 +3294,65 @@ class DatabaseManager:
 
         total_gold = base_gold + bonus_gold
 
-        # === DAILY FREE CARD ===
+        # === ATOMIC TRANSACTION: Daily card + economy update ===
+        # Use single connection for both operations to ensure atomicity
         daily_card = None
-        try:
-            with self._get_connection() as conn:
+        with self._get_connection() as conn:
+            try:
                 cursor = conn.cursor()
+
+                # Check if cards exist in DB
                 cursor.execute("SELECT COUNT(*) FROM cards")
                 row = cursor.fetchone()
                 card_count = row[0] if row else 0
 
-            if card_count > 0:
-                daily_card = self._get_random_daily_card(user_id)
-                if daily_card:
-                    added = self.add_card_to_collection(
-                        user_id=user_id,
-                        card_id=daily_card['card_id'],
-                        acquired_from='daily_claim'
-                    )
-                    if not added:
-                        daily_card = None
-                    else:
-                        print(f"[DAILY] User {user_id} received {daily_card.get('rarity','?')} card: {daily_card.get('name','?')}")
-            else:
-                print(f"[DAILY] No cards in DB yet, skipping daily card for user {user_id}")
-        except Exception as _daily_card_err:
-            print(f"[DAILY] Free card error (non-critical): {_daily_card_err}")
-            daily_card = None
+                # Grant daily free card (same connection)
+                if card_count > 0:
+                    daily_card = self._get_random_daily_card(user_id)
+                    if daily_card:
+                        added = self.add_card_to_collection(
+                            user_id=user_id,
+                            card_id=daily_card['card_id'],
+                            acquired_from='daily_claim',
+                            conn=conn  # CRITICAL: Pass connection for atomicity
+                        )
+                        if not added:
+                            daily_card = None
+                        else:
+                            print(f"[DAILY] User {user_id} received {daily_card.get('rarity','?')} card: {daily_card.get('name','?')}")
+                else:
+                    print(f"[DAILY] No cards in DB yet, skipping daily card for user {user_id}")
 
-        # Update economy - uses user_inventory table
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE user_inventory
-                SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?,
-                    last_daily_claim = CURRENT_TIMESTAMP, daily_streak = ?
-                WHERE user_id = ?
-            """, (total_gold, tickets, new_streak, user_id))
-            conn.commit()
+                # Update economy (same connection as card grant)
+                cursor.execute("""
+                    UPDATE user_inventory
+                    SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?,
+                        last_daily_claim = CURRENT_TIMESTAMP, daily_streak = ?
+                    WHERE user_id = ?
+                """, (total_gold, tickets, new_streak, user_id))
+
+                # Both operations committed together atomically
+                conn.commit()
+
+                # Log successful transaction for audit trail
+                import json
+                audit_details = json.dumps({
+                    'gold': total_gold,
+                    'tickets': tickets,
+                    'streak': new_streak,
+                    'card_id': daily_card.get('card_id') if daily_card else None
+                })
+                self.log_transaction('daily_claim', user_id, details=audit_details, success=True)
+
+            except Exception as e:
+                print(f"[DAILY] Error during daily claim transaction: {e}")
+                conn.rollback()
+                # Log failed transaction
+                self.log_transaction('daily_claim', user_id, details=str(e), success=False)
+                return {
+                    "success": False,
+                    "error": f"Daily claim failed: {str(e)}"
+                }
 
         return {
             "success": True,
