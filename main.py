@@ -46,13 +46,16 @@ class Bot(commands.Bot):
                 app_id = int(app_id)
             except ValueError:
                 app_id = None
-        
+
         super().__init__(
             command_prefix="!",
             help_command=None,
             intents=intents,
             application_id=app_id
         )
+
+        # Flag to prevent on_ready from running multiple times
+        self._ready_once = False
 
     async def setup_hook(self):
         """Initialize infrastructure and load cogs"""
@@ -208,12 +211,23 @@ class Bot(commands.Bot):
             traceback.print_exc()
 
     async def on_ready(self):
-        """Called when bot is ready"""
+        """Called when bot is ready (and on reconnects)"""
         print(f'✅ Bot is ready!')
         print(f'Logged in as: {self.user.name}')
         print(f'Bot ID: {self.user.id}')
         print(f'Connected to {len(self.guilds)} servers')
-        
+
+        # Update presence on every ready (including reconnects)
+        await self.change_presence(activity=discord.Activity(name="Music Legends"))
+
+        # ONLY run startup tasks ONCE to prevent rate limit spam on reconnects
+        if self._ready_once:
+            print("⚠️ Bot reconnected (skipping startup tasks to prevent rate limits)")
+            return
+
+        self._ready_once = True
+        print("🎯 First ready event - running startup tasks")
+
         # Commands should auto-sync, skip manual sync to avoid errors
         print("📋 Commands should auto-register with Discord")
 
@@ -250,10 +264,8 @@ class Bot(commands.Bot):
             await monitor.send_pending_alerts()
         except Exception as e:
             print(f"⚠️ Error sending pending alerts: {e}")
-        
-        await self.change_presence(activity=discord.Activity(name="Music Legends"))
-        
-        # Send startup notice to dev channel
+
+        # Send startup notice to dev channel (ONCE)
         try:
             test_server_id = os.getenv('TEST_SERVER_ID')
             if test_server_id:
