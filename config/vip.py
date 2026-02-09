@@ -526,21 +526,24 @@ def is_user_vip(user_id: int, db_path: str = "music_legends.db") -> bool:
         with conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT status, expires_at FROM vip_subscriptions 
-                WHERE user_id = ? AND status = 'active'
+                SELECT vip_status, vip_expires FROM user_inventory
+                WHERE user_id = ?
             """, (user_id,))
             row = cursor.fetchone()
-            
+
             if not row:
                 return False
-            
+
             status, expires_at = row
+            if not status or status != 'active':
+                return False
+
             if expires_at:
                 # Check if not expired
                 from datetime import datetime
                 expiry = datetime.fromisoformat(expires_at) if isinstance(expires_at, str) else expires_at
-                return datetime.now() < expiry
-            
+                return datetime.utcnow() < expiry
+
             return status == 'active'
     except Exception:
         return False

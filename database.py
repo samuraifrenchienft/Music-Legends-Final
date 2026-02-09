@@ -192,6 +192,16 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE cards ADD COLUMN print_number INTEGER DEFAULT 1")
             if "quality" not in card_columns:
                 cursor.execute("ALTER TABLE cards ADD COLUMN quality TEXT DEFAULT 'standard'")
+
+            # VIP subscription columns for user_inventory
+            cursor.execute("PRAGMA table_info(user_inventory)")
+            inventory_columns = {row[1] for row in cursor.fetchall()}
+            if "vip_status" not in inventory_columns:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN vip_status TEXT DEFAULT 'inactive'")
+            if "vip_expires" not in inventory_columns:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN vip_expires TEXT")
+            if "vip_stripe_subscription_id" not in inventory_columns:
+                cursor.execute("ALTER TABLE user_inventory ADD COLUMN vip_stripe_subscription_id TEXT")
             
             # Server activity tracking (for auto-drops)
             cursor.execute("""
@@ -810,7 +820,10 @@ class DatabaseManager:
                     daily_streak INTEGER DEFAULT 0,
                     last_daily TEXT,
                     last_daily_claim TEXT,
-                    premium_expires TEXT
+                    premium_expires TEXT,
+                    vip_status TEXT DEFAULT 'inactive',
+                    vip_expires TEXT,
+                    vip_stripe_subscription_id TEXT
                 )
             """)
 
@@ -941,7 +954,10 @@ class DatabaseManager:
                     daily_streak INTEGER DEFAULT 0,
                     last_daily TEXT,
                     last_daily_claim TEXT,
-                    premium_expires TEXT
+                    premium_expires TEXT,
+                    vip_status TEXT DEFAULT 'inactive',
+                    vip_expires TEXT,
+                    vip_stripe_subscription_id TEXT
                 )
             """)
 
@@ -1562,6 +1578,9 @@ class DatabaseManager:
                 "last_daily TEXT",
                 "last_daily_claim TEXT",
                 "premium_expires TEXT",
+                "vip_status TEXT DEFAULT 'inactive'",
+                "vip_expires TEXT",
+                "vip_stripe_subscription_id TEXT",
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE user_inventory ADD COLUMN IF NOT EXISTS {col_def}")

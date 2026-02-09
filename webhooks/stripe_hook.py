@@ -101,6 +101,10 @@ async def handle_checkout_session_completed(event: Dict[str, Any]) -> Dict[str, 
         if metadata.get("type") == "battlepass_purchase":
             return await _fulfill_battlepass_purchase(session, metadata, session_id)
 
+        # --- VIP subscription flow ---
+        if metadata.get("type") == "vip_subscription":
+            return await _fulfill_vip_subscription(session, metadata, session_id)
+
         # --- Tier pack purchase flow (community/gold/platinum) ---
         if metadata.get("type") == "tier_pack_purchase":
             return await _fulfill_tier_pack_purchase(session, metadata, session_id)
@@ -376,6 +380,105 @@ async def _fulfill_battlepass_purchase(session: Dict, metadata: Dict, session_id
         import traceback
         traceback.print_exc()
         return {"error": "Fulfillment failed"}, 500
+
+
+async def _fulfill_vip_subscription(session: Dict, metadata: Dict, session_id: str) -> Dict[str, Any]:
+    """Activate VIP subscription — sets vip_status to 'active' and vip_expires to now + 30 days."""
+    from datetime import datetime, timedelta
+    import uuid as _uuid
+
+    try:
+        user_id = int(metadata.get("user_id"))
+        subscription = session.get("subscription")  # Stripe subscription ID
+        amount_cents = session.get("amount_total", 0)
+        expires_at = (datetime.utcnow() + timedelta(days=30)).isoformat()
+
+        logger.info(f"Fulfilling VIP subscription: user={user_id}, session={session_id}, sub={subscription}")
+
+        from database import DatabaseManager
+        db = DatabaseManager()
+
+        # Activate VIP status
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO user_inventory (user_id, vip_status, vip_expires, vip_stripe_subscription_id)
+                   VALUES (?, 'active', ?, ?)
+                   ON CONFLICT (user_id) DO UPDATE SET
+                   vip_status = 'active',
+                   vip_expires = ?,
+                   vip_stripe_subscription_id = ?""",
+                (user_id, expires_at, subscription, expires_at, subscription)
+            )
+            conn.commit()
+
+        # Record in purchases audit table
+        purchase_id = str(_uuid.uuid4())
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO purchases (purchase_id, user_id, pack_id, amount_cents, payment_method, stripe_session_id, status)
+                   VALUES (?, ?, 'vip_subscription', ?, 'stripe', ?, 'completed')""",
+                (purchase_id, user_id, amount_cents, session_id)
+            )
+            conn.commit()
+
+        AuditLog.record(
+            event="vip_subscription_activated",
+            user_id=user_id,
+            target_id=session_id,
+            details={"expires_at": expires_at, "amount_cents": amount_cents, "subscription_id": subscription}
+        )
+
+        # Send Discord notifications
+        try:
+            from main import bot
+
+            # DM buyer a receipt
+            user = bot.get_user(user_id)
+            if user:
+                receipt = purchase_embed(
+                    user=user,
+                    pack_type="VIP Membership ($4.99/month)",
+                    session_id=session_id,
+                    amount=amount_cents
+                )
+                await user.send(embed=receipt)
+                logger.info(f"VIP subscription receipt sent to user {user_id}")
+            else:
+                logger.warning(f"Could not find user {user_id} for VIP receipt")
+
+            # Post to admin sales channel
+            SALES_CHANNEL = os.getenv("SALES_CHANNEL_ID")
+            if SALES_CHANNEL:
+                sales_channel = bot.get_channel(int(SALES_CHANNEL))
+                if sales_channel:
+                    admin_embed = admin_sale_embed(
+                        pack_type="👑 VIP Membership (Monthly)",
+                        session_id=session_id,
+                        user_id=user_id,
+                        amount=amount_cents
+                    )
+                    await sales_channel.send(embed=admin_embed)
+                    logger.info(f"VIP subscription sale logged to channel {SALES_CHANNEL}")
+        except Exception as e:
+            logger.error(f"Failed to send VIP subscription notifications: {e}")
+
+        logger.info(f"VIP subscription fulfilled: user={user_id}, expires={expires_at}")
+
+        return {
+            "status": "fulfilled",
+            "product": "vip_subscription",
+            "user_id": user_id,
+            "vip_expires": expires_at,
+            "subscription_id": subscription
+        }
+
+    except Exception as e:
+        logger.error(f"VIP subscription fulfillment failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": "VIP fulfillment failed"}, 500
 
 
 async def handle_charge_refunded(event: Dict[str, Any]) -> Dict[str, Any]:
