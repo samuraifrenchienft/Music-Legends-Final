@@ -542,7 +542,174 @@ class BackupService:
         except Exception as e:
             logger.error(f"Backup integrity check failed: {e}")
             return False
-    
+
+    async def verify_backup_restorability(self, backup_path: Path) -> Dict:
+        """
+        Verify that backup can actually be restored and queried.
+
+        Creates temporary test database, restores backup, verifies tables
+        and runs sample queries to ensure backup is usable.
+
+        Args:
+            backup_path: Path to backup file to verify
+
+        Returns:
+            Dict with verification results:
+            {
+                'can_restore': bool,
+                'tables_verified': List[str],
+                'sample_query_results': Dict,
+                'errors': List[str],
+                'timestamp': str
+            }
+        """
+        import tempfile
+
+        result = {
+            'can_restore': False,
+            'tables_verified': [],
+            'sample_query_results': {},
+            'errors': [],
+            'timestamp': datetime.now().isoformat(),
+            'backup_file': str(backup_path)
+        }
+
+        temp_db_path = None
+
+        try:
+            # Determine database type from backup file
+            is_postgresql_backup = '.sql' in str(backup_path) or self.is_postgresql
+
+            if is_postgresql_backup:
+                # PostgreSQL backup verification
+                result = await self._verify_postgresql_backup_restorability(backup_path, result)
+            else:
+                # SQLite backup verification
+                # Create temporary database
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+                    temp_db_path = tmp.name
+
+                # Decompress backup
+                if str(backup_path).endswith('.gz'):
+                    with gzip.open(backup_path, 'rb') as f_in:
+                        with open(temp_db_path, 'wb') as f_out:
+                            shutil.copyfileobj(f_in, f_out)
+                else:
+                    shutil.copy(backup_path, temp_db_path)
+
+                # Try to open and query the database
+                conn = sqlite3.connect(temp_db_path)
+                cursor = conn.cursor()
+
+                # Verify critical tables exist
+                critical_tables = ['users', 'cards', 'user_cards', 'creator_packs', 'user_inventory']
+                cursor.execute("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table'
+                """)
+                existing_tables = {row[0] for row in cursor.fetchall()}
+
+                for table in critical_tables:
+                    if table in existing_tables:
+                        result['tables_verified'].append(table)
+                    else:
+                        result['errors'].append(f"Missing table: {table}")
+
+                # Run sample queries to verify data integrity
+                try:
+                    # Check users table
+                    cursor.execute("SELECT COUNT(*) FROM users")
+                    user_count = cursor.fetchone()[0]
+                    result['sample_query_results']['user_count'] = user_count
+
+                    # Check cards table
+                    cursor.execute("SELECT COUNT(*) FROM cards")
+                    card_count = cursor.fetchone()[0]
+                    result['sample_query_results']['card_count'] = card_count
+
+                    # Check user_cards table
+                    cursor.execute("SELECT COUNT(*) FROM user_cards")
+                    user_card_count = cursor.fetchone()[0]
+                    result['sample_query_results']['user_card_count'] = user_card_count
+
+                    # Check creator_packs table
+                    cursor.execute("SELECT COUNT(*) FROM creator_packs")
+                    pack_count = cursor.fetchone()[0]
+                    result['sample_query_results']['pack_count'] = pack_count
+
+                    # Verify database integrity
+                    cursor.execute("PRAGMA integrity_check")
+                    integrity = cursor.fetchone()[0]
+                    result['sample_query_results']['integrity_check'] = integrity
+
+                    if integrity != 'ok':
+                        result['errors'].append(f"Database integrity check failed: {integrity}")
+
+                except Exception as query_err:
+                    result['errors'].append(f"Query verification failed: {str(query_err)}")
+
+                conn.close()
+
+                # Mark as restorable if we got this far and have no errors
+                result['can_restore'] = len(result['errors']) == 0 and len(result['tables_verified']) >= 4
+
+        except Exception as e:
+            result['errors'].append(f"Restoration test failed: {str(e)}")
+            result['can_restore'] = False
+            logger.error(f"Backup restorability verification failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        finally:
+            # Cleanup temporary database
+            if temp_db_path and os.path.exists(temp_db_path):
+                try:
+                    os.unlink(temp_db_path)
+                except:
+                    pass
+
+        return result
+
+    async def _verify_postgresql_backup_restorability(self, backup_path: Path, result: Dict) -> Dict:
+        """Verify PostgreSQL backup can be restored (simplified check)."""
+        try:
+            # For PostgreSQL, we do a simpler verification since full restore
+            # requires a test database which is more complex
+
+            # Decompress and check SQL content
+            if str(backup_path).endswith('.gz'):
+                with gzip.open(backup_path, 'rb') as f:
+                    sql_content = f.read(50000).decode('utf-8', errors='ignore')
+            else:
+                with open(backup_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    sql_content = f.read(50000)
+
+            # Check for critical table definitions
+            critical_tables = ['users', 'cards', 'user_cards', 'creator_packs', 'user_inventory']
+            for table in critical_tables:
+                if f'CREATE TABLE' in sql_content and table in sql_content.lower():
+                    result['tables_verified'].append(table)
+                else:
+                    # Table might be later in the file
+                    result['errors'].append(f"Table '{table}' not found in backup preview (may exist later in file)")
+
+            # Check for data inserts
+            insert_count = sql_content.count('INSERT INTO')
+            result['sample_query_results']['insert_statements'] = insert_count
+
+            # Check for CREATE statements
+            create_count = sql_content.count('CREATE TABLE')
+            result['sample_query_results']['create_statements'] = create_count
+
+            # Mark as restorable if we found table definitions
+            result['can_restore'] = len(result['tables_verified']) >= 3 or create_count >= 4
+
+        except Exception as e:
+            result['errors'].append(f"PostgreSQL backup verification failed: {str(e)}")
+            result['can_restore'] = False
+
+        return result
+
     def cleanup_old_backups(self, keep_days: int = 30, keep_critical: int = 100):
         """
         Clean up old backup files

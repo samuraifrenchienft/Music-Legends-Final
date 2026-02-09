@@ -2,6 +2,9 @@
 import logging
 from scheduler.cron import cron_service
 from scheduler.services import rewards, drops, trades, seasons, data
+from services.backup_service import backup_service
+from pathlib import Path
+import os
 
 # Import safe decorator
 from scheduler.cron import AsyncCronService
@@ -78,13 +81,96 @@ async def job_season_check():
 async def job_cleanup():
     """Prune old data and cleanup"""
     logging.info("Running cleanup job")
-    
+
     try:
         result = await data.prune_old_data()
         logging.info(f"Cleanup completed: {result}")
         return result
     except Exception as e:
         logging.error(f"Cleanup job failed: {e}")
+        raise
+
+# Backup verification job - runs daily at 04:00 UTC
+@cron.safe("backup_verify")
+async def job_verify_backup():
+    """Verify latest backup can be restored"""
+    logging.info("Running backup verification job")
+
+    try:
+        # Find latest backup file
+        backup_dir = Path("backups")
+
+        # Look for latest.sql.gz (PostgreSQL) or latest.db.gz (SQLite)
+        latest_pg = backup_dir / "latest.sql.gz"
+        latest_sqlite = backup_dir / "latest.db.gz"
+
+        latest_backup = None
+        if latest_pg.exists():
+            latest_backup = latest_pg
+        elif latest_sqlite.exists():
+            latest_backup = latest_sqlite
+        else:
+            # Find most recent backup in daily folder
+            daily_dir = backup_dir / "daily"
+            if daily_dir.exists():
+                backups = sorted(
+                    list(daily_dir.glob("*.sql.gz")) + list(daily_dir.glob("*.db.gz")),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True
+                )
+                if backups:
+                    latest_backup = backups[0]
+
+        if not latest_backup:
+            logging.warning("❌ No backup found to verify")
+            return {"success": False, "error": "No backup found"}
+
+        # Verify backup restorability
+        verification_result = await backup_service.verify_backup_restorability(latest_backup)
+
+        if verification_result['can_restore']:
+            logging.info(f"✅ Backup verification PASSED: {latest_backup.name}")
+            logging.info(f"   Tables verified: {len(verification_result['tables_verified'])}")
+            logging.info(f"   Sample queries: {verification_result['sample_query_results']}")
+
+            return {
+                "success": True,
+                "backup_file": str(latest_backup),
+                "tables_verified": verification_result['tables_verified'],
+                "can_restore": True
+            }
+        else:
+            logging.error(f"❌ Backup verification FAILED: {latest_backup.name}")
+            logging.error(f"   Errors: {verification_result['errors']}")
+
+            # Alert admin channel if configured
+            try:
+                ADMIN_CHANNEL_ID = os.getenv("ADMIN_CHANNEL_ID") or os.getenv("LOGS_CHANNEL")
+                if ADMIN_CHANNEL_ID:
+                    from main import bot  # Import bot to send alert
+                    channel = bot.get_channel(int(ADMIN_CHANNEL_ID))
+                    if channel:
+                        error_msg = "\n".join(verification_result['errors'][:5])  # First 5 errors
+                        await channel.send(
+                            f"⚠️ **Backup Verification Failed**\n"
+                            f"Backup: `{latest_backup.name}`\n"
+                            f"Errors:\n```\n{error_msg}\n```\n"
+                            f"Please check backup integrity!"
+                        )
+            except Exception as alert_err:
+                logging.error(f"Failed to send backup alert to admin channel: {alert_err}")
+
+            return {
+                "success": False,
+                "backup_file": str(latest_backup),
+                "errors": verification_result['errors'],
+                "can_restore": False
+            }
+
+    except Exception as e:
+        logging.error(f"Backup verification job failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 async def init_cron():
@@ -105,7 +191,10 @@ async def init_cron():
     
     # Add cleanup daily at 03:00 UTC
     cron.add_daily_job(job_cleanup, hour=3, minute=0, job_id="cleanup")
-    
+
+    # Add backup verification daily at 04:00 UTC
+    cron.add_daily_job(job_verify_backup, hour=4, minute=0, job_id="backup_verify")
+
     # Start the scheduler
     await cron.start()
     
