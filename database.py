@@ -2417,6 +2417,7 @@ class DatabaseManager:
                     ON CONFLICT (user_id) DO NOTHING
                 """, (user_id, f'User_{user_id}', f'User#{user_id}'))
 
+                print(f"[DROP] Opening pack '{pack_name}' for user {user_id} with {len(cards_data)} cards")
                 granted = []
                 for card in cards_data:
                     card_id = card.get('card_id', '')
@@ -2447,11 +2448,18 @@ class DatabaseManager:
                         VALUES ({ph}, {ph}, 'drop')
                         ON CONFLICT (user_id, card_id) DO NOTHING
                     """, (user_id, card_id))
-                    if cursor.rowcount > 0:
+                    rowcount = cursor.rowcount
+                    print(f"[DROP]   Card '{card.get('name', 'Unknown')}' (ID: {card_id}) - rowcount: {rowcount}")
+                    if rowcount > 0:
+                        granted.append(card)
+                    else:
+                        # Card already exists for this user - still add to granted for animation
+                        print(f"[DROP]   Card {card_id} already owned by user {user_id}, adding to animation anyway")
                         granted.append(card)
                 conn.commit()
+                print(f"[DROP] Committed transaction - {len(granted)} cards granted to user {user_id}")
 
-            print(f"[DROP] Pack '{pack_name}' opened for user {user_id} ({len(granted)} new cards)")
+            print(f"[DROP] Pack '{pack_name}' opened for user {user_id} ({len(granted)} total cards)")
             return {'success': True, 'cards': granted, 'pack_name': pack_name}
         except Exception as e:
             print(f"[DROP] Error opening pack {pack_id} for user {user_id}: {e}")

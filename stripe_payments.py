@@ -269,6 +269,53 @@ class StripePaymentManager:
                 'error': str(e)
             }
 
+    def create_vip_subscription_checkout(self, user_id: int, username: str) -> Dict:
+        """Create Stripe Checkout session for VIP monthly subscription ($4.99/month)"""
+        try:
+            from config.vip import VIPSubscription
+
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': 'VIP Membership',
+                            'description': '2x Daily Gold, +1 Ticket/Day, Battle Bonuses, Exclusive Cosmetics',
+                        },
+                        'unit_amount': VIPSubscription.MONTHLY_PRICE_CENTS,
+                        'recurring': {
+                            'interval': 'month',
+                        },
+                    },
+                    'quantity': 1,
+                }],
+                mode='subscription',
+                success_url='https://discord.com/channels/@me',
+                cancel_url='https://discord.com/channels/@me',
+                metadata={
+                    'user_id': str(user_id),
+                    'username': username,
+                    'type': 'vip_subscription'
+                }
+            )
+
+            return {
+                'success': True,
+                'checkout_url': checkout_session.url,
+                'session_id': checkout_session.id,
+                'price_cents': VIPSubscription.MONTHLY_PRICE_CENTS
+            }
+
+        except Exception as e:
+            print(f"Error creating VIP subscription checkout: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def create_stripe_connect_account(self, creator_id: int, email: str) -> Dict:
         """Create Stripe Connect account for creator"""
         try:
