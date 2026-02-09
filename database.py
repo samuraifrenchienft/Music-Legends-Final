@@ -2260,7 +2260,42 @@ class DatabaseManager:
         """Get user's deck (first N cards from collection)"""
         collection = self.get_user_collection(user_id)
         return collection[:limit]
-    
+
+    def get_user_purchased_packs(self, user_id: int, limit: int = 25) -> List[Dict]:
+        """Get packs user has purchased with full card data"""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get pack purchases
+            cursor.execute(f"""
+                SELECT pp.purchase_id, pp.pack_id, pp.purchased_at, pp.cards_received,
+                       cp.name AS pack_name, cp.description, cp.pack_tier, cp.genre
+                FROM pack_purchases pp
+                JOIN creator_packs cp ON pp.pack_id = cp.pack_id
+                WHERE pp.buyer_id = {ph}
+                ORDER BY pp.purchased_at DESC
+                LIMIT {ph}
+            """, (user_id, limit))
+
+            columns = [desc[0] for desc in cursor.description]
+            purchases = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+            # Enrich with full card data
+            for purchase in purchases:
+                card_ids = json.loads(purchase['cards_received']) if purchase['cards_received'] else []
+                if card_ids:
+                    placeholders = ','.join([ph] * len(card_ids))
+                    cursor.execute(f"""
+                        SELECT * FROM cards WHERE card_id IN ({placeholders})
+                    """, tuple(card_ids))
+                    card_columns = [desc[0] for desc in cursor.description]
+                    purchase['cards'] = [dict(zip(card_columns, row)) for row in cursor.fetchall()]
+                else:
+                    purchase['cards'] = []
+
+            return purchases
+
     def record_match(self, match_data: Dict) -> bool:
         """Record a completed match"""
         try:

@@ -812,6 +812,137 @@ class BuyPackTierView(discord.ui.View):
         return interaction.user.id == self.author_id
 
 
+# ─── View: Pack Contents ────────────────────────────────────────────────────
+
+class PackContentsView(discord.ui.View):
+    """View for displaying purchased pack contents with video links"""
+
+    def __init__(self, db, user_id: int, purchases: list):
+        super().__init__(timeout=180)
+        self.db = db
+        self.user_id = user_id
+        self.purchases = purchases
+        self.current_pack = None
+
+        # Add pack selection dropdown
+        options = [
+            discord.SelectOption(
+                label=p['pack_name'][:100] if p['pack_name'] else 'Unnamed Pack',
+                description=f"{len(p['cards'])} cards • {p['purchased_at'][:10] if p['purchased_at'] else 'Unknown date'}",
+                value=str(i)
+            )
+            for i, p in enumerate(purchases[:25])
+        ]
+
+        select = discord.ui.Select(
+            placeholder="Select a pack to view",
+            options=options
+        )
+        select.callback = self.on_pack_select
+        self.add_item(select)
+
+    def create_pack_list_embed(self) -> discord.Embed:
+        """Create embed showing list of acquired packs"""
+        embed = discord.Embed(
+            title="📦 Your Pack Collection",
+            description=f"You own {len(self.purchases)} pack(s)\nSelect a pack from the dropdown to view cards and YouTube links",
+            color=discord.Color.purple()
+        )
+
+        # Show recent acquisitions
+        for i, pack in enumerate(self.purchases[:5]):
+            tier_emoji = {
+                'community': '⚪',
+                'gold': '🟡',
+                'platinum': '⚫',
+                'legendary': '⭐'
+            }.get(pack.get('pack_tier', '').lower(), '📦')
+
+            pack_name = pack.get('pack_name', 'Unnamed Pack')
+            card_count = len(pack.get('cards', []))
+            purchased_at = pack.get('purchased_at', 'Unknown date')[:10]
+
+            embed.add_field(
+                name=f"{tier_emoji} {pack_name}",
+                value=f"{card_count} cards • Acquired {purchased_at}",
+                inline=False
+            )
+
+        embed.set_footer(text="Use dropdown above to view pack contents")
+        return embed
+
+    async def on_pack_select(self, interaction: Interaction):
+        """Handle pack selection from dropdown"""
+        pack_index = int(interaction.data['values'][0])
+        self.current_pack = self.purchases[pack_index]
+
+        embed = self.create_pack_contents_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    def create_pack_contents_embed(self) -> discord.Embed:
+        """Create embed showing all cards in selected pack"""
+        pack = self.current_pack
+
+        tier_colors = {
+            'community': discord.Color.light_gray(),
+            'gold': discord.Color.gold(),
+            'platinum': discord.Color.dark_gray(),
+            'legendary': discord.Color.orange()
+        }
+        color = tier_colors.get(pack.get('pack_tier', '').lower(), discord.Color.purple())
+
+        pack_name = pack.get('pack_name', 'Unnamed Pack')
+        purchased_at = pack.get('purchased_at', 'Unknown date')[:10]
+        cards = pack.get('cards', [])
+
+        embed = discord.Embed(
+            title=f"📦 {pack_name}",
+            description=f"Purchased on {purchased_at} • {len(cards)} cards",
+            color=color
+        )
+
+        # Show each card with stats and YouTube link
+        for card in cards[:10]:  # Limit to 10 cards per page
+            rarity_emoji = RARITY_EMOJI.get(
+                card.get('rarity', 'common').lower(),
+                '⚪'
+            )
+
+            name = card.get('name', 'Unknown Artist')
+            title = card.get('title', '')
+            display = f"{name} — \"{title}\"" if title else name
+
+            stats = (
+                f"Impact {card.get('impact', 50)} • "
+                f"Skill {card.get('skill', 50)} • "
+                f"Longevity {card.get('longevity', 50)} • "
+                f"Culture {card.get('culture', 50)} • "
+                f"Hype {card.get('hype', 50)}"
+            )
+
+            # Build links
+            links = []
+            if card.get('youtube_url'):
+                links.append(f"[▶️ Watch on YouTube]({card['youtube_url']})")
+            links.append(f"`/view {card.get('card_id', 'unknown')}`")
+
+            embed.add_field(
+                name=f"{rarity_emoji} {display}",
+                value=f"{stats}\n{' • '.join(links)}",
+                inline=False
+            )
+
+        if len(cards) > 10:
+            embed.set_footer(text=f"Showing first 10 of {len(cards)} cards")
+        else:
+            embed.set_footer(text="Music Legends • Use /collection to see all your cards")
+
+        return embed
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.user_id
+
+
 # ─── Cog: Marketplace Commands ─────────────────────────────────────────────
 
 class MarketplaceCommands(commands.Cog):
@@ -1069,49 +1200,30 @@ class MarketplaceCommands(commands.Cog):
         embed.set_footer(text="Use /sell to list your cards | Use /buy to purchase")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="pack", description="View your available packs")
+    @app_commands.command(name="pack", description="View packs you've acquired")
     async def pack_command(self, interaction: Interaction):
-        """View packs you own"""
+        """View all packs you've acquired (purchased, claimed, picked up)"""
 
-        embed = discord.Embed(
-            title="YOUR PACKS",
-            description="View and open your card packs",
-            color=discord.Color.purple()
-        )
+        # Get user's acquired packs from all sources
+        purchases = self.db.get_user_purchased_packs(interaction.user.id, limit=25)
 
-        # Get user's packs
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT pack_id, name, status, created_at, cards_data
-                FROM creator_packs
-                WHERE creator_id = ? AND status = 'LIVE'
-                ORDER BY created_at DESC
-                LIMIT 10
-            """, (interaction.user.id,))
-            packs = cursor.fetchall()
-
-        if packs:
-            for pack in packs:
-                pack_id, pack_name, status, created_at, cards_data = pack
-                cards = json.loads(cards_data) if cards_data else []
-                embed.add_field(
-                    name=f"{pack_name}",
-                    value=f"Status: {status}\nCards: {len(cards)}\nCreated: {created_at}\nUse `/open_pack {pack_id}` to open",
-                    inline=False
-                )
-        else:
-            embed.add_field(
-                name="No Packs",
-                value="You don't have any packs yet. Use `/create_pack` to make one!",
-                inline=False
+        if not purchases:
+            embed = discord.Embed(
+                title="📦 No Packs Yet",
+                description=(
+                    "You haven't acquired any packs yet!\n\n"
+                    "🛒 Use `/packs` to browse marketplace\n"
+                    "🎁 Check daily rewards\n"
+                    "✨ Watch for drops in channels"
+                ),
+                color=discord.Color.blue()
             )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        embed.set_footer(text="Packs | Use /create_pack to make new packs")
-        try:
-            await interaction.response.send_message(embed=embed)
-        except discord.errors.HTTPException:
-            await interaction.followup.send(embed=embed)
+        # Create pack selection view
+        view = PackContentsView(self.db, interaction.user.id, purchases)
+        embed = view.create_pack_list_embed()
+        await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(name="packs", description="Browse marketplace packs by genre")
     async def packs_command(self, interaction: Interaction):
