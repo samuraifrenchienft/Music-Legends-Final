@@ -49,11 +49,17 @@ class DatabaseManager:
                 print(f"🗄️ Database initialized: SQLite (local)")
         
         try:
-            # Create Async engine — nonblocking
+            # Create Async engine with connection pooling
             self._engine = create_async_engine(
                 database_url,
                 future=True,
-                echo=False  # Set to True for SQL debugging
+                echo=False,  # Set to True for SQL debugging
+                # Connection pool configuration for Railway PostgreSQL
+                pool_size=20,              # 20 persistent connections
+                max_overflow=10,           # +10 during spikes (30 max)
+                pool_timeout=30,           # Wait 30s before error
+                pool_recycle=3600,         # Recycle connections after 1 hour
+                pool_pre_ping=True,        # Health check before use
             )
         except Exception as e:
             print(f"❌ Database initialization failed: {e}")

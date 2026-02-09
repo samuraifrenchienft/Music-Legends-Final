@@ -92,26 +92,253 @@ class _PgConnectionWrapper:
         return False
 
 
+class PooledConnectionWrapper:
+    """Wrapper for pooled connections that returns to pool on close.
+
+    This wrapper behaves like _PgConnectionWrapper but returns the connection
+    to the pool instead of closing it.
+    """
+
+    def __init__(self, conn, pool, is_overflow: bool = False):
+        self._conn = conn
+        self._pool = pool
+        self._is_overflow = is_overflow
+
+    def cursor(self):
+        return _PgCursorWrapper(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        """Return connection to pool instead of closing."""
+        if self._is_overflow:
+            # Overflow connection - close it and decrement counter
+            with self._pool._lock:
+                self._pool._overflow_count -= 1
+            try:
+                self._conn.close()
+            except:
+                pass
+        else:
+            # Regular pool connection - return to pool
+            try:
+                self._conn.rollback()  # Clear any uncommitted transaction
+                wrapped = _PgConnectionWrapper(self._conn, is_overflow=False)
+                self._pool._pool.put(wrapped, block=False)
+            except:
+                # Pool full (shouldn't happen) - close connection
+                try:
+                    self._conn.close()
+                except:
+                    pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self.close()  # Return to pool
+        return False
+
+
+class ConnectionPool:
+    """Thread-safe connection pool for PostgreSQL using psycopg2.
+
+    Maintains a pool of persistent connections to avoid the overhead of
+    creating new connections for every query (~50ms per connection).
+
+    Pool configuration:
+    - pool_size: 10 persistent connections
+    - max_overflow: 5 additional connections during spikes
+    - Total max: 15 concurrent connections
+    """
+
+    def __init__(self, database_url: str, pool_size: int = 10, max_overflow: int = 5):
+        import psycopg2
+        from queue import Queue, Empty
+        import threading
+
+        self.database_url = database_url
+        self.pool_size = pool_size
+        self.max_overflow = max_overflow
+        self._pool = Queue(maxsize=pool_size)
+        self._overflow_count = 0
+        self._lock = threading.Lock()
+
+        # Pre-populate pool with connections
+        for _ in range(pool_size):
+            try:
+                conn = psycopg2.connect(database_url)
+                self._pool.put(_PgConnectionWrapper(conn))
+            except Exception as e:
+                print(f"[POOL] Error creating initial connection: {e}")
+                # Continue - pool will create on-demand if needed
+
+    def get_connection(self, timeout: float = 30.0):
+        """Get a connection from the pool.
+
+        Args:
+            timeout: Seconds to wait for available connection
+
+        Returns:
+            PooledConnectionWrapper: Database connection that returns to pool on close
+
+        Raises:
+            Exception: If no connection available within timeout
+        """
+        from queue import Empty
+        import psycopg2
+
+        # Try to get from pool first
+        try:
+            conn = self._pool.get(block=True, timeout=timeout)
+            # Verify connection is still alive
+            try:
+                conn._conn.isolation_level  # Simple check
+                return PooledConnectionWrapper(conn._conn, self, is_overflow=False)
+            except:
+                # Connection dead, create new one
+                conn = psycopg2.connect(self.database_url)
+                return PooledConnectionWrapper(conn, self, is_overflow=False)
+        except Empty:
+            # Pool exhausted, check if we can create overflow connection
+            with self._lock:
+                if self._overflow_count < self.max_overflow:
+                    self._overflow_count += 1
+                    try:
+                        conn = psycopg2.connect(self.database_url)
+                        return PooledConnectionWrapper(conn, self, is_overflow=True)
+                    except Exception as e:
+                        self._overflow_count -= 1
+                        raise Exception(f"Failed to create overflow connection: {e}")
+                else:
+                    raise Exception(
+                        f"Connection pool exhausted (pool_size={self.pool_size}, "
+                        f"max_overflow={self.max_overflow}, timeout={timeout}s)"
+                    )
+
+    def return_connection(self, conn):
+        """Return a connection to the pool.
+
+        Args:
+            conn: _PgConnectionWrapper to return
+        """
+        if hasattr(conn, '_is_overflow') and conn._is_overflow:
+            # Overflow connection - close it
+            with self._lock:
+                self._overflow_count -= 1
+            try:
+                conn._conn.close()
+            except:
+                pass
+        else:
+            # Regular pool connection - return to pool
+            try:
+                # Reset connection state
+                conn._conn.rollback()  # Clear any uncommitted transaction
+                self._pool.put(conn, block=False)
+            except:
+                # Pool full (shouldn't happen) - close connection
+                try:
+                    conn._conn.close()
+                except:
+                    pass
+
+    def close_all(self):
+        """Close all connections in the pool. Call on shutdown."""
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get(block=False)
+                conn._conn.close()
+            except:
+                pass
+
+
+# Modify _PgConnectionWrapper to support overflow tracking
+class _PgConnectionWrapper_Original(_PgConnectionWrapper):
+    pass
+
+# Store original class
+_OriginalPgConnectionWrapper = _PgConnectionWrapper
+
+class _PgConnectionWrapper:
+    """Wrapper for PostgreSQL connection with auto-commit/rollback."""
+
+    def __init__(self, conn, is_overflow: bool = False):
+        self._conn = conn
+        self._is_overflow = is_overflow
+
+    def cursor(self):
+        return _PgCursorWrapper(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 class DatabaseManager:
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
         self._database_url = os.getenv("DATABASE_URL")
         self._db_type = "postgresql" if self._database_url else "sqlite"
+
+        # Initialize connection pool for PostgreSQL
+        self._pool = None
+        if self._database_url:
+            try:
+                url = self._database_url
+                if url.startswith("postgres://"):
+                    url = url.replace("postgres://", "postgresql://", 1)
+                self._pool = ConnectionPool(url, pool_size=10, max_overflow=5)
+                print(f"✅ [DATABASE] PostgreSQL connection pool initialized (size=10, max_overflow=5)")
+            except Exception as e:
+                print(f"⚠️ [DATABASE] Connection pool initialization failed, falling back to direct connections: {e}")
+                self._pool = None
+
         self.init_database()
 
     def _get_connection(self):
         """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite.
 
-        PostgreSQL connections are wrapped so that ? placeholders are
-        automatically translated to %s and the context-manager commits
-        on success (matching SQLite behaviour).
+        PostgreSQL connections use connection pooling for efficiency.
+        Falls back to direct connections if pool is unavailable.
+
+        SQLite connections are direct (no pooling needed for local file DB).
         """
         if self._database_url:
-            import psycopg2
-            url = self._database_url
-            if url.startswith("postgres://"):
-                url = url.replace("postgres://", "postgresql://", 1)
-            return _PgConnectionWrapper(psycopg2.connect(url))
+            # Use connection pool if available
+            if self._pool:
+                return self._pool.get_connection()
+            else:
+                # Fallback to direct connection if pool failed
+                import psycopg2
+                url = self._database_url
+                if url.startswith("postgres://"):
+                    url = url.replace("postgres://", "postgresql://", 1)
+                return _PgConnectionWrapper(psycopg2.connect(url))
         else:
             return sqlite3.connect(self.db_path)
 
