@@ -2781,6 +2781,18 @@ class DatabaseManager:
                     ON CONFLICT (user_id) DO NOTHING
                 """, (user_id, f'User_{user_id}', f'User#{user_id}'))
 
+                # Record pack claim in pack_purchases (for /pack command)
+                import uuid
+                purchase_id = f"drop_{uuid.uuid4().hex[:12]}"
+                card_ids = [c.get('card_id') for c in cards_data if c.get('card_id')]
+                cursor.execute(f"""
+                    INSERT INTO pack_purchases
+                    (purchase_id, pack_id, buyer_id, purchase_amount_cents,
+                     platform_revenue_cents, creator_revenue_cents,
+                     stripe_payment_id, cards_received)
+                    VALUES ({ph}, {ph}, {ph}, NULL, NULL, NULL, NULL, {ph})
+                """, (purchase_id, pack_id, user_id, json.dumps(card_ids)))
+
                 print(f"[DROP] Opening pack '{pack_name}' for user {user_id} with {len(cards_data)} cards")
                 granted = []
                 for card in cards_data:
@@ -2858,6 +2870,18 @@ class DatabaseManager:
                     VALUES ({ph}, {ph}, {ph})
                     ON CONFLICT (user_id) DO NOTHING
                 """, (target_user_id, f'User_{target_user_id}', f'User#{target_user_id}'))
+
+                # Record grant in pack_purchases (for /pack command)
+                import uuid
+                purchase_id = f"grant_{uuid.uuid4().hex[:12]}"
+                card_ids = [c.get('card_id') for c in cards_data if c.get('card_id')]
+                cursor.execute(f"""
+                    INSERT INTO pack_purchases
+                    (purchase_id, pack_id, buyer_id, purchase_amount_cents,
+                     platform_revenue_cents, creator_revenue_cents,
+                     stripe_payment_id, cards_received)
+                    VALUES ({ph}, {ph}, {ph}, NULL, NULL, NULL, NULL, {ph})
+                """, (purchase_id, pack_id, target_user_id, json.dumps(card_ids)))
 
                 # Grant cards
                 granted = []

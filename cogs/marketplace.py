@@ -1204,8 +1204,20 @@ class MarketplaceCommands(commands.Cog):
     async def pack_command(self, interaction: Interaction):
         """View all packs you've acquired (purchased, claimed, picked up)"""
 
-        # Get user's acquired packs from all sources
-        purchases = self.db.get_user_purchased_packs(interaction.user.id, limit=25)
+        await interaction.response.defer(ephemeral=False)
+
+        try:
+            purchases = self.db.get_user_purchased_packs(interaction.user.id, limit=25)
+        except Exception as e:
+            print(f"[PACK] Error fetching packs for user {interaction.user.id}: {e}")
+            import traceback
+            traceback.print_exc()
+            embed = discord.Embed(
+                title="❌ Error Loading Packs",
+                description="Something went wrong loading your packs. Please try again.",
+                color=discord.Color.red()
+            )
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if not purchases:
             embed = discord.Embed(
@@ -1218,12 +1230,12 @@ class MarketplaceCommands(commands.Cog):
                 ),
                 color=discord.Color.blue()
             )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            return await interaction.followup.send(embed=embed)
 
         # Create pack selection view
         view = PackContentsView(self.db, interaction.user.id, purchases)
         embed = view.create_pack_list_embed()
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="packs", description="Browse marketplace packs by genre")
     async def packs_command(self, interaction: Interaction):
