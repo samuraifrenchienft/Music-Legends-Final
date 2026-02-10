@@ -12,6 +12,18 @@ def _is_dev(user_id: int) -> bool:
     return str(user_id) in [uid.strip() for uid in dev_ids if uid.strip()]
 
 
+def _is_admin(interaction: Interaction) -> bool:
+    """True if user is a server admin/owner OR in DEV_USER_IDS."""
+    if _is_dev(interaction.user.id):
+        return True
+    if isinstance(interaction.user, discord.Member):
+        return (
+            interaction.user.guild_permissions.administrator
+            or interaction.guild.owner_id == interaction.user.id
+        )
+    return False
+
+
 class DevSupplyCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -72,18 +84,18 @@ class DevSupplyCog(commands.Cog):
     @app_commands.command(name="dev_reset_daily", description="[DEV] Reset a user's daily claim for testing")
     @app_commands.describe(user="User to reset (defaults to yourself)")
     async def dev_reset_daily(self, interaction: Interaction, user: discord.Member = None):
-        if not _is_dev(interaction.user.id):
+        if not _is_admin(interaction):
             await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
             return
 
         target = user or interaction.user
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE user_inventory SET last_daily_claim = NULL, daily_streak = 0 WHERE user_id = ?",
+                f"UPDATE user_inventory SET last_daily_claim = NULL, daily_streak = 0 WHERE user_id = {ph}",
                 (target.id,)
             )
-            conn.commit()
             changed = cursor.rowcount
 
         if changed:
@@ -96,23 +108,29 @@ class DevSupplyCog(commands.Cog):
             )
 
 
-    @app_commands.command(name="give_gold", description="[DEV] Give gold to a user for testing")
+    @app_commands.command(name="give_gold", description="Give gold to a user (server admin only)")
     @app_commands.describe(user="Target user", amount="Amount of gold to give")
     async def give_gold(self, interaction: Interaction, user: discord.Member, amount: int):
-        if not _is_dev(interaction.user.id):
-            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
+        if not _is_admin(interaction):
+            await interaction.response.send_message("❌ Server admins only.", ephemeral=True)
             return
 
         if amount <= 0:
             await interaction.response.send_message("❌ Amount must be positive.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             # Ensure user_inventory row exists first
             cursor.execute(
-                f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, 0) ON CONFLICT DO NOTHING",
+                f"INSERT INTO users (user_id, username, discord_tag) VALUES ({ph}, {ph}, {ph}) ON CONFLICT (user_id) DO NOTHING",
+                (user.id, user.display_name, str(user))
+            )
+            cursor.execute(
+                f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, 0) ON CONFLICT (user_id) DO NOTHING",
                 (user.id,)
             )
             # Add gold
@@ -133,13 +151,13 @@ class DevSupplyCog(commands.Cog):
             description=f"Gave **{amount:,}** gold to {user.mention}\nNew balance: **{new_balance:,}** gold",
             color=discord.Color.gold()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
     @app_commands.command(name="dev_debug", description="[DEV] Diagnose why cards aren't showing in /collection")
     @app_commands.describe(user="User to check (defaults to yourself)")
     async def dev_debug(self, interaction: discord.Interaction, user: discord.Member = None):
-        if not _is_dev(interaction.user.id):
+        if not _is_admin(interaction):
             await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
             return
 
@@ -150,15 +168,12 @@ class DevSupplyCog(commands.Cog):
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
 
-            # 1. Live pack count
             cursor.execute("SELECT COUNT(*), COUNT(CASE WHEN pack_tier='community' THEN 1 END) FROM creator_packs WHERE status='LIVE'")
             total_live, community_live = cursor.fetchone()
 
-            # 2. user_cards rows for this user
             cursor.execute(f"SELECT COUNT(*) FROM user_cards WHERE user_id = {ph}", (target.id,))
             user_cards_count = cursor.fetchone()[0]
 
-            # 3. How many of those user_cards have a matching cards row (JOIN check)
             cursor.execute(f"""
                 SELECT COUNT(*) FROM user_cards uc
                 JOIN cards c ON c.card_id = uc.card_id
@@ -166,7 +181,6 @@ class DevSupplyCog(commands.Cog):
             """, (target.id,))
             matched_count = cursor.fetchone()[0]
 
-            # 4. Orphaned user_cards (in user_cards but NOT in cards table)
             cursor.execute(f"""
                 SELECT uc.card_id FROM user_cards uc
                 LEFT JOIN cards c ON c.card_id = uc.card_id
@@ -175,11 +189,9 @@ class DevSupplyCog(commands.Cog):
             """, (target.id,))
             orphans = [r[0] for r in cursor.fetchall()]
 
-            # 5. Total cards in master table
             cursor.execute("SELECT COUNT(*) FROM cards")
             total_cards = cursor.fetchone()[0]
 
-            # 6. pack_purchases for this user
             cursor.execute(f"SELECT COUNT(*) FROM pack_purchases WHERE buyer_id = {ph}", (target.id,))
             pack_purchases = cursor.fetchone()[0]
 
@@ -208,34 +220,6 @@ class DevSupplyCog(commands.Cog):
             lines.append(f"\n✅ Data looks correct — check /collection again")
 
         embed = discord.Embed(title="🔍 Card Debug Info", description="\n".join(lines), color=discord.Color.orange())
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-    @app_commands.command(name="dev_seed_pack", description="[DEV] Seed a starter community pack so daily claim works")
-    async def dev_seed_pack(self, interaction: discord.Interaction):
-        if not _is_dev(interaction.user.id):
-            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-        result = self.db.seed_starter_pack("Music Legends Starter Pack")
-
-        if result["success"]:
-            embed = discord.Embed(
-                title="🌱 Starter Pack Seeded",
-                description=(
-                    f"Created **{result['pack_name']}** (`{result['pack_id']}`)\n"
-                    f"{result['cards']} starter cards added\n\n"
-                    "Daily claim will now grant packs to users."
-                ),
-                color=discord.Color.green()
-            )
-        else:
-            embed = discord.Embed(
-                title="ℹ️ Seed Result",
-                description=result["error"],
-                color=discord.Color.blue()
-            )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
