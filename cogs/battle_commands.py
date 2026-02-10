@@ -42,8 +42,16 @@ class WagerSelect(ui.Select):
 
     async def callback(self, interaction: Interaction):
         self.view.selected_tier = self.values[0]
+        tier = BattleWagerConfig.get_tier(self.values[0])
         self.view.stop()
-        await interaction.response.defer()
+        # Update the ephemeral message so challenger knows what happens next
+        await interaction.response.edit_message(
+            content=(
+                f"✅ **{tier['emoji']} {tier['name']} wager selected!** ({tier['wager_cost']}g)\n\n"
+                f"Challenge sent! **Watch the channel** — your opponent has 60s to accept."
+            ),
+            view=None
+        )
 
 
 class WagerSelectView(ui.View):
@@ -141,12 +149,17 @@ class BattleCommands(commands.Cog):
     # ------------------------------------------------------------------
 
     def _ensure_user(self, user: discord.User):
-        """Make sure user row exists"""
+        """Make sure user row and inventory row both exist"""
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?, ?, ?)",
                 (user.id, user.display_name, str(user))
+            )
+            # Ensure inventory row exists with 500 starting gold (schema default)
+            cursor.execute(
+                "INSERT OR IGNORE INTO user_inventory (user_id, gold) VALUES (?, 500)",
+                (user.id,)
             )
             conn.commit()
 
@@ -250,6 +263,23 @@ class BattleCommands(commands.Cog):
 
         self._ensure_user(interaction.user)
         self._ensure_user(opponent)
+
+        try:
+            await self._run_battle(interaction, opponent)
+        except Exception as e:
+            import traceback
+            print(f"[BATTLE] Unhandled error: {e}")
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(
+                    "⚔️ Battle encountered an error and was cancelled. Any gold wagered has been refunded.",
+                    ephemeral=True
+                )
+            except Exception:
+                pass
+
+    async def _run_battle(self, interaction: Interaction, opponent: discord.User):
+        """Inner battle logic — wrapped by battle_command for error handling"""
 
         # Step 1 — Challenger picks wager tier
         wager_view = WagerSelectView(interaction.user.id)
