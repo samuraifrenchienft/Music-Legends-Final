@@ -2807,19 +2807,20 @@ class DatabaseManager:
                                 'legendary': 'legendary', 'mythic': 'legendary'}
                     tier = card.get('tier') or tier_map.get(rarity, 'community')
                     card_vals = (card_id, card.get('name', ''), card.get('artist_name', card.get('name', '')),
-                                 card.get('title', ''), rarity, tier, card.get('image_url', ''))
+                                 card.get('title', ''), rarity, tier, card.get('image_url', ''),
+                                 card.get('youtube_url', ''))
                     if self._db_type == "postgresql":
                         cursor.execute(f"""
                             INSERT INTO cards
-                            (card_id, name, artist_name, title, rarity, tier, image_url)
-                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                            (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
                             ON CONFLICT (card_id) DO NOTHING
                         """, card_vals)
                     else:
                         cursor.execute(f"""
                             INSERT OR IGNORE INTO cards
-                            (card_id, name, artist_name, title, rarity, tier, image_url)
-                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                            (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
                         """, card_vals)
                     cursor.execute(f"""
                         INSERT INTO user_cards (user_id, card_id, acquired_from)
@@ -2891,6 +2892,30 @@ class DatabaseManager:
                     card_id = card.get('card_id', '')
                     if not card_id:
                         continue
+                    # Upsert card into master cards table (same as open_pack_for_drop)
+                    rarity = card.get('rarity', 'common').lower()
+                    tier_map = {'common': 'community', 'rare': 'gold', 'epic': 'platinum',
+                                'legendary': 'legendary', 'mythic': 'legendary'}
+                    tier = card.get('tier') or tier_map.get(rarity, 'community')
+                    if self._db_type == "postgresql":
+                        cursor.execute(f"""
+                            INSERT INTO cards
+                            (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                            ON CONFLICT (card_id) DO NOTHING
+                        """, (card_id, card.get('name', ''),
+                              card.get('artist_name', card.get('name', '')),
+                              card.get('title', ''), rarity, tier,
+                              card.get('image_url', ''), card.get('youtube_url', '')))
+                    else:
+                        cursor.execute(f"""
+                            INSERT OR IGNORE INTO cards
+                            (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                        """, (card_id, card.get('name', ''),
+                              card.get('artist_name', card.get('name', '')),
+                              card.get('title', ''), rarity, tier,
+                              card.get('image_url', ''), card.get('youtube_url', '')))
                     cursor.execute(f"""
                         INSERT OR IGNORE INTO user_cards (user_id, card_id, acquired_from)
                         VALUES ({ph}, {ph}, 'dev_grant')

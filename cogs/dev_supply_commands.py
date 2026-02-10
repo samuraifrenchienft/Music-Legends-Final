@@ -136,5 +136,80 @@ class DevSupplyCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+    @app_commands.command(name="dev_debug", description="[DEV] Diagnose why cards aren't showing in /collection")
+    @app_commands.describe(user="User to check (defaults to yourself)")
+    async def dev_debug(self, interaction: discord.Interaction, user: discord.Member = None):
+        if not _is_dev(interaction.user.id):
+            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        target = user or interaction.user
+        ph = self.db._get_placeholder()
+
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 1. Live pack count
+            cursor.execute("SELECT COUNT(*), COUNT(CASE WHEN pack_tier='community' THEN 1 END) FROM creator_packs WHERE status='LIVE'")
+            total_live, community_live = cursor.fetchone()
+
+            # 2. user_cards rows for this user
+            cursor.execute(f"SELECT COUNT(*) FROM user_cards WHERE user_id = {ph}", (target.id,))
+            user_cards_count = cursor.fetchone()[0]
+
+            # 3. How many of those user_cards have a matching cards row (JOIN check)
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM user_cards uc
+                JOIN cards c ON c.card_id = uc.card_id
+                WHERE uc.user_id = {ph}
+            """, (target.id,))
+            matched_count = cursor.fetchone()[0]
+
+            # 4. Orphaned user_cards (in user_cards but NOT in cards table)
+            cursor.execute(f"""
+                SELECT uc.card_id FROM user_cards uc
+                LEFT JOIN cards c ON c.card_id = uc.card_id
+                WHERE uc.user_id = {ph} AND c.card_id IS NULL
+                LIMIT 5
+            """, (target.id,))
+            orphans = [r[0] for r in cursor.fetchall()]
+
+            # 5. Total cards in master table
+            cursor.execute("SELECT COUNT(*) FROM cards")
+            total_cards = cursor.fetchone()[0]
+
+            # 6. pack_purchases for this user
+            cursor.execute(f"SELECT COUNT(*) FROM pack_purchases WHERE buyer_id = {ph}", (target.id,))
+            pack_purchases = cursor.fetchone()[0]
+
+        lines = [
+            f"**Target:** {target.mention}",
+            f"",
+            f"**Live Packs:** {total_live} total, {community_live} community tier",
+            f"**Master cards table:** {total_cards} cards",
+            f"",
+            f"**{target.display_name}'s Data:**",
+            f"• `user_cards` rows: **{user_cards_count}**",
+            f"• Cards matched via JOIN: **{matched_count}**",
+            f"• Orphaned (in user_cards, missing from cards): **{user_cards_count - matched_count}**",
+            f"• Pack purchases recorded: **{pack_purchases}**",
+        ]
+        if orphans:
+            lines.append(f"• Orphaned card IDs: `{'`, `'.join(orphans)}`")
+
+        if user_cards_count == 0:
+            lines.append(f"\n⚠️ **No cards in user_cards at all** — pack grants are failing or no packs exist")
+        elif matched_count == 0:
+            lines.append(f"\n⚠️ **Cards in user_cards but none in master cards table** — orphan bug")
+        elif matched_count < user_cards_count:
+            lines.append(f"\n⚠️ **Some orphans** — partial data issue")
+        else:
+            lines.append(f"\n✅ Data looks correct — check /collection again")
+
+        embed = discord.Embed(title="🔍 Card Debug Info", description="\n".join(lines), color=discord.Color.orange())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(DevSupplyCog(bot))
