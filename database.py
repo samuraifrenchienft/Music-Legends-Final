@@ -2670,10 +2670,16 @@ class DatabaseManager:
             print(f"[DEV SUPPLY] Error fetching supply: {e}")
             return []
 
-    def seed_starter_pack(self, pack_name: str = "Starter Pack", creator_id: int = 0) -> Dict:
-        """Create a minimal LIVE community pack with 3 placeholder cards so daily claim works.
+    def seed_starter_pack(self, pack_name: str = "Music Legends Starter Pack", creator_id: int = 0) -> Dict:
+        """Create a LIVE community starter pack using real artist cards from CardDataManager.
         Safe to call multiple times — checks if any LIVE packs exist first."""
         import uuid, json as _json
+        try:
+            from card_data import CardDataManager
+            sample_cards = CardDataManager(self)._get_sample_cards()
+        except Exception as e:
+            return {"success": False, "error": f"Could not load card data: {e}"}
+
         try:
             ph = self._get_placeholder()
             with self._get_connection() as conn:
@@ -2684,21 +2690,27 @@ class DatabaseManager:
                 if live_count > 0:
                     return {"success": False, "error": f"{live_count} LIVE pack(s) already exist — no seeding needed"}
 
-                # Create 3 starter cards
-                starter_cards = [
-                    {"card_id": f"starter_{uuid.uuid4().hex[:8]}", "name": "Music Legend", "artist_name": "Music Legend",
-                     "title": "All Time Classic", "rarity": "common", "tier": "community",
-                     "impact": 60, "skill": 60, "longevity": 60, "culture": 60, "hype": 60,
-                     "youtube_url": "", "image_url": ""},
-                    {"card_id": f"starter_{uuid.uuid4().hex[:8]}", "name": "Rising Star", "artist_name": "Rising Star",
-                     "title": "Breakthrough Hit", "rarity": "common", "tier": "community",
-                     "impact": 55, "skill": 65, "longevity": 50, "culture": 55, "hype": 75,
-                     "youtube_url": "", "image_url": ""},
-                    {"card_id": f"starter_{uuid.uuid4().hex[:8]}", "name": "Underground Icon", "artist_name": "Underground Icon",
-                     "title": "Hidden Gem", "rarity": "rare", "tier": "community",
-                     "impact": 70, "skill": 72, "longevity": 68, "culture": 80, "hype": 65,
-                     "youtube_url": "", "image_url": ""},
-                ]
+                # Normalise card fields to match DB schema
+                starter_cards = []
+                rarity_to_tier = {"legendary": "legendary", "epic": "platinum",
+                                   "rare": "gold", "common": "community"}
+                for c in sample_cards:
+                    rarity = c.get("rarity", "Common").lower()
+                    starter_cards.append({
+                        "card_id": c["card_id"],
+                        "name": c.get("name", ""),
+                        "artist_name": c.get("name", ""),
+                        "title": c.get("title", ""),
+                        "rarity": rarity,
+                        "tier": rarity_to_tier.get(rarity, "community"),
+                        "impact": c.get("impact", 70),
+                        "skill": c.get("skill", 70),
+                        "longevity": c.get("longevity", 70),
+                        "culture": c.get("culture", 70),
+                        "hype": c.get("hype", 70),
+                        "youtube_url": c.get("youtube_url", ""),
+                        "image_url": c.get("image_url", ""),
+                    })
 
                 # Insert cards into master cards table
                 for card in starter_cards:
@@ -2733,7 +2745,7 @@ class DatabaseManager:
                         VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
                         ON CONFLICT (pack_id) DO NOTHING
                     """, (pack_id, creator_id, pack_name,
-                          "Starter pack for daily rewards and drops", "system", "community", 3,
+                          "Starter pack for daily rewards and drops", "system", "community", len(starter_cards),
                           "LIVE", 0, 0, _json.dumps(starter_cards)))
                 else:
                     cursor.execute(f"""
@@ -2742,7 +2754,7 @@ class DatabaseManager:
                          status, price_cents, price_gold, cards_data)
                         VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
                     """, (pack_id, creator_id, pack_name,
-                          "Starter pack for daily rewards and drops", "system", "community", 3,
+                          "Starter pack for daily rewards and drops", "system", "community", len(starter_cards),
                           "LIVE", 0, 0, _json.dumps(starter_cards)))
                 conn.commit()
                 print(f"[SEED] Created starter pack '{pack_name}' (ID: {pack_id}) with {len(starter_cards)} cards")
