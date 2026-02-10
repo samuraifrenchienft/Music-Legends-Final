@@ -61,14 +61,10 @@ class DustEconomy:
         self._database_url = os.getenv("DATABASE_URL")
 
     def _get_connection(self):
-        """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
+        """Get database connection — uses shared pool via get_db() for PostgreSQL."""
         if self._database_url:
-            import psycopg2
-            from database import _PgConnectionWrapper
-            url = self._database_url
-            if url.startswith("postgres://"):
-                url = url.replace("postgres://", "postgresql://", 1)
-            return _PgConnectionWrapper(psycopg2.connect(url))
+            from database import get_db
+            return get_db()._get_connection()
         else:
             return sqlite3.connect(self.db_path)
     
