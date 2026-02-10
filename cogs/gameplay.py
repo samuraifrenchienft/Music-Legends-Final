@@ -538,7 +538,7 @@ class GameplayCommands(commands.Cog):
         
         # Ownership status
         if ownership:
-            owned_text = f"✅ **You own this card!**\nAcquired: {ownership[0][:10] if ownership[0] else 'Unknown'}"
+            owned_text = f"✅ **You own this card!**\nAcquired: {str(ownership[0])[:10] if ownership[0] else 'Unknown'}"
         else:
             owned_text = "❌ You don't own this card"
         embed.add_field(name="📋 Ownership", value=owned_text, inline=True)

@@ -1918,6 +1918,16 @@ class DatabaseManager:
                 except Exception:
                     pass
 
+            # pack_purchases — may be missing purchased_at if table was created before this column was added
+            for col_def in [
+                "purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "cards_received TEXT",
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE pack_purchases ADD COLUMN IF NOT EXISTS {col_def}")
+                except Exception:
+                    pass
+
             # audit_log — used by founder_packs_v2
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS audit_log (
@@ -2271,12 +2281,14 @@ class DatabaseManager:
 
             # Get pack purchases
             cursor.execute(f"""
-                SELECT pp.purchase_id, pp.pack_id, pp.purchased_at, pp.cards_received,
+                SELECT pp.purchase_id, pp.pack_id,
+                       COALESCE(CAST(pp.purchased_at AS TEXT), pp.purchase_id) AS purchased_at,
+                       pp.cards_received,
                        cp.name AS pack_name, cp.description, cp.pack_tier, cp.genre
                 FROM pack_purchases pp
                 JOIN creator_packs cp ON pp.pack_id = cp.pack_id
                 WHERE pp.buyer_id = {ph}
-                ORDER BY pp.purchased_at DESC
+                ORDER BY pp.purchase_id DESC
                 LIMIT {ph}
             """, (user_id, limit))
 
@@ -2657,6 +2669,87 @@ class DatabaseManager:
         except Exception as e:
             print(f"[DEV SUPPLY] Error fetching supply: {e}")
             return []
+
+    def seed_starter_pack(self, pack_name: str = "Starter Pack", creator_id: int = 0) -> Dict:
+        """Create a minimal LIVE community pack with 3 placeholder cards so daily claim works.
+        Safe to call multiple times — checks if any LIVE packs exist first."""
+        import uuid, json as _json
+        try:
+            ph = self._get_placeholder()
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                # Check if any LIVE packs already exist
+                cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                live_count = cursor.fetchone()[0]
+                if live_count > 0:
+                    return {"success": False, "error": f"{live_count} LIVE pack(s) already exist — no seeding needed"}
+
+                # Create 3 starter cards
+                starter_cards = [
+                    {"card_id": f"starter_{uuid.uuid4().hex[:8]}", "name": "Music Legend", "artist_name": "Music Legend",
+                     "title": "All Time Classic", "rarity": "common", "tier": "community",
+                     "impact": 60, "skill": 60, "longevity": 60, "culture": 60, "hype": 60,
+                     "youtube_url": "", "image_url": ""},
+                    {"card_id": f"starter_{uuid.uuid4().hex[:8]}", "name": "Rising Star", "artist_name": "Rising Star",
+                     "title": "Breakthrough Hit", "rarity": "common", "tier": "community",
+                     "impact": 55, "skill": 65, "longevity": 50, "culture": 55, "hype": 75,
+                     "youtube_url": "", "image_url": ""},
+                    {"card_id": f"starter_{uuid.uuid4().hex[:8]}", "name": "Underground Icon", "artist_name": "Underground Icon",
+                     "title": "Hidden Gem", "rarity": "rare", "tier": "community",
+                     "impact": 70, "skill": 72, "longevity": 68, "culture": 80, "hype": 65,
+                     "youtube_url": "", "image_url": ""},
+                ]
+
+                # Insert cards into master cards table
+                for card in starter_cards:
+                    if self._db_type == "postgresql":
+                        cursor.execute(f"""
+                            INSERT INTO cards (card_id, name, artist_name, title, rarity, tier,
+                                impact, skill, longevity, culture, hype, youtube_url, image_url)
+                            VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
+                            ON CONFLICT (card_id) DO NOTHING
+                        """, (card['card_id'], card['name'], card['artist_name'], card['title'],
+                              card['rarity'], card['tier'], card['impact'], card['skill'],
+                              card['longevity'], card['culture'], card['hype'],
+                              card['youtube_url'], card['image_url']))
+                    else:
+                        cursor.execute(f"""
+                            INSERT OR IGNORE INTO cards
+                            (card_id, name, artist_name, title, rarity, tier,
+                             impact, skill, longevity, culture, hype, youtube_url, image_url)
+                            VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
+                        """, (card['card_id'], card['name'], card['artist_name'], card['title'],
+                              card['rarity'], card['tier'], card['impact'], card['skill'],
+                              card['longevity'], card['culture'], card['hype'],
+                              card['youtube_url'], card['image_url']))
+
+                # Create the pack
+                pack_id = f"starter_{uuid.uuid4().hex[:12]}"
+                if self._db_type == "postgresql":
+                    cursor.execute(f"""
+                        INSERT INTO creator_packs
+                        (pack_id, creator_id, name, description, pack_type, pack_tier, pack_size,
+                         status, price_cents, price_gold, cards_data)
+                        VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
+                        ON CONFLICT (pack_id) DO NOTHING
+                    """, (pack_id, creator_id, pack_name,
+                          "Starter pack for daily rewards and drops", "system", "community", 3,
+                          "LIVE", 0, 0, _json.dumps(starter_cards)))
+                else:
+                    cursor.execute(f"""
+                        INSERT OR IGNORE INTO creator_packs
+                        (pack_id, creator_id, name, description, pack_type, pack_tier, pack_size,
+                         status, price_cents, price_gold, cards_data)
+                        VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
+                    """, (pack_id, creator_id, pack_name,
+                          "Starter pack for daily rewards and drops", "system", "community", 3,
+                          "LIVE", 0, 0, _json.dumps(starter_cards)))
+                conn.commit()
+                print(f"[SEED] Created starter pack '{pack_name}' (ID: {pack_id}) with {len(starter_cards)} cards")
+                return {"success": True, "pack_id": pack_id, "pack_name": pack_name, "cards": len(starter_cards)}
+        except Exception as e:
+            print(f"[SEED] Error seeding starter pack: {e}")
+            return {"success": False, "error": str(e)}
 
     def get_random_card_from_tier(self, tier: str) -> Dict:
         """Get a random card from LIVE packs matching the given tier.

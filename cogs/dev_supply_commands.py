@@ -211,5 +211,33 @@ class DevSupplyCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
+    @app_commands.command(name="dev_seed_pack", description="[DEV] Seed a starter community pack so daily claim works")
+    async def dev_seed_pack(self, interaction: discord.Interaction):
+        if not _is_dev(interaction.user.id):
+            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        result = self.db.seed_starter_pack("Music Legends Starter Pack")
+
+        if result["success"]:
+            embed = discord.Embed(
+                title="🌱 Starter Pack Seeded",
+                description=(
+                    f"Created **{result['pack_name']}** (`{result['pack_id']}`)\n"
+                    f"{result['cards']} starter cards added\n\n"
+                    "Daily claim will now grant packs to users."
+                ),
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="ℹ️ Seed Result",
+                description=result["error"],
+                color=discord.Color.blue()
+            )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(DevSupplyCog(bot))
