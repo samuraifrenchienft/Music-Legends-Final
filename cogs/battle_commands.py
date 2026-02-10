@@ -4,6 +4,7 @@ Battle Commands - /battle, /battle_stats
 Lets users challenge each other to card battles with wagers
 """
 
+import asyncio
 import discord
 import sqlite3
 import random
@@ -318,19 +319,21 @@ class BattleCommands(commands.Cog):
             self._add_gold(opponent.id, wager_cost)
             return await interaction.followup.send(f"{opponent.display_name} has no cards! Battle cancelled, wagers refunded.")
 
-        await interaction.followup.send("Both players accepted! Check your DMs (or ephemeral messages) to pick a card...")
-
-        # Challenger picks
+        # Send BOTH card select prompts at the same time (non-ephemeral so each player can see theirs)
         c_view = CardSelectView(interaction.user.id, challenger_cards)
-        c_msg = await interaction.followup.send(
-            f"{interaction.user.mention} — pick your battle card:", view=c_view, ephemeral=True)
-        c_timed_out = await c_view.wait()
-
-        # Opponent picks
         o_view = CardSelectView(opponent.id, opponent_cards)
-        o_msg = await interaction.followup.send(
-            f"{opponent.mention} — pick your battle card:", view=o_view, ephemeral=True)
-        o_timed_out = await o_view.wait()
+
+        await interaction.followup.send(
+            f"{interaction.user.mention} ⚔️ **You have 60s to pick your battle card!**",
+            view=c_view
+        )
+        await interaction.followup.send(
+            f"{opponent.mention} ⚔️ **You have 60s to pick your battle card!**",
+            view=o_view
+        )
+
+        # Wait for BOTH players to pick simultaneously
+        c_timed_out, o_timed_out = await asyncio.gather(c_view.wait(), o_view.wait())
 
         # Check selections
         if c_timed_out or c_view.selected_card is None:
