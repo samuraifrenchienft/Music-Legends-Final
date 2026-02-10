@@ -445,7 +445,6 @@ class BattleCommands(commands.Cog):
 
         # Record to battle_history table
         try:
-            import uuid
             battle_id = f"battle_{uuid.uuid4().hex[:8]}"
             self.db.record_battle({
                 'battle_id': battle_id,
