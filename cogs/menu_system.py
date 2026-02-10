@@ -13,7 +13,7 @@ import sqlite3
 import os
 import json
 
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 from card_economy import CardEconomyManager
 from youtube_integration import youtube_integration
 from music_api_manager import music_api
@@ -426,8 +426,8 @@ class UserHubView(discord.ui.View):
     
     def __init__(self, db: DatabaseManager = None):
         super().__init__(timeout=None)  # Never expires!
-        self.db = db or DatabaseManager()
-    
+        self.db = db or get_db()
+
     @discord.ui.button(
         label="🎵 Battle Pass",
         style=discord.ButtonStyle.primary,
@@ -2117,8 +2117,8 @@ class MenuSystemCog(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
-    
+        self.db = get_db()
+
     @commands.Cog.listener()
     async def on_ready(self):
         """Register persistent views on bot startup"""

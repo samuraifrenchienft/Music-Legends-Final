@@ -8,7 +8,7 @@ import discord
 import os
 from discord.ext import commands
 from discord import Interaction, app_commands
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 
 
 class AdminCommandsCog(commands.Cog):
@@ -16,8 +16,8 @@ class AdminCommandsCog(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
-    
+        self.db = get_db()
+
     @app_commands.command(name="server_analytics", description="View server usage analytics")
     @app_commands.default_permissions(administrator=True)
     async def server_analytics(self, interaction: Interaction, days: int = 30):

@@ -5,7 +5,7 @@ import json
 from discord.ext import commands
 from discord.ext.commands import Cog
 from discord import Interaction, app_commands, ui
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 from card_data import CardDataManager
 import stripe
 from stripe_payments import stripe_manager
@@ -25,7 +25,7 @@ class CardGameCog(Cog):
     def __init__(self, bot):
         print("🔥🔥🔥 CardGameCog INITIALIZING - COMMANDS SHOULD LOAD 🔥🔥🔥")
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
         # Economy manager will be created per user
         self.card_manager = CardDataManager(self.db)
         # Dev user IDs from environment

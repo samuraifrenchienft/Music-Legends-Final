@@ -8,7 +8,7 @@ DEV-ONLY: Only available in TEST_SERVER
 import discord
 from discord.ext import commands
 from discord import Interaction, app_commands
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 import json
 import uuid
 import os
@@ -21,8 +21,8 @@ class AdminBulkImportCog(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
-        
+        self.db = get_db()
+
         # Get TEST_SERVER_ID from environment - commands only available in this guild
         test_server_id = os.getenv('TEST_SERVER_ID')
         if test_server_id:

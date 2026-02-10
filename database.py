@@ -24,9 +24,11 @@ class _PgCursorWrapper:
                 # Append ON CONFLICT DO NOTHING before any trailing whitespace
                 query = query.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
 
-        # INSERT OR REPLACE → just INSERT (caller should use ON CONFLICT DO UPDATE)
+        # INSERT OR REPLACE → INSERT ... ON CONFLICT DO NOTHING
         if 'INSERT OR REPLACE' in query:
             query = query.replace('INSERT OR REPLACE', 'INSERT')
+            if 'ON CONFLICT' not in query:
+                query = query.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
 
         if params:
             self._cursor.execute(query, params)
@@ -312,8 +314,8 @@ class DatabaseManager:
                 url = self._database_url
                 if url.startswith("postgres://"):
                     url = url.replace("postgres://", "postgresql://", 1)
-                self._pool = ConnectionPool(url, pool_size=10, max_overflow=5)
-                print(f"✅ [DATABASE] PostgreSQL connection pool initialized (size=10, max_overflow=5)")
+                self._pool = ConnectionPool(url, pool_size=3, max_overflow=2)
+                print(f"✅ [DATABASE] PostgreSQL connection pool initialized (size=3, max_overflow=2)")
             except Exception as e:
                 print(f"⚠️ [DATABASE] Connection pool initialization failed, falling back to direct connections: {e}")
                 self._pool = None
@@ -2177,13 +2179,13 @@ class DatabaseManager:
                 )
                 conn.commit()
                 return True
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"❌ Error adding card to master: {e}")
             print(f"   Card data: {card_data.get('card_id', 'unknown')} - {card_data.get('name', 'unknown')}")
             import traceback
             traceback.print_exc()
             return False
-    
+
     def add_card_to_collection(self, user_id: int, card_id: str, acquired_from: str = 'pack', conn=None) -> bool:
         """Add a card to user's collection
 
@@ -4384,5 +4386,22 @@ class DatabaseManager:
         """Close database connection"""
         pass  # SQLite connections are closed automatically
 
-# Global database instance for imports
-db = DatabaseManager()
+# Global singleton instance — all cogs share this one pool
+_db_instance: DatabaseManager = None
+
+
+def get_db() -> DatabaseManager:
+    """Return the shared DatabaseManager singleton.
+
+    All cogs and services should call this instead of DatabaseManager()
+    to avoid creating multiple connection pools that exhaust PostgreSQL's
+    connection limit.
+    """
+    global _db_instance
+    if _db_instance is None:
+        _db_instance = DatabaseManager()
+    return _db_instance
+
+
+# Legacy alias kept for backward compatibility
+db = get_db()

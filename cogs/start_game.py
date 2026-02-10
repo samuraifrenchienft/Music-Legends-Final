@@ -12,8 +12,8 @@ import os
 class StartGameCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        from database import DatabaseManager
-        self.db = DatabaseManager()
+        from database import get_db
+        self.db = get_db()
 
     @app_commands.command(name="start_game", description="🎮 Start Music Legends in this server!")
     async def start_game(self, interaction: Interaction):

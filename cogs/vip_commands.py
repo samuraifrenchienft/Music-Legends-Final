@@ -4,7 +4,7 @@
 import discord
 from discord import app_commands, Interaction
 from discord.ext import commands
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 from config.vip import VIPSubscription, VIPManager
 
 
@@ -13,7 +13,7 @@ class VIPCommands(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
 
     @app_commands.command(name="buy_vip", description="Subscribe to VIP Membership ($4.99/month)")
     async def buy_vip_command(self, interaction: Interaction):

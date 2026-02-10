@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 from discord import Interaction, app_commands
 from discord.ui import Modal, TextInput
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 import os
 import sys
 from typing import List, Dict
@@ -102,8 +102,8 @@ class DevWebhookCommandsCog(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
-    
+        self.db = get_db()
+
     @app_commands.command(name="dev_announcement", description="[DEV] Send update announcement to all servers")
     @app_commands.default_permissions(administrator=True)
     @app_commands.check(check_test_server)

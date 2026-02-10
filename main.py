@@ -82,8 +82,8 @@ class Bot(commands.Bot):
         
         # Run database integrity check on startup
         try:
-            from database import DatabaseManager
-            db = DatabaseManager()
+            from database import get_db
+            db = get_db()
             integrity_results = db.check_database_integrity()
             
             if integrity_results["valid"]:

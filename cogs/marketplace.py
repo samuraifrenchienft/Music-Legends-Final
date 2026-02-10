@@ -8,7 +8,7 @@ import json
 import uuid
 import os
 import math
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 
 # Genre metadata
 GENRE_EMOJI = {
@@ -950,7 +950,7 @@ class MarketplaceCommands(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
 
     @app_commands.command(name="sell", description="List a card for sale")
     @app_commands.describe(card_id="Card ID to sell", price="Price in gold")

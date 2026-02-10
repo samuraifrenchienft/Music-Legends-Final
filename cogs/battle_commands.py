@@ -19,7 +19,7 @@ from battle_engine import (
     BattleCard, PlayerState, MatchState, BattleStatus
 )
 from discord_cards import ArtistCard
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 from config.economy import BATTLE_WAGERS, calculate_battle_rewards
 
 
@@ -141,7 +141,7 @@ class BattleCommands(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
         self.manager = _battle_manager
 
     # ------------------------------------------------------------------

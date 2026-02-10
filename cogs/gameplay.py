@@ -9,7 +9,7 @@ from discord import Interaction, app_commands, ui
 from typing import Dict, List
 import random
 from card_economy import CardEconomyManager
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 
 
 
@@ -96,7 +96,7 @@ class GameplayCommands(commands.Cog):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
         self.economy = CardEconomyManager()
         self.economy.initialize_economy_tables()
         

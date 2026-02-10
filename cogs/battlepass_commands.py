@@ -17,7 +17,7 @@ from config.battle_pass import (
     PREMIUM_TRACK_REWARDS, get_battle_pass_manager,
 )
 from config.economy import DAILY_QUESTS
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 
 
 class BattlePassCommands(commands.Cog):
@@ -25,7 +25,7 @@ class BattlePassCommands(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
         self.bp = get_battle_pass_manager()
 
     # ------------------------------------------------------------------

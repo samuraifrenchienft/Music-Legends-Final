@@ -4,7 +4,7 @@ import os
 import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
-from database import DatabaseManager
+from database import DatabaseManager, get_db
 
 
 def _is_dev(user_id: int) -> bool:
@@ -15,7 +15,7 @@ def _is_dev(user_id: int) -> bool:
 class DevSupplyCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = DatabaseManager()
+        self.db = get_db()
 
     @app_commands.command(name="dev_supply", description="[DEV] View dev pack supply inventory")
     async def dev_supply(self, interaction: Interaction):
@@ -94,6 +94,46 @@ class DevSupplyCog(commands.Cog):
             await interaction.response.send_message(
                 f"⚠️ No inventory row found for {target.mention}. They may not have played yet.", ephemeral=True
             )
+
+
+    @app_commands.command(name="give_gold", description="[DEV] Give gold to a user for testing")
+    @app_commands.describe(user="Target user", amount="Amount of gold to give")
+    async def give_gold(self, interaction: Interaction, user: discord.Member, amount: int):
+        if not _is_dev(interaction.user.id):
+            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
+            return
+
+        if amount <= 0:
+            await interaction.response.send_message("❌ Amount must be positive.", ephemeral=True)
+            return
+
+        ph = self.db._get_placeholder()
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            # Ensure user_inventory row exists first
+            cursor.execute(
+                f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, 0) ON CONFLICT DO NOTHING",
+                (user.id,)
+            )
+            # Add gold
+            cursor.execute(
+                f"UPDATE user_inventory SET gold = gold + {ph} WHERE user_id = {ph}",
+                (amount, user.id)
+            )
+            # Get new balance
+            cursor.execute(
+                f"SELECT gold FROM user_inventory WHERE user_id = {ph}",
+                (user.id,)
+            )
+            row = cursor.fetchone()
+            new_balance = row[0] if row else amount
+
+        embed = discord.Embed(
+            title="💰 Gold Given",
+            description=f"Gave **{amount:,}** gold to {user.mention}\nNew balance: **{new_balance:,}** gold",
+            color=discord.Color.gold()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
