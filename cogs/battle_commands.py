@@ -261,8 +261,16 @@ class BattleCommands(commands.Cog):
         if self.manager.is_user_in_battle(str(opponent.id)):
             return await interaction.response.send_message(f"{opponent.display_name} is already in a battle!", ephemeral=True)
 
-        self._ensure_user(interaction.user)
-        self._ensure_user(opponent)
+        try:
+            self._ensure_user(interaction.user)
+            self._ensure_user(opponent)
+        except Exception as e:
+            import traceback
+            print(f"[BATTLE] _ensure_user failed: {e}")
+            traceback.print_exc()
+            await interaction.response.send_message(
+                f"❌ Battle setup failed: `{type(e).__name__}: {str(e)[:100]}`", ephemeral=True)
+            return
 
         try:
             await self._run_battle(interaction, opponent)
@@ -272,7 +280,8 @@ class BattleCommands(commands.Cog):
             traceback.print_exc()
             try:
                 await interaction.followup.send(
-                    "⚔️ Battle encountered an error and was cancelled. Any gold wagered has been refunded.",
+                    f"⚔️ Battle encountered an error: `{type(e).__name__}: {str(e)[:150]}`\n"
+                    f"Any gold wagered has been refunded.",
                     ephemeral=True
                 )
             except Exception:
@@ -282,6 +291,7 @@ class BattleCommands(commands.Cog):
         """Inner battle logic — wrapped by battle_command for error handling"""
 
         # Step 1 — Challenger picks wager tier
+        print(f"[BATTLE] Starting battle: {interaction.user} vs {opponent}")
         wager_view = WagerSelectView(interaction.user.id)
         await interaction.response.send_message("Choose a wager tier:", view=wager_view, ephemeral=True)
         timed_out = await wager_view.wait()
@@ -291,10 +301,12 @@ class BattleCommands(commands.Cog):
         tier_key = wager_view.selected_tier
         tier = BattleWagerConfig.get_tier(tier_key)
         wager_cost = tier["wager_cost"]
+        print(f"[BATTLE] Tier selected: {tier_key} (wager={wager_cost}g)")
 
         # Check both players have enough gold
         challenger_gold = self._get_gold(interaction.user.id)
         opponent_gold = self._get_gold(opponent.id)
+        print(f"[BATTLE] Gold check: challenger={challenger_gold}g, opponent={opponent_gold}g, need={wager_cost}g")
         if challenger_gold < wager_cost:
             return await interaction.followup.send(
                 f"You don't have enough gold! Need {wager_cost}g, you have {challenger_gold}g.", ephemeral=True)
@@ -337,8 +349,10 @@ class BattleCommands(commands.Cog):
             return await interaction.followup.send(f"{opponent.display_name} has insufficient gold — battle cancelled.")
 
         # Step 3 — Both players pick cards
+        print(f"[BATTLE] Fetching collections for both players")
         challenger_cards = self.db.get_user_collection(interaction.user.id)
         opponent_cards = self.db.get_user_collection(opponent.id)
+        print(f"[BATTLE] Collections: challenger={len(challenger_cards)} cards, opponent={len(opponent_cards)} cards")
 
         if not challenger_cards:
             self._add_gold(interaction.user.id, wager_cost)
@@ -383,7 +397,9 @@ class BattleCommands(commands.Cog):
         card2 = self._card_dict_to_artist(o_card_data)
 
         # Step 4 — Execute battle
+        print(f"[BATTLE] Executing: {c_card_data.get('name')} vs {o_card_data.get('name')}")
         result = BattleEngine.execute_battle(card1, card2, tier_key)
+        print(f"[BATTLE] Result: winner={result['winner']}, p1_power={result['player1']['final_power']}, p2_power={result['player2']['final_power']}")
         result_embed = BattleEngine.create_battle_embed(
             result, interaction.user.display_name, opponent.display_name)
 

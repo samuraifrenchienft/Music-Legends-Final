@@ -284,26 +284,34 @@ class GameplayCommands(commands.Cog):
     @app_commands.describe(card_identifier="Card ID or serial number to view")
     async def view_command(self, interaction: Interaction, card_identifier: str):
         """View detailed information about a specific card with full visual display"""
-        # Find card by card_id or serial_number in user's collection
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            # Get column names for proper dict conversion
-            cursor.execute("""
-                SELECT c.*, uc.acquired_at, uc.acquired_from, uc.is_favorite
-                FROM cards c
-                JOIN user_cards uc ON c.card_id = uc.card_id
-                WHERE (c.card_id = ? OR c.serial_number = ? OR c.name LIKE ?) AND uc.user_id = ?
-            """, (card_identifier, card_identifier, f"%{card_identifier}%", interaction.user.id))
-            row = cursor.fetchone()
-            
-            if row:
-                columns = [desc[0] for desc in cursor.description]
-                card = dict(zip(columns, row))
-            else:
-                card = None
-        
+        await interaction.response.defer()
+
+        try:
+            # Find card by card_id or serial_number in user's collection
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT c.*, uc.acquired_at, uc.acquired_from, uc.is_favorite
+                    FROM cards c
+                    JOIN user_cards uc ON c.card_id = uc.card_id
+                    WHERE (c.card_id = ? OR c.serial_number = ? OR c.name ILIKE ?) AND uc.user_id = ?
+                """, (card_identifier, card_identifier, f"%{card_identifier}%", interaction.user.id))
+                row = cursor.fetchone()
+
+                if row:
+                    columns = [desc[0] for desc in cursor.description]
+                    card = dict(zip(columns, row))
+                else:
+                    card = None
+        except Exception as e:
+            import traceback
+            print(f"[VIEW] DB error: {e}")
+            traceback.print_exc()
+            await interaction.followup.send("❌ Database error while looking up card. Please try again.", ephemeral=True)
+            return
+
         if not card:
-            await interaction.response.send_message("❌ Card not found in your collection! Use `/collection` to see your cards.", ephemeral=True)
+            await interaction.followup.send("❌ Card not found in your collection! Use `/collection` to see your cards.", ephemeral=True)
             return
         
         # Extract card data with safe defaults
@@ -444,8 +452,8 @@ class GameplayCommands(commands.Cog):
             embed.set_image(url=image_url)  # Large image display
         
         embed.set_footer(text="Music Legends • Use /collection to see all your cards")
-        
-        await interaction.response.send_message(embed=embed)
+
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="card", description="Preview any card in the database")
     @app_commands.describe(card_id="Card ID to preview")
