@@ -3580,65 +3580,61 @@ class DatabaseManager:
 
         total_gold = base_gold + bonus_gold
 
-        # === ATOMIC TRANSACTION: Daily card + economy update ===
-        # Use single connection for both operations to ensure atomicity
-        daily_card = None
+        # === ATOMIC TRANSACTION: Daily pack + economy update ===
+        daily_pack_name = None
+        daily_cards = []
         with self._get_connection() as conn:
             try:
                 cursor = conn.cursor()
 
-                # Check if cards exist in DB
-                cursor.execute("SELECT COUNT(*) FROM cards")
-                row = cursor.fetchone()
-                card_count = row[0] if row else 0
-
-                # Grant daily free card (same connection)
-                if card_count > 0:
-                    daily_card = self._get_random_daily_card(user_id)
-                    if daily_card:
-                        added = self.add_card_to_collection(
-                            user_id=user_id,
-                            card_id=daily_card['card_id'],
-                            acquired_from='daily_claim',
-                            conn=conn  # CRITICAL: Pass connection for atomicity
-                        )
-                        if not added:
-                            daily_card = None
-                        else:
-                            print(f"[DAILY] User {user_id} received {daily_card.get('rarity','?')} card: {daily_card.get('name','?')}")
-                else:
-                    print(f"[DAILY] No cards in DB yet, skipping daily card for user {user_id}")
-
-                # Update economy (same connection as card grant)
-                cursor.execute("""
+                # Update economy first
+                ph = self._get_placeholder()
+                cursor.execute(f"""
                     UPDATE user_inventory
-                    SET gold = COALESCE(gold, 0) + ?, tickets = COALESCE(tickets, 0) + ?,
-                        last_daily_claim = CURRENT_TIMESTAMP, daily_streak = ?
-                    WHERE user_id = ?
+                    SET gold = COALESCE(gold, 0) + {ph}, tickets = COALESCE(tickets, 0) + {ph},
+                        last_daily_claim = CURRENT_TIMESTAMP, daily_streak = {ph}
+                    WHERE user_id = {ph}
                 """, (total_gold, tickets, new_streak, user_id))
 
-                # Both operations committed together atomically
                 conn.commit()
-
-                # Log successful transaction for audit trail
-                import json
-                audit_details = json.dumps({
-                    'gold': total_gold,
-                    'tickets': tickets,
-                    'streak': new_streak,
-                    'card_id': daily_card.get('card_id') if daily_card else None
-                })
-                self.log_transaction('daily_claim', user_id, details=audit_details, success=True)
+                print(f"[DAILY] Economy updated for user {user_id}: +{total_gold}g streak={new_streak}")
 
             except Exception as e:
-                print(f"[DAILY] Error during daily claim transaction: {e}")
+                print(f"[DAILY] Error during daily economy update: {e}")
                 conn.rollback()
-                # Log failed transaction
                 self.log_transaction('daily_claim', user_id, details=str(e), success=False)
                 return {
                     "success": False,
                     "error": f"Daily claim failed: {str(e)}"
                 }
+
+        # Grant a free community pack outside the economy transaction
+        # (open_pack_for_drop manages its own connection + records in pack_purchases)
+        try:
+            pack = self.get_random_live_pack_by_tier("community")
+            if pack and pack.get('pack_id'):
+                result = self.open_pack_for_drop(pack['pack_id'], user_id)
+                if result.get('success'):
+                    daily_cards = result.get('cards', [])
+                    daily_pack_name = pack.get('name', 'Daily Pack')
+                    print(f"[DAILY] User {user_id} received pack '{daily_pack_name}' ({len(daily_cards)} cards)")
+                else:
+                    print(f"[DAILY] Pack grant failed for user {user_id}: {result.get('error')}")
+            else:
+                print(f"[DAILY] No live community packs available for daily claim")
+        except Exception as e:
+            print(f"[DAILY] Pack grant error (non-critical, economy already saved): {e}")
+
+        # Log successful transaction
+        import json
+        audit_details = json.dumps({
+            'gold': total_gold,
+            'tickets': tickets,
+            'streak': new_streak,
+            'pack_name': daily_pack_name,
+            'cards_received': len(daily_cards)
+        })
+        self.log_transaction('daily_claim', user_id, details=audit_details, success=True)
 
         return {
             "success": True,
@@ -3647,7 +3643,8 @@ class DatabaseManager:
             "bonus_gold": bonus_gold,
             "tickets": tickets,
             "streak": new_streak,
-            "card": daily_card  # NEW: Include card in response
+            "cards": daily_cards,       # Full pack of cards
+            "pack_name": daily_pack_name,
         }
 
     def generate_tier_pack_cards(self, user_id: int, tier: str) -> list:

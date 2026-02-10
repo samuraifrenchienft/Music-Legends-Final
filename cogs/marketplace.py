@@ -1208,9 +1208,10 @@ class MarketplaceCommands(commands.Cog):
 
         try:
             purchases = self.db.get_user_purchased_packs(interaction.user.id, limit=25)
+            print(f"[PACK] User {interaction.user.id} ({interaction.user.display_name}): found {len(purchases)} pack(s)")
         except Exception as e:
-            print(f"[PACK] Error fetching packs for user {interaction.user.id}: {e}")
             import traceback
+            print(f"[PACK] ERROR for user {interaction.user.id}: {e}")
             traceback.print_exc()
             embed = discord.Embed(
                 title="❌ Error Loading Packs",

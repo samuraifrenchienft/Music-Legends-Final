@@ -685,6 +685,9 @@ class GameplayCommands(commands.Cog):
         gold_reward = result.get('gold', 0)
         ticket_reward = result.get('tickets', 0)
         current_streak = result.get('streak', 1)
+        daily_cards = result.get('cards', [])
+        daily_pack_name = result.get('pack_name')
+        # backward-compat: single card field (old callers)
         daily_card = result.get('card')
         
         # Check for audio file
@@ -717,18 +720,25 @@ class GameplayCommands(commands.Cog):
             inline=False
         )
 
-        # Display daily free card if received
-        if daily_card:
-            rarity_emoji = {
-                'common': '⚪',
-                'rare': '🔵',
-                'epic': '🟣',
-                'legendary': '🟡'
-            }.get(daily_card.get('rarity', 'common'), '⚪')
-
+        # Display daily free pack if received
+        rarity_emoji_map = {'common': '⚪', 'rare': '🔵', 'epic': '🟣', 'legendary': '⭐', 'mythic': '🔴'}
+        if daily_cards:
+            pack_label = daily_pack_name or "Daily Pack"
+            card_lines = []
+            for c in daily_cards[:5]:
+                r_emoji = rarity_emoji_map.get((c.get('rarity') or 'common').lower(), '⚪')
+                card_lines.append(f"{r_emoji} **{c.get('name', 'Unknown')}** ({(c.get('rarity') or 'common').title()})")
+            embed.add_field(
+                name=f"🎴 Daily Pack — {pack_label} ({len(daily_cards)} cards)",
+                value="\n".join(card_lines) if card_lines else "Cards added to your collection!",
+                inline=False
+            )
+        elif daily_card:
+            # Legacy single-card fallback
+            r_emoji = rarity_emoji_map.get((daily_card.get('rarity') or 'common').lower(), '⚪')
             embed.add_field(
                 name="🎴 Daily Card",
-                value=f"{rarity_emoji} **{daily_card.get('name', 'Unknown')}** ({daily_card.get('rarity', 'common').title()})",
+                value=f"{r_emoji} **{daily_card.get('name', 'Unknown')}** ({(daily_card.get('rarity') or 'common').title()})",
                 inline=False
             )
         
