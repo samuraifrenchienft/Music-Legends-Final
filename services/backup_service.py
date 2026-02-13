@@ -475,17 +475,21 @@ class BackupService:
             if backup_path.suffix in ['.sql', '.gz'] and ('.sql' in backup_path.name or self.is_postgresql):
                 # For PostgreSQL, check if file exists and has content
                 if backup_path.suffix == '.gz':
-                    # Check if gzip file can be decompressed
+                    # Check if gzip file can be decompressed and has pg_dump content
                     try:
                         with gzip.open(backup_path, 'rb') as f:
-                            # Read first few bytes to verify it's a valid gzip
-                            header = f.read(100)
+                            # pg_dump -F p plain SQL starts with comment preamble
+                            # (~300 bytes) before first CREATE/SET statement
+                            header = f.read(2000)
                             if len(header) < 10:
                                 return False
-                            # Check for pg_dump header markers
                             content = header.decode('utf-8', errors='ignore')
-                            # pg_dump custom format has specific markers
-                            if 'PGDMP' in content or 'CREATE' in content or 'INSERT' in content:
+                            # Accept pg_dump plain format comment header OR SQL keywords
+                            if ('PostgreSQL database dump' in content
+                                    or 'PGDMP' in content
+                                    or 'CREATE' in content
+                                    or 'INSERT' in content
+                                    or 'SET ' in content):
                                 return True
                     except Exception as e:
                         logger.error(f"PostgreSQL backup verification failed: {e}")
