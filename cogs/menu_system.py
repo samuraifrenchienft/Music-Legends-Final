@@ -1978,7 +1978,11 @@ class GiveCurrencyModal(discord.ui.Modal, title="Give Currency"):
         try:
             target_id = int(self.user_id.value.replace('<@', '').replace('>', '').replace('!', ''))
             amt = int(self.amount.value)
-            
+
+            if amt <= 0:
+                await interaction.response.send_message("❌ Amount must be a positive number.", ephemeral=True)
+                return
+
             with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 

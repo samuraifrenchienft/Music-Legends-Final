@@ -181,17 +181,15 @@ class BattleCommands(commands.Cog):
             conn.commit()
 
     def _remove_gold(self, user_id: int, amount: int) -> bool:
-        gold = self._get_gold(user_id)
-        if gold < amount:
-            return False
+        """Atomic gold deduction — deducts only if balance is sufficient (no TOCTOU)."""
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ?",
-                (amount, user_id)
+                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                (amount, user_id, amount)
             )
             conn.commit()
-        return True
+            return cursor.rowcount > 0
 
     def _add_xp(self, user_id: int, xp: int):
         with self.db._get_connection() as conn:
@@ -249,6 +247,7 @@ class BattleCommands(commands.Cog):
 
     @app_commands.command(name="battle", description="Challenge another player to a card battle")
     @app_commands.describe(opponent="The player you want to battle")
+    @app_commands.checks.cooldown(1, 15.0, key=lambda i: i.user.id)
     async def battle_command(self, interaction: Interaction, opponent: discord.User):
         """Full battle flow: choose wager -> opponent accepts -> both pick cards -> resolve"""
 
@@ -561,6 +560,15 @@ class BattleCommands(commands.Cog):
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
 
         await interaction.response.send_message(embed=embed)
+
+    async def on_app_command_error(self, interaction: Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send_message(
+                f"⏱️ Slow down! You can battle again in **{error.retry_after:.0f}s**.",
+                ephemeral=True
+            )
+        else:
+            raise error
 
 
 async def setup(bot):

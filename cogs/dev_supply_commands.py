@@ -31,7 +31,7 @@ class DevSupplyCog(commands.Cog):
 
     @app_commands.command(name="dev_supply", description="[DEV] View dev pack supply inventory")
     async def dev_supply(self, interaction: Interaction):
-        if not _is_dev(interaction.user.id):
+        if not _is_admin(interaction):
             await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
             return
 
@@ -54,7 +54,7 @@ class DevSupplyCog(commands.Cog):
     @app_commands.command(name="dev_grant_pack", description="[DEV] Grant a pack from dev supply to a user")
     @app_commands.describe(pack_id="Pack ID to grant", user="Target user")
     async def dev_grant_pack(self, interaction: Interaction, pack_id: str, user: discord.Member):
-        if not _is_dev(interaction.user.id):
+        if not _is_admin(interaction):
             await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
             return
 
