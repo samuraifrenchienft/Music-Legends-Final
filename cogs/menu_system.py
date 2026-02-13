@@ -508,18 +508,27 @@ class UserHubView(discord.ui.View):
             if result.get('tickets', 0) > 0:
                 embed.add_field(name="🎫 Tickets", value=f"+{result['tickets']}", inline=True)
 
-            # Display daily free card
-            if result.get('card'):
-                card = result['card']
-                rarity_emoji = {
-                    'common': '⚪',
-                    'rare': '🔵',
-                    'epic': '🟣',
-                    'legendary': '🟡'
-                }.get(card.get('rarity', 'common'), '⚪')
+            # Display daily free pack cards
+            cards = result.get('cards') or []
+            pack_name = result.get('pack_name') or 'Daily Pack'
+            if cards:
+                rarity_emoji = {'common': '⚪', 'rare': '🔵', 'epic': '🟣',
+                                'legendary': '⭐', 'mythic': '🔴'}
+                card_lines = []
+                for card in cards[:5]:  # show up to 5
+                    re = rarity_emoji.get((card.get('rarity') or 'common').lower(), '⚪')
+                    card_lines.append(f"{re} **{card.get('name', 'Unknown')}**")
+                if len(cards) > 5:
+                    card_lines.append(f"...+{len(cards) - 5} more")
                 embed.add_field(
-                    name=f"🎴 Daily Card",
-                    value=f"{rarity_emoji} **{card.get('name', 'Unknown')}** ({card.get('rarity', 'common').title()})",
+                    name=f"🎴 {pack_name} ({len(cards)} cards)",
+                    value="\n".join(card_lines),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🎴 Daily Pack",
+                    value="No cards available right now — check back later!",
                     inline=False
                 )
 

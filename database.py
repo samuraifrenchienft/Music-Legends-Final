@@ -3759,22 +3759,30 @@ class DatabaseManager:
                     "error": f"Daily claim failed: {str(e)}"
                 }
 
-        # Grant a free community pack outside the economy transaction
-        # (open_pack_for_drop manages its own connection + records in pack_purchases)
+        # Grant a free community pack outside the economy transaction.
+        # Primary: find a LIVE creator pack and open it.
+        # Fallback: generate cards from the cards table using tier pack odds.
         try:
             pack = self.get_random_live_pack_by_tier("community")
             if pack and pack.get('pack_id'):
-                result = self.open_pack_for_drop(pack['pack_id'], user_id)
-                if result.get('success'):
-                    daily_cards = result.get('cards', [])
+                drop_result = self.open_pack_for_drop(pack['pack_id'], user_id)
+                if drop_result.get('success') and drop_result.get('cards'):
+                    daily_cards = drop_result['cards']
                     daily_pack_name = pack.get('name', 'Daily Pack')
-                    print(f"[DAILY] User {user_id} received pack '{daily_pack_name}' ({len(daily_cards)} cards)")
+                    print(f"[DAILY] User {user_id} received creator pack '{daily_pack_name}' ({len(daily_cards)} cards)")
                 else:
-                    print(f"[DAILY] Pack grant failed for user {user_id}: {result.get('error')}")
+                    print(f"[DAILY] Creator pack open failed ({drop_result.get('error')}), using tier fallback")
+                    daily_cards = self.generate_tier_pack_cards(user_id, "community")
+                    daily_pack_name = "Daily Community Pack"
+                    print(f"[DAILY] Tier fallback: {len(daily_cards)} cards granted to user {user_id}")
             else:
-                print(f"[DAILY] No live community packs available for daily claim")
+                print(f"[DAILY] No live creator packs, using tier fallback")
+                daily_cards = self.generate_tier_pack_cards(user_id, "community")
+                daily_pack_name = "Daily Community Pack"
+                print(f"[DAILY] Tier fallback: {len(daily_cards)} cards granted to user {user_id}")
         except Exception as e:
             print(f"[DAILY] Pack grant error (non-critical, economy already saved): {e}")
+            import traceback; traceback.print_exc()
 
         # Log successful transaction
         import json
