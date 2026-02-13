@@ -408,6 +408,24 @@ class BattleCommands(commands.Cog):
         p2 = result["player2"]
         print(f"[BATTLE] Result: winner={result['winner']}, p1_final={p1['final_power']}, p2_final={p2['final_power']}")
 
+        # Step 5 — Distribute rewards BEFORE animation so a Discord API failure
+        # can't orphan rewards after gold has already been deducted.
+        self._add_gold(interaction.user.id, p1["gold_reward"])
+        self._add_gold(opponent.id, p2["gold_reward"])
+        self._add_xp(interaction.user.id, p1["xp_reward"])
+        self._add_xp(opponent.id, p2["xp_reward"])
+
+        if result["winner"] == 1:
+            self._update_battle_stats(interaction.user.id, opponent.id)
+        elif result["winner"] == 2:
+            self._update_battle_stats(opponent.id, interaction.user.id)
+        else:
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN (?, ?)",
+                               (interaction.user.id, opponent.id))
+                conn.commit()
+
         # --- Battle Animation ---
         _re = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}
         c_rarity_e = _re.get((c_card_data.get('rarity') or 'common').lower(), "⚪")
@@ -461,25 +479,6 @@ class BattleCommands(commands.Cog):
         # Phase 4 — Final Result
         result_embed = BattleEngine.create_battle_embed(result, interaction.user.display_name, opponent.display_name)
         await anim_msg.edit(embed=result_embed)
-
-        # Step 5 — Distribute rewards
-        self._add_gold(interaction.user.id, p1["gold_reward"])
-        self._add_gold(opponent.id, p2["gold_reward"])
-        self._add_xp(interaction.user.id, p1["xp_reward"])
-        self._add_xp(opponent.id, p2["xp_reward"])
-
-        # Update win/loss stats
-        if result["winner"] == 1:
-            self._update_battle_stats(interaction.user.id, opponent.id)
-        elif result["winner"] == 2:
-            self._update_battle_stats(opponent.id, interaction.user.id)
-        else:
-            # Tie — just increment total_battles for both
-            with self.db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN (?, ?)",
-                               (interaction.user.id, opponent.id))
-                conn.commit()
 
         # Record match in DB
         winner_id = interaction.user.id if result["winner"] == 1 else (
