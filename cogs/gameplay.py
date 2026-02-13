@@ -51,13 +51,21 @@ class CardDropView(discord.ui.View):
                 description=f"{interaction.user.mention} grabbed **{self.pack['name']}**!\nOpening {len(result['cards'])} cards...",
                 color=self.TIER_COLORS.get(self.pack["tier"], discord.Color.green())
             )
+            embed.set_footer(text="Check /collection for your new cards!")
         else:
-            embed = discord.Embed(
-                title=f"{tier_emoji} Pack Claimed!",
-                description=f"{interaction.user.mention} grabbed **{self.pack['name']}**!",
-                color=self.TIER_COLORS.get(self.pack["tier"], discord.Color.green())
+            # Reset claim so another user can try, and report the error
+            self.claimed_by = None
+            button.disabled = False
+            button.label = "🎁 Claim Pack!"
+            button.style = discord.ButtonStyle.success
+            error_msg = result.get("error", "Unknown error")
+            print(f"[DROP] Pack open failed for user {interaction.user.id}: {error_msg}")
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(
+                f"❌ Could not open pack: `{error_msg}`\nPlease try again or contact a dev.",
+                ephemeral=True
             )
-        embed.set_footer(text="Check /collection for your new cards!")
+            return
 
         await interaction.response.edit_message(embed=embed, view=self)
 

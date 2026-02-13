@@ -1397,6 +1397,18 @@ class DatabaseManager:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_listings (
+                    card_id TEXT PRIMARY KEY,
+                    seller_id BIGINT NOT NULL,
+                    price INTEGER NOT NULL,
+                    status TEXT DEFAULT 'active',
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    buyer_id BIGINT,
+                    sold_at TIMESTAMP
+                )
+            """)
+
             # -- Trading --
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
@@ -2346,10 +2358,10 @@ class DatabaseManager:
                 
                 conn.commit()
                 return True
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Error recording match: {e}")
             return False
-    
+
     def record_pack_opening(self, user_id: int, pack_type: str, cards_received: List[str], cost_tokens: int = 0) -> bool:
         """Record a pack opening"""
         try:
@@ -3719,8 +3731,15 @@ class DatabaseManager:
             try:
                 cursor = conn.cursor()
 
-                # Update economy first
+                # Ensure user_inventory row exists (new users or SQLite fallback)
                 ph = self._get_placeholder()
+                cursor.execute(f"""
+                    INSERT INTO user_inventory (user_id, gold)
+                    VALUES ({ph}, 500)
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (user_id,))
+
+                # Update economy
                 cursor.execute(f"""
                     UPDATE user_inventory
                     SET gold = COALESCE(gold, 0) + {ph}, tickets = COALESCE(tickets, 0) + {ph},

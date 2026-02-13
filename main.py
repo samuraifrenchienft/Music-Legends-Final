@@ -64,21 +64,29 @@ class Bot(commands.Bot):
         print("🔥🔥🔥 FORCING COMPLETE RESTART - ALL SYSTEMS RELOADING")
         
         # Initialize database with persistent storage
-        from db_manager import db_manager
-        
-        # Use working directory for database on Railway
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            print("📁 Using working directory for database storage")
-        
-        db_manager.init_engine()
-        
-        # Create marketplace table
-        await db_manager.create_marketplace_table()
-        
-        # Check for database restore if needed
-        restored = await db_manager.restore_database_if_needed()
-        if restored:
-            print("✅ Database restored from backup")
+        # When PostgreSQL is active (DATABASE_URL set), skip db_manager entirely.
+        # db_manager uses SQLAlchemy with pool_size=20+overflow=10 which exhausts
+        # Railway's PostgreSQL connection limit. database.py's get_db() singleton
+        # already manages its own pool (3+2=5 connections) and handles all queries.
+        _using_postgres = bool(os.getenv("DATABASE_URL"))
+        if not _using_postgres:
+            from db_manager import db_manager
+
+            # Use working directory for database on Railway
+            if os.getenv("RAILWAY_ENVIRONMENT"):
+                print("📁 Using working directory for database storage")
+
+            db_manager.init_engine()
+
+            # Create marketplace table (SQLite only — PostgreSQL version is in _init_postgresql)
+            await db_manager.create_marketplace_table()
+
+            # Check for database restore if needed (SQLite only)
+            restored = await db_manager.restore_database_if_needed()
+            if restored:
+                print("✅ Database restored from backup")
+        else:
+            print("✅ [DATABASE] PostgreSQL active — skipping db_manager (pool already managed by get_db())")
         
         # Run database integrity check on startup
         try:
@@ -95,8 +103,8 @@ class Bot(commands.Bot):
                 for warning in integrity_results["warnings"][:5]:  # Show first 5 warnings
                     print(f"   ⚠️ {warning}")
                 
-                # Try to restore from backup if integrity check failed
-                if integrity_results["errors"]:
+                # Try to restore from backup if integrity check failed (SQLite only)
+                if integrity_results["errors"] and not _using_postgres:
                     print("🔄 Attempting to restore from latest backup...")
                     restored = await db_manager.restore_database_if_needed()
                     if restored:
@@ -311,8 +319,9 @@ class Bot(commands.Bot):
             print(f"⚠️ Backup error (non-critical): {e}")
         
         try:
-            from db_manager import db_manager
-            await db_manager.close()
+            if not os.getenv("DATABASE_URL"):
+                from db_manager import db_manager
+                await db_manager.close()
             print("✅ Database closed")
         except ImportError:
             print("⚠️ Database manager not available")
