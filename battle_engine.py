@@ -498,37 +498,41 @@ class BattleEngine:
         cls,
         card1: ArtistCard,
         card2: ArtistCard,
-        wager_tier: str = "casual"
+        wager_tier: str = "casual",
+        p1_override: int = None,
+        p2_override: int = None,
     ) -> Dict:
         """Execute a battle between two cards (legacy method)"""
-        
-        # Get base power
-        power1 = card1.power
-        power2 = card2.power
-        
+
+        # Use override power if provided (direct stat calculation bypasses lossy view_count)
+        base1 = p1_override if p1_override is not None else card1.power
+        base2 = p2_override if p2_override is not None else card2.power
+        power1 = base1
+        power2 = base2
+
         # Check for critical hits
         crit1 = random.random() < cls.CRITICAL_HIT_CHANCE
         crit2 = random.random() < cls.CRITICAL_HIT_CHANCE
-        
+
         # Apply critical hit multipliers
         if crit1:
             power1 = int(power1 * cls.CRITICAL_MULTIPLIER)
         if crit2:
             power2 = int(power2 * cls.CRITICAL_MULTIPLIER)
-        
+
         # Determine winner
         power_diff = abs(power1 - power2)
-        
+
         if power_diff < cls.MIN_POWER_ADVANTAGE:
             winner = 0  # Tie
         elif power1 > power2:
             winner = 1
         else:
             winner = 2
-        
+
         # Get wager info
         wager_info = BattleWagerConfig.get_tier(wager_tier)
-        
+
         # Calculate rewards
         if winner == 1:
             player1_gold = wager_info["winner_gold"]
@@ -546,12 +550,12 @@ class BattleEngine:
             player2_gold = 25
             player1_xp = 10
             player2_xp = 10
-        
+
         return {
             "winner": winner,
             "player1": {
                 "card": card1,
-                "base_power": card1.power,
+                "base_power": base1,
                 "final_power": power1,
                 "critical_hit": crit1,
                 "gold_reward": player1_gold,
@@ -559,7 +563,7 @@ class BattleEngine:
             },
             "player2": {
                 "card": card2,
-                "base_power": card2.power,
+                "base_power": base2,
                 "final_power": power2,
                 "critical_hit": crit2,
                 "gold_reward": player2_gold,

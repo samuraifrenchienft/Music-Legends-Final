@@ -216,28 +216,29 @@ class BattleCommands(commands.Cog):
             )
             conn.commit()
 
+    _RARITY_BONUS = {"common": 0, "rare": 5, "epic": 10, "legendary": 20, "mythic": 35}
+
+    def _compute_card_power(self, card: dict) -> int:
+        """Compute battle power directly from card DB stats (no lossy view_count conversion).
+        Formula: average of 5 stats (0-100 each) + rarity bonus → range 0-135."""
+        base = ((card.get('impact', 50) or 50) +
+                (card.get('skill', 50) or 50) +
+                (card.get('longevity', 50) or 50) +
+                (card.get('culture', 50) or 50) +
+                (card.get('hype', 50) or 50)) // 5
+        rarity = (card.get('rarity') or 'common').lower()
+        return base + self._RARITY_BONUS.get(rarity, 0)
+
     def _card_dict_to_artist(self, card: dict) -> ArtistCard:
-        """Convert a DB card dict to an ArtistCard for the battle engine"""
-        power_avg = ((card.get('impact', 50) or 50) +
-                     (card.get('skill', 50) or 50) +
-                     (card.get('longevity', 50) or 50) +
-                     (card.get('culture', 50) or 50) +
-                     (card.get('hype', 50) or 50)) // 5
-        # Map power_avg to a fake view_count so ArtistCard._calculate_power works
-        view_map = {90: 1_500_000_000, 80: 700_000_000, 70: 200_000_000,
-                    60: 80_000_000, 50: 30_000_000}
-        fake_views = 5_000_000
-        for threshold, views in sorted(view_map.items(), reverse=True):
-            if power_avg >= threshold:
-                fake_views = views
-                break
+        """Convert a DB card dict to an ArtistCard for display metadata in the battle engine.
+        Power is overridden via _compute_card_power() — view_count is a placeholder only."""
         return ArtistCard(
             card_id=card.get('card_id', ''),
             artist=card.get('name', 'Unknown'),
             song=card.get('title', '') or card.get('name', 'Unknown'),
             youtube_url=card.get('youtube_url', '') or '',
             youtube_id='',
-            view_count=fake_views,
+            view_count=10_000_000,  # placeholder — power is overridden in execute_battle()
             thumbnail=card.get('image_url', '') or '',
             rarity=(card.get('rarity') or 'common').lower(),
         )
@@ -396,17 +397,72 @@ class BattleCommands(commands.Cog):
         card1 = self._card_dict_to_artist(c_card_data)
         card2 = self._card_dict_to_artist(o_card_data)
 
-        # Step 4 — Execute battle
-        print(f"[BATTLE] Executing: {c_card_data.get('name')} vs {o_card_data.get('name')}")
-        result = BattleEngine.execute_battle(card1, card2, tier_key)
-        print(f"[BATTLE] Result: winner={result['winner']}, p1_power={result['player1']['final_power']}, p2_power={result['player2']['final_power']}")
-        result_embed = BattleEngine.create_battle_embed(
-            result, interaction.user.display_name, opponent.display_name)
+        # Compute power directly from card stats (bypass lossy ArtistCard view_count conversion)
+        c_power = self._compute_card_power(c_card_data)
+        o_power = self._compute_card_power(o_card_data)
 
-        # Step 5 — Distribute rewards
+        # Step 4 — Execute battle (instant; animation below is theatrical reveal)
+        print(f"[BATTLE] Executing: {c_card_data.get('name')} (pwr={c_power}) vs {o_card_data.get('name')} (pwr={o_power})")
+        result = BattleEngine.execute_battle(card1, card2, tier_key, p1_override=c_power, p2_override=o_power)
         p1 = result["player1"]
         p2 = result["player2"]
+        print(f"[BATTLE] Result: winner={result['winner']}, p1_final={p1['final_power']}, p2_final={p2['final_power']}")
 
+        # --- Battle Animation ---
+        _re = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}
+        c_rarity_e = _re.get((c_card_data.get('rarity') or 'common').lower(), "⚪")
+        o_rarity_e = _re.get((o_card_data.get('rarity') or 'common').lower(), "⚪")
+        c_name = c_card_data.get('name', 'Unknown')
+        o_name = o_card_data.get('name', 'Unknown')
+        c_title = c_card_data.get('title', '') or ''
+        o_title = o_card_data.get('title', '') or ''
+
+        # Phase 1 — Battle Start
+        start_embed = discord.Embed(
+            title="⚔️ Battle Commencing!",
+            description=f"**{interaction.user.display_name}** vs **{opponent.display_name}**",
+            color=0xf39c12,
+        )
+        start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
+        start_embed.set_footer(text="Preparing cards...")
+        anim_msg = await interaction.followup.send(embed=start_embed)
+        await asyncio.sleep(1.5)
+
+        # Phase 2 — Card Reveal
+        reveal_embed = discord.Embed(title="🎵 Cards Revealed!", color=0x3498db)
+        reveal_embed.add_field(
+            name=f"🔵 {interaction.user.display_name}",
+            value=f"{c_rarity_e} **{c_name}**" + (f" — {c_title}" if c_title else "") + f"\nPower: **{c_power}**",
+            inline=True,
+        )
+        reveal_embed.add_field(name="⚡", value="**VS**", inline=True)
+        reveal_embed.add_field(
+            name=f"🔴 {opponent.display_name}",
+            value=f"{o_rarity_e} **{o_name}**" + (f" — {o_title}" if o_title else "") + f"\nPower: **{o_power}**",
+            inline=True,
+        )
+        reveal_embed.set_footer(text="Powers clashing...")
+        await anim_msg.edit(embed=reveal_embed)
+        await asyncio.sleep(1.5)
+
+        # Phase 3 — Critical Hit reveal (if any)
+        if p1['critical_hit'] or p2['critical_hit']:
+            crit_embed = discord.Embed(title="💥 CRITICAL HIT!", color=0xe74c3c)
+            crit_lines = []
+            if p1['critical_hit']:
+                crit_lines.append(f"🔵 **{interaction.user.display_name}** lands a CRIT! {c_power} → **{p1['final_power']}** ⚡")
+            if p2['critical_hit']:
+                crit_lines.append(f"🔴 **{opponent.display_name}** lands a CRIT! {o_power} → **{p2['final_power']}** ⚡")
+            crit_embed.description = "\n".join(crit_lines)
+            crit_embed.set_footer(text="Calculating winner...")
+            await anim_msg.edit(embed=crit_embed)
+            await asyncio.sleep(1.5)
+
+        # Phase 4 — Final Result
+        result_embed = BattleEngine.create_battle_embed(result, interaction.user.display_name, opponent.display_name)
+        await anim_msg.edit(embed=result_embed)
+
+        # Step 5 — Distribute rewards
         self._add_gold(interaction.user.id, p1["gold_reward"])
         self._add_gold(opponent.id, p2["gold_reward"])
         self._add_xp(interaction.user.id, p1["xp_reward"])
@@ -441,8 +497,6 @@ class BattleCommands(commands.Cog):
         except Exception as e:
             print(f"Warning: could not record match: {e}")
 
-        await interaction.followup.send(embed=result_embed)
-
         # Record to battle_history table
         try:
             battle_id = f"battle_{uuid.uuid4().hex[:8]}"
@@ -455,8 +509,8 @@ class BattleCommands(commands.Cog):
                 'winner': result['winner'],  # 0=tie, 1=player1, 2=player2
                 'player1_power': p1['final_power'],
                 'player2_power': p2['final_power'],
-                'player1_critical': p1.get('critical', False),
-                'player2_critical': p2.get('critical', False),
+                'player1_critical': p1.get('critical_hit', False),
+                'player2_critical': p2.get('critical_hit', False),
                 'wager_tier': tier_key,
                 'wager_amount': wager_cost,
                 'player1_gold_reward': p1['gold_reward'],
