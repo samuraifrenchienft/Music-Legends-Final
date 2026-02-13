@@ -293,30 +293,29 @@ class Bot(commands.Bot):
                             inline=False
                         )
                         startup_embed.set_footer(text="All systems operational")
-
-                        changelog_embed = discord.Embed(
-                            title="🔒 Security Patch — v3.1 (2026-02-13)",
-                            color=discord.Color.red()
-                        )
-                        changelog_embed.add_field(
-                            name="Fixes Applied",
-                            value=(
-                                "✅ **Negative amount exploit** — Admin currency modal now rejects ≤0 amounts\n"
-                                "✅ **Battle gold race condition** — Gold deduction is now a single atomic UPDATE\n"
-                                "✅ **Dev permission consistency** — `/dev_supply` and `/dev_grant_pack` now use `_is_admin` (devs + server owners)\n"
-                                "✅ **Battle rate limit** — `/battle` now has a 15s cooldown per user\n"
-                                "✅ **Dependencies** — Removed dead packages (`aioredis`, `rq`); added `sentry-sdk`, `cachetools`"
-                            ),
-                            inline=False
-                        )
-                        changelog_embed.set_footer(text="Music Legends Security Audit — all 22 tests pass")
                         try:
                             await dev_channel.send(embed=startup_embed)
-                            await dev_channel.send(embed=changelog_embed)
                         except Exception as e:
                             print(f"⚠️ Could not send startup notice: {e}")
         except Exception as e:
             print(f"⚠️ Startup notice error: {e}")
+
+        # Send security changelog via webhook (reliable path — same as all bot alerts)
+        try:
+            from monitor.alerts import send_econ
+            changelog_text = (
+                "**Security Patch v3.1 — 2026-02-13**\n\n"
+                "✅ **Negative amount exploit** — Admin currency modal rejects <= 0 amounts\n"
+                "✅ **Battle gold race condition** — Deduction is now a single atomic UPDATE (no TOCTOU)\n"
+                "✅ **Battle rate limit** — /battle has a 15s per-user cooldown\n"
+                "✅ **Dev permission consistency** — /dev_supply & /dev_grant_pack now use _is_admin\n"
+                "✅ **Dead packages removed** — aioredis, rq dropped; sentry-sdk + cachetools added\n\n"
+                "_All 22 tests pass_"
+            )
+            await send_econ("🔒 Security Patch Deployed", changelog_text, "success")
+            print("✅ Security changelog sent via webhook")
+        except Exception as e:
+            print(f"⚠️ Could not send security changelog: {e}")
 
     async def close(self):
         """Cleanup when bot shuts down"""
