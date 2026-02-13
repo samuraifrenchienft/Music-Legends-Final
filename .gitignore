@@ -15,8 +15,9 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
-# Temporary test files
-test_*.py
+# Temporary test files (root-level only; tests/ directory is tracked)
+/test_*.py
+!tests/
 debug_*.py
 cleanup_*.py
 check_*.py
