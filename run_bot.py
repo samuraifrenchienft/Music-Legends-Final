@@ -41,6 +41,13 @@ def main():
         from dotenv import load_dotenv
         load_dotenv('.env.txt')
         print("[DOCKER] Environment variables loaded")
+
+        # Initialize Sentry error tracking (optional — only if SENTRY_DSN is set)
+        sentry_dsn = os.getenv("SENTRY_DSN")
+        if sentry_dsn:
+            import sentry_sdk
+            sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=0.1)
+            print("[SENTRY] Error tracking enabled")
         
         # Check environment
         logger.info("Starting Music Legends Bot...")
