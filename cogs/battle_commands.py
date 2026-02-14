@@ -414,16 +414,19 @@ class BattleCommands(commands.Cog):
         self._add_xp(interaction.user.id, p1["xp_reward"])
         self._add_xp(opponent.id, p2["xp_reward"])
 
-        if result["winner"] == 1:
-            self._update_battle_stats(interaction.user.id, opponent.id)
-        elif result["winner"] == 2:
-            self._update_battle_stats(opponent.id, interaction.user.id)
-        else:
-            with self.db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN (?, ?)",
-                               (interaction.user.id, opponent.id))
-                conn.commit()
+        try:
+            if result["winner"] == 1:
+                self._update_battle_stats(interaction.user.id, opponent.id)
+            elif result["winner"] == 2:
+                self._update_battle_stats(opponent.id, interaction.user.id)
+            else:
+                with self.db._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN (?, ?)",
+                                   (interaction.user.id, opponent.id))
+                    conn.commit()
+        except Exception as e:
+            print(f"[BATTLE] Warning: battle stats update failed (non-critical): {e}")
 
         # --- Battle Animation ---
         _re = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}

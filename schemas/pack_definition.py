@@ -102,7 +102,7 @@ PACK_DEFINITIONS: Dict[str, PackDefinition] = {
         key="starter",
         display_name="Starter Pack",
         tier=PackTier.STARTER,
-        cards_per_pack=3,
+        cards_per_pack=5,
         guarantees={
             "min_rarity": "community",
             "hero_slot": False,

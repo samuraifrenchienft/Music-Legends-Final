@@ -243,13 +243,14 @@ class GameplayCommands(commands.Cog):
                     custom_id=f"view_card_{card_id}"
                 )
                 
-                # Add click handler
+                # Add click handler — call _show_card directly, NOT view_command
+                # (view_command is an app_commands.Command and doesn't work from button callbacks)
                 async def button_callback(interaction: Interaction, card_id=card_id):
+                    await interaction.response.defer(thinking=True)
                     try:
-                        await self.view_command(interaction, card_id)
+                        await self._show_card(interaction, card_id)
                     except Exception as e:
                         print(f"❌ Button callback error: {e}")
-                        # Use followup.send after defer, not response.send_message
                         await interaction.followup.send("❌ Could not load card details. Please try again.", ephemeral=True)
                 
                 button.callback = button_callback
@@ -293,7 +294,10 @@ class GameplayCommands(commands.Cog):
     async def view_command(self, interaction: Interaction, card_identifier: str):
         """View detailed information about a specific card with full visual display"""
         await interaction.response.defer()
+        await self._show_card(interaction, card_identifier)
 
+    async def _show_card(self, interaction: Interaction, card_identifier: str):
+        """Internal helper — DB lookup + embed. Called from /view and card buttons."""
         try:
             # Find card by card_id or serial_number in user's collection
             with self.db._get_connection() as conn:
