@@ -361,10 +361,3 @@ def test_artist():
     except Exception:
         return None
 
-def pytest_assertion_pass(item, lineno, orig, expl):
-    """Called when an assertion passes."""
-    pass
-
-def pytest_assertion_fail(item, lineno, orig, expl):
-    """Called when an assertion fails."""
-    pass

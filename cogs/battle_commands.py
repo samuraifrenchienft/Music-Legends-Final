@@ -75,6 +75,7 @@ class AcceptBattleView(ui.View):
         self.opponent_id = opponent_id
         self.match_id = match_id
         self.accepted = None
+        self.interaction = None  # Saved from accept callback for ephemeral followup
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.opponent_id
@@ -82,6 +83,7 @@ class AcceptBattleView(ui.View):
     @ui.button(label="Accept", style=discord.ButtonStyle.green, emoji="⚔️")
     async def accept(self, interaction: Interaction, button: ui.Button):
         self.accepted = True
+        self.interaction = interaction  # Save for ephemeral champion-select prompt
         self.stop()
         await interaction.response.defer()
 
@@ -123,7 +125,7 @@ class CardSelectView(ui.View):
         if not options:
             return
 
-        select = ui.Select(placeholder="Choose your battle card...", options=options, custom_id="card_select")
+        select = ui.Select(placeholder="Choose your Champion card...", options=options, custom_id="card_select")
         select.callback = self._select_callback
         self.add_item(select)
 
@@ -226,6 +228,19 @@ class BattleCommands(commands.Cog):
                 (card.get('hype', 50) or 50)) // 5
         rarity = (card.get('rarity') or 'common').lower()
         return base + self._RARITY_BONUS.get(rarity, 0)
+
+    def _get_support_cards(self, cards: list, champion_card_id: str, n: int = 4) -> list:
+        """Return top-n cards by power, excluding the chosen champion."""
+        others = [c for c in cards if c.get('card_id') != champion_card_id]
+        others.sort(key=lambda c: self._compute_card_power(c), reverse=True)
+        return others[:n]
+
+    def _compute_team_power(self, champ_power: int, support_powers: list) -> int:
+        """Weighted team power: champion counts double, auto-supports fill the squad.
+        Formula: (champ*2 + sum(supports)) / (2 + len(supports))"""
+        if not support_powers:
+            return champ_power
+        return (champ_power * 2 + sum(support_powers)) // (2 + len(support_powers))
 
     def _card_dict_to_artist(self, card: dict) -> ArtistCard:
         """Convert a DB card dict to an ArtistCard for display metadata in the battle engine.
@@ -363,17 +378,19 @@ class BattleCommands(commands.Cog):
             self._add_gold(opponent.id, wager_cost)
             return await interaction.followup.send(f"{opponent.display_name} has no cards! Battle cancelled, wagers refunded.")
 
-        # Send BOTH card select prompts at the same time (non-ephemeral so each player can see theirs)
+        # Send champion-select prompts privately — only each player sees their own cards
         c_view = CardSelectView(interaction.user.id, challenger_cards)
         o_view = CardSelectView(opponent.id, opponent_cards)
 
         await interaction.followup.send(
-            f"{interaction.user.mention} ⚔️ **You have 60s to pick your battle card!**",
-            view=c_view
+            "⚔️ **Pick your Champion!** Your 4 strongest remaining cards auto-join as your squad. (60s)",
+            view=c_view,
+            ephemeral=True
         )
-        await interaction.followup.send(
-            f"{opponent.mention} ⚔️ **You have 60s to pick your battle card!**",
-            view=o_view
+        await accept_view.interaction.followup.send(
+            "⚔️ **Pick your Champion!** Your 4 strongest remaining cards auto-join as your squad. (60s)",
+            view=o_view,
+            ephemeral=True
         )
 
         # Wait for BOTH players to pick simultaneously
@@ -389,19 +406,28 @@ class BattleCommands(commands.Cog):
             self._add_gold(opponent.id, wager_cost)
             return await interaction.followup.send("Battle cancelled — opponent didn't pick a card. Wagers refunded.")
 
-        # Resolve card data
+        # Resolve champion card data
         c_card_data = next((c for c in challenger_cards if c.get('card_id') == c_view.selected_card), challenger_cards[0])
         o_card_data = next((c for c in opponent_cards if c.get('card_id') == o_view.selected_card), opponent_cards[0])
 
         card1 = self._card_dict_to_artist(c_card_data)
         card2 = self._card_dict_to_artist(o_card_data)
 
-        # Compute power directly from card stats (bypass lossy ArtistCard view_count conversion)
-        c_power = self._compute_card_power(c_card_data)
-        o_power = self._compute_card_power(o_card_data)
+        # Build squads: champion + top-4 auto-supports (by power, excluding champion)
+        c_supports = self._get_support_cards(challenger_cards, c_card_data.get('card_id', ''))
+        o_supports = self._get_support_cards(opponent_cards, o_card_data.get('card_id', ''))
+
+        c_champ_power = self._compute_card_power(c_card_data)
+        o_champ_power = self._compute_card_power(o_card_data)
+        c_support_powers = [self._compute_card_power(c) for c in c_supports]
+        o_support_powers = [self._compute_card_power(c) for c in o_supports]
+
+        # Team power: champion counts double, supports contribute to weighted average
+        c_power = self._compute_team_power(c_champ_power, c_support_powers)
+        o_power = self._compute_team_power(o_champ_power, o_support_powers)
 
         # Step 4 — Execute battle (instant; animation below is theatrical reveal)
-        print(f"[BATTLE] Executing: {c_card_data.get('name')} (pwr={c_power}) vs {o_card_data.get('name')} (pwr={o_power})")
+        print(f"[BATTLE] Executing: {c_card_data.get('name')} (champ={c_champ_power}, team={c_power}) vs {o_card_data.get('name')} (champ={o_champ_power}, team={o_power})")
         result = BattleEngine.execute_battle(card1, card2, tier_key, p1_override=c_power, p2_override=o_power)
         p1 = result["player1"]
         p2 = result["player2"]
@@ -437,6 +463,13 @@ class BattleCommands(commands.Cog):
         c_title = c_card_data.get('title', '') or ''
         o_title = o_card_data.get('title', '') or ''
 
+        def _squad_lines(supports: list) -> str:
+            lines = []
+            for s in supports:
+                re = _re.get((s.get('rarity') or 'common').lower(), "⚪")
+                lines.append(f"{re} {s.get('name', 'Unknown')} ({self._compute_card_power(s)})")
+            return "\n".join(lines) if lines else "_No squad members_"
+
         # Phase 1 — Battle Start
         start_embed = discord.Embed(
             title="⚔️ Battle Commencing!",
@@ -444,35 +477,52 @@ class BattleCommands(commands.Cog):
             color=0xf39c12,
         )
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
-        start_embed.set_footer(text="Preparing cards...")
+        start_embed.set_footer(text="Champions stepping forward...")
         anim_msg = await interaction.followup.send(embed=start_embed)
         await asyncio.sleep(1.5)
 
-        # Phase 2 — Card Reveal
-        reveal_embed = discord.Embed(title="🎵 Cards Revealed!", color=0x3498db)
-        reveal_embed.add_field(
-            name=f"🔵 {interaction.user.display_name}",
-            value=f"{c_rarity_e} **{c_name}**" + (f" — {c_title}" if c_title else "") + f"\nPower: **{c_power}**",
+        # Phase 2a — Champion Reveal
+        champ_embed = discord.Embed(title="🏆 Champions Revealed!", color=0x9b59b6)
+        champ_embed.add_field(
+            name=f"🔵 {interaction.user.display_name}'s Champion",
+            value=f"{c_rarity_e} **{c_name}**" + (f" — {c_title}" if c_title else "") + f"\nPower: **{c_champ_power}**",
             inline=True,
         )
-        reveal_embed.add_field(name="⚡", value="**VS**", inline=True)
-        reveal_embed.add_field(
-            name=f"🔴 {opponent.display_name}",
-            value=f"{o_rarity_e} **{o_name}**" + (f" — {o_title}" if o_title else "") + f"\nPower: **{o_power}**",
+        champ_embed.add_field(name="⚡", value="**VS**", inline=True)
+        champ_embed.add_field(
+            name=f"🔴 {opponent.display_name}'s Champion",
+            value=f"{o_rarity_e} **{o_name}**" + (f" — {o_title}" if o_title else "") + f"\nPower: **{o_champ_power}**",
             inline=True,
         )
-        reveal_embed.set_footer(text="Powers clashing...")
-        await anim_msg.edit(embed=reveal_embed)
+        champ_embed.set_footer(text="Squads assembling...")
+        await anim_msg.edit(embed=champ_embed)
         await asyncio.sleep(1.5)
+
+        # Phase 2b — Full Squad Reveal
+        squad_embed = discord.Embed(title="🎵 Full Squads!", color=0x3498db)
+        squad_embed.add_field(
+            name=f"🔵 {interaction.user.display_name} — Team Power: {c_power}",
+            value=f"**Champion:** {c_rarity_e} {c_name} ({c_champ_power})\n**Squad:**\n{_squad_lines(c_supports)}",
+            inline=True,
+        )
+        squad_embed.add_field(name="⚡", value="**VS**", inline=True)
+        squad_embed.add_field(
+            name=f"🔴 {opponent.display_name} — Team Power: {o_power}",
+            value=f"**Champion:** {o_rarity_e} {o_name} ({o_champ_power})\n**Squad:**\n{_squad_lines(o_supports)}",
+            inline=True,
+        )
+        squad_embed.set_footer(text="Powers clashing...")
+        await anim_msg.edit(embed=squad_embed)
+        await asyncio.sleep(2.0)
 
         # Phase 3 — Critical Hit reveal (if any)
         if p1['critical_hit'] or p2['critical_hit']:
             crit_embed = discord.Embed(title="💥 CRITICAL HIT!", color=0xe74c3c)
             crit_lines = []
             if p1['critical_hit']:
-                crit_lines.append(f"🔵 **{interaction.user.display_name}** lands a CRIT! {c_power} → **{p1['final_power']}** ⚡")
+                crit_lines.append(f"🔵 **{interaction.user.display_name}**'s team lands a CRIT! {c_power} → **{p1['final_power']}** ⚡")
             if p2['critical_hit']:
-                crit_lines.append(f"🔴 **{opponent.display_name}** lands a CRIT! {o_power} → **{p2['final_power']}** ⚡")
+                crit_lines.append(f"🔴 **{opponent.display_name}**'s team lands a CRIT! {o_power} → **{p2['final_power']}** ⚡")
             crit_embed.description = "\n".join(crit_lines)
             crit_embed.set_footer(text="Calculating winner...")
             await anim_msg.edit(embed=crit_embed)
