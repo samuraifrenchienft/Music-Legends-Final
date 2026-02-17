@@ -2346,18 +2346,6 @@ class DatabaseManager:
                     )
                 )
                 
-                # Update user stats
-                cursor.execute(
-                    "UPDATE users SET total_battles = total_battles + 1, wins = wins + 1 WHERE user_id = ?",
-                    (match_data['winner_id'],)
-                )
-                loser_id = (match_data['player_a_id'] if match_data['winner_id'] == match_data['player_b_id'] 
-                           else match_data['player_b_id'])
-                cursor.execute(
-                    "UPDATE users SET total_battles = total_battles + 1, losses = losses + 1 WHERE user_id = ?",
-                    (loser_id,)
-                )
-                
                 conn.commit()
                 return True
         except Exception as e:
@@ -4325,6 +4313,34 @@ class DatabaseManager:
             return []
     
     # ===== TRADE SYSTEM METHODS =====
+
+    def create_trade(self, initiator_user_id: int, receiver_user_id: int,
+                     initiator_cards: list, receiver_cards: list,
+                     gold_from_initiator: int = 0, gold_from_receiver: int = 0) -> Optional[str]:
+        """Create a new pending trade. Returns trade_id or None on failure."""
+        import uuid
+        trade_id = str(uuid.uuid4())
+        conn = self._get_connection()
+        ph = self._get_placeholder()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""INSERT INTO trades
+                    (trade_id, initiator_user_id, receiver_user_id,
+                     initiator_cards, receiver_cards,
+                     gold_from_initiator, gold_from_receiver, status)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending')""",
+                (trade_id, initiator_user_id, receiver_user_id,
+                 json.dumps(initiator_cards), json.dumps(receiver_cards),
+                 gold_from_initiator, gold_from_receiver)
+            )
+            conn.commit()
+            return trade_id
+        except Exception as e:
+            print(f"Error creating trade: {e}")
+            return None
+        finally:
+            conn.close()
 
     def get_trade(self, trade_id: str) -> Optional[Dict]:
         """Get trade by ID"""

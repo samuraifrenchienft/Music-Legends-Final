@@ -1151,7 +1151,7 @@ class MarketplaceCommands(commands.Cog):
             except Exception as e:
                 conn.rollback()
                 await interaction.response.send_message(
-                    f"Purchase failed: {str(e)}",
+                    "Purchase failed. Please try again.",
                     ephemeral=True
                 )
                 print(f"Marketplace purchase error: {e}")
@@ -1296,6 +1296,54 @@ class MarketplaceCommands(commands.Cog):
         )
         view = BuyPackTierView(self.db, interaction.user.id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="delist", description="Remove your card listing from the marketplace")
+    @app_commands.describe(listing_id="Listing ID to remove (shown in /market or /sell confirmation)")
+    async def delist_command(self, interaction: Interaction, listing_id: str):
+        """Cancel an active marketplace listing and return the card to the owner."""
+        conn = self.db._get_connection()
+        try:
+            cursor = conn.cursor()
+            # Verify the listing belongs to this user and is active
+            cursor.execute("""
+                SELECT listing_id, card_id, asking_gold
+                FROM market_listings
+                WHERE listing_id = ? AND seller_user_id = ? AND status = 'active'
+            """, (listing_id, interaction.user.id))
+            row = cursor.fetchone()
+
+            if not row:
+                await interaction.response.send_message(
+                    "Listing not found or it's not yours / already sold.", ephemeral=True
+                )
+                return
+
+            _, card_id, price = row
+
+            # Cancel the listing
+            cursor.execute("""
+                UPDATE market_listings SET status = 'cancelled'
+                WHERE listing_id = ?
+            """, (listing_id,))
+            conn.commit()
+        except Exception as e:
+            print(f"Delist error: {e}")
+            await interaction.response.send_message(
+                "Failed to remove listing. Please try again.", ephemeral=True
+            )
+            return
+        finally:
+            conn.close()
+
+        embed = discord.Embed(
+            title="✅ Listing Removed",
+            description=f"Listing `{listing_id}` has been cancelled.\nYour card is still in your collection.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Card ID", value=f"`{card_id}`", inline=True)
+        embed.add_field(name="Listed Price Was", value=f"{price:,} Gold", inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(MarketplaceCommands(bot))

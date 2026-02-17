@@ -161,6 +161,7 @@ class Bot(commands.Bot):
             'cogs.dev_supply_commands',       # Dev pack supply — grant packs for prizes/giveaways
             'cogs.battle_commands',           # Battle system (/battle, /battle_stats)
             'cogs.battlepass_commands',       # Battle Pass + Daily Quests
+            'cogs.trade_commands',            # /trade and /trade_history
         ]
         
         print(f"📦 Attempting to load {len(cogs)} cogs...")

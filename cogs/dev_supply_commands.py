@@ -223,5 +223,139 @@ class DevSupplyCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
+    @app_commands.command(name="test_battle", description="[DEV] Simulate a battle between two users using their real cards")
+    @app_commands.describe(user1="First player", user2="Second player")
+    async def test_battle(self, interaction: Interaction, user1: discord.Member, user2: discord.Member):
+        if not _is_admin(interaction):
+            await interaction.response.send_message("❌ Unauthorized.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        from battle_engine import BattleEngine, BattleWagerConfig
+        from discord_cards import ArtistCard
+
+        RARITY_BONUS = {"common": 0, "rare": 5, "epic": 10, "legendary": 20, "mythic": 35}
+
+        def compute_power(card: dict) -> int:
+            base = ((card.get('impact', 50) or 50) +
+                    (card.get('skill', 50) or 50) +
+                    (card.get('longevity', 50) or 50) +
+                    (card.get('culture', 50) or 50) +
+                    (card.get('hype', 50) or 50)) // 5
+            return base + RARITY_BONUS.get((card.get('rarity') or 'common').lower(), 0)
+
+        def team_power(champ_power: int, supports: list) -> int:
+            sp = [compute_power(c) for c in supports]
+            if not sp:
+                return champ_power
+            return (champ_power * 2 + sum(sp)) // (2 + len(sp))
+
+        def card_to_artist(card: dict) -> ArtistCard:
+            return ArtistCard(
+                card_id=card.get('card_id', ''),
+                artist=card.get('name', 'Unknown'),
+                song=card.get('title', '') or card.get('name', 'Unknown'),
+                youtube_url='', youtube_id='',
+                view_count=10_000_000,
+                thumbnail=card.get('image_url', '') or '',
+                rarity=(card.get('rarity') or 'common').lower(),
+            )
+
+        RARITY_ICON = {"mythic": "🔮", "legendary": "⭐", "epic": "💜", "rare": "💙", "common": "⚪"}
+
+        def format_card(card: dict, power: int) -> str:
+            icon = RARITY_ICON.get((card.get('rarity') or 'common').lower(), "⚪")
+            name = card.get('name', 'Unknown')
+            title = card.get('title', '') or ''
+            return f"{icon} **{name}**" + (f" — {title}" if title else "") + f" | Power: **{power}**"
+
+        # Fetch both collections
+        u1_cards = self.db.get_user_collection(user1.id)
+        u2_cards = self.db.get_user_collection(user2.id)
+
+        if not u1_cards:
+            await interaction.followup.send(f"❌ {user1.display_name} has no cards.", ephemeral=True)
+            return
+        if not u2_cards:
+            await interaction.followup.send(f"❌ {user2.display_name} has no cards.", ephemeral=True)
+            return
+
+        # Auto-pick strongest card as champion for each
+        u1_sorted = sorted(u1_cards, key=compute_power, reverse=True)
+        u2_sorted = sorted(u2_cards, key=compute_power, reverse=True)
+
+        u1_champ = u1_sorted[0]
+        u2_champ = u2_sorted[0]
+        u1_supports = u1_sorted[1:5]
+        u2_supports = u2_sorted[1:5]
+
+        u1_cp = compute_power(u1_champ)
+        u2_cp = compute_power(u2_champ)
+        u1_tp = team_power(u1_cp, u1_supports)
+        u2_tp = team_power(u2_cp, u2_supports)
+
+        card1 = card_to_artist(u1_champ)
+        card2 = card_to_artist(u2_champ)
+
+        # Run the battle engine
+        result = BattleEngine.execute_battle(card1, card2, "bronze", p1_override=u1_tp, p2_override=u2_tp)
+        p1 = result["player1"]
+        p2 = result["player2"]
+
+        winner_name = user1.display_name if result["winner"] == 1 else (
+            user2.display_name if result["winner"] == 2 else "TIE")
+
+        # Build result embed
+        embed = discord.Embed(
+            title=f"⚔️ TEST BATTLE: {user1.display_name} vs {user2.display_name}",
+            color=discord.Color.gold() if result["winner"] == 0 else
+                  discord.Color.blue() if result["winner"] == 1 else discord.Color.red()
+        )
+
+        def squad_text(supports):
+            if not supports:
+                return "_No squad_"
+            lines = []
+            for s in supports:
+                icon = RARITY_ICON.get((s.get('rarity') or 'common').lower(), "⚪")
+                lines.append(f"{icon} {s.get('name','?')} ({compute_power(s)})")
+            return "\n".join(lines)
+
+        embed.add_field(
+            name=f"🔵 {user1.display_name}",
+            value=(
+                f"**Champion:** {format_card(u1_champ, u1_cp)}\n"
+                f"**Squad:**\n{squad_text(u1_supports)}\n"
+                f"**Team Power:** {u1_tp}"
+                + (" 💥 CRIT!" if p1['critical_hit'] else "") +
+                f"\n**Final Power:** {p1['final_power']}"
+            ),
+            inline=True
+        )
+        embed.add_field(name="⚡", value="**VS**", inline=True)
+        embed.add_field(
+            name=f"🔴 {user2.display_name}",
+            value=(
+                f"**Champion:** {format_card(u2_champ, u2_cp)}\n"
+                f"**Squad:**\n{squad_text(u2_supports)}\n"
+                f"**Team Power:** {u2_tp}"
+                + (" 💥 CRIT!" if p2['critical_hit'] else "") +
+                f"\n**Final Power:** {p2['final_power']}"
+            ),
+            inline=True
+        )
+
+        if result["winner"] == 0:
+            embed.add_field(name="🤝 Result", value="**IT'S A TIE!**", inline=False)
+        elif result["winner"] == 1:
+            embed.add_field(name="🏆 Winner", value=f"**{user1.display_name}** wins! (+{p1['gold_reward']}g, +{p1['xp_reward']} XP)", inline=False)
+        else:
+            embed.add_field(name="🏆 Winner", value=f"**{user2.display_name}** wins! (+{p2['gold_reward']}g, +{p2['xp_reward']} XP)", inline=False)
+
+        embed.set_footer(text="TEST ONLY — no gold or XP was actually awarded")
+        await interaction.followup.send(embed=embed)
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(DevSupplyCog(bot))

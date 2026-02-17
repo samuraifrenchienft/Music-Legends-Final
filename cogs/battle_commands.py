@@ -43,8 +43,9 @@ class WagerSelect(ui.Select):
     async def callback(self, interaction: Interaction):
         self.view.selected_tier = self.values[0]
         tier = BattleWagerConfig.get_tier(self.values[0])
-        self.view.stop()
-        # Update the ephemeral message so challenger knows what happens next
+        # Acknowledge the select interaction FIRST, then stop the view.
+        # If stop() fires before edit_message is awaited, _run_battle resumes
+        # and could call followup methods before Discord has acknowledged this interaction.
         await interaction.response.edit_message(
             content=(
                 f"✅ **{tier['emoji']} {tier['name']} wager selected!** ({tier['wager_cost']}g)\n\n"
@@ -52,6 +53,7 @@ class WagerSelect(ui.Select):
             ),
             view=None
         )
+        self.view.stop()
 
 
 class WagerSelectView(ui.View):
@@ -84,55 +86,69 @@ class AcceptBattleView(ui.View):
     async def accept(self, interaction: Interaction, button: ui.Button):
         self.accepted = True
         self.interaction = interaction  # Save for ephemeral champion-select prompt
-        self.stop()
+        # MUST defer BEFORE stop() so the interaction is acknowledged before
+        # _run_battle continues and calls followup.send() on this interaction.
         await interaction.response.defer()
+        self.stop()
 
     @ui.button(label="Decline", style=discord.ButtonStyle.red, emoji="❌")
     async def decline(self, interaction: Interaction, button: ui.Button):
         self.accepted = False
+        await interaction.response.edit_message(
+            content="❌ Battle declined.", embed=None, view=None
+        )
         self.stop()
-        await interaction.response.defer()
 
 
-class CardSelectView(ui.View):
-    """Let a player pick a card from their collection"""
+class PackSelectView(ui.View):
+    """Let a player pick which pack (deck) to battle with"""
 
-    def __init__(self, user_id: int, cards: list):
+    RARITY_EMOJI = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}
+    TIER_EMOJI   = {"community": "📦", "gold": "🥇", "platinum": "💎"}
+
+    def __init__(self, user_id: int, packs: list):
         super().__init__(timeout=60)
         self.user_id = user_id
-        self.selected_card = None
+        self.selected_pack = None   # The full pack dict chosen
+        self.selected_cards = []    # Cards inside the chosen pack
 
         options = []
-        for card in cards[:25]:  # Discord limit
-            rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣",
-                            "legendary": "⭐", "mythic": "🔴"}.get(
-                (card.get('rarity') or 'common').lower(), "⚪")
-            name = card.get('name', 'Unknown')
-            title = card.get('title', '')
-            label = f"{name} — {title}" if title else name
-            if len(label) > 50:
-                label = label[:47] + "..."
-            power = (card.get('impact', 50) or 50) + (card.get('skill', 50) or 50) + \
-                    (card.get('longevity', 50) or 50) + (card.get('culture', 50) or 50) + \
-                    (card.get('hype', 50) or 50)
-            power_avg = power // 5
+        for pack in packs[:25]:
+            cards = pack.get('cards', [])
+            card_count = len(cards)
+            tier = (pack.get('pack_tier') or 'community').lower()
+            tier_e = self.TIER_EMOJI.get(tier, "📦")
+            name = pack.get('pack_name') or pack.get('name') or 'Pack'
+            label = name[:50]
             options.append(discord.SelectOption(
-                label=label,
-                value=card.get('card_id', ''),
-                description=f"{rarity_emoji} {(card.get('rarity') or 'common').title()} • Power: {power_avg}",
+                label=f"{tier_e} {label}",
+                value=pack.get('purchase_id', '') or pack.get('pack_id', ''),
+                description=f"{card_count} card(s) | {(pack.get('genre') or 'Music').title()}",
             ))
 
         if not options:
             return
 
-        select = ui.Select(placeholder="Choose your Champion card...", options=options, custom_id="card_select")
+        self._packs_by_id = {
+            (p.get('purchase_id') or p.get('pack_id')): p for p in packs
+        }
+
+        select = ui.Select(
+            placeholder="Choose your pack to battle with...",
+            options=options,
+            custom_id="pack_select"
+        )
         select.callback = self._select_callback
         self.add_item(select)
 
     async def _select_callback(self, interaction: Interaction):
-        self.selected_card = interaction.data['values'][0]
-        self.stop()
+        pack_id = interaction.data['values'][0]
+        self.selected_pack = self._packs_by_id.get(pack_id)
+        self.selected_cards = self.selected_pack.get('cards', []) if self.selected_pack else []
+        # Acknowledge BEFORE stop() so Discord confirms the select interaction
+        # before _run_battle resumes and fires more messages.
         await interaction.response.defer()
+        self.stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.user_id
@@ -173,6 +189,8 @@ class BattleCommands(commands.Cog):
             return row[0] if row and row[0] else 0
 
     def _add_gold(self, user_id: int, amount: int):
+        if amount <= 0:
+            return
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -193,7 +211,30 @@ class BattleCommands(commands.Cog):
             conn.commit()
             return cursor.rowcount > 0
 
+    def _deduct_both_wagers(self, user1_id: int, user2_id: int, amount: int) -> tuple[bool, bool]:
+        """Deduct wager from both players in one transaction.
+        Returns (user1_ok, user2_ok). Rolls back both if either fails."""
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                (amount, user1_id, amount)
+            )
+            u1_ok = cursor.rowcount > 0
+            cursor.execute(
+                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                (amount, user2_id, amount)
+            )
+            u2_ok = cursor.rowcount > 0
+            if u1_ok and u2_ok:
+                conn.commit()
+            else:
+                conn.rollback()
+            return u1_ok, u2_ok
+
     def _add_xp(self, user_id: int, xp: int):
+        if xp <= 0:
+            return
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -284,7 +325,7 @@ class BattleCommands(commands.Cog):
             print(f"[BATTLE] _ensure_user failed: {e}")
             traceback.print_exc()
             await interaction.response.send_message(
-                f"❌ Battle setup failed: `{type(e).__name__}: {str(e)[:100]}`", ephemeral=True)
+                "❌ Battle setup failed. Please try again.", ephemeral=True)
             return
 
         try:
@@ -295,8 +336,7 @@ class BattleCommands(commands.Cog):
             traceback.print_exc()
             try:
                 await interaction.followup.send(
-                    f"⚔️ Battle encountered an error: `{type(e).__name__}: {str(e)[:150]}`\n"
-                    f"Any gold wagered has been refunded.",
+                    "⚔️ Something went wrong during the battle. Any gold wagered has been refunded.",
                     ephemeral=True
                 )
             except Exception:
@@ -330,6 +370,7 @@ class BattleCommands(commands.Cog):
                 f"{opponent.display_name} doesn't have enough gold ({wager_cost}g required).", ephemeral=True)
 
         # Step 2 — Send challenge to opponent
+        # Use channel.send() for ALL public messages — avoids interaction token expiry issues
         match_id = f"battle_{uuid.uuid4().hex[:8]}"
         accept_view = AcceptBattleView(opponent.id, match_id)
 
@@ -345,7 +386,7 @@ class BattleCommands(commands.Cog):
         )
         challenge_embed.set_footer(text=f"{opponent.display_name} — accept or decline within 60s")
 
-        await interaction.followup.send(
+        await interaction.channel.send(
             content=f"{opponent.mention}",
             embed=challenge_embed,
             view=accept_view
@@ -353,69 +394,155 @@ class BattleCommands(commands.Cog):
 
         timed_out = await accept_view.wait()
         if timed_out or not accept_view.accepted:
-            return await interaction.followup.send(
+            await interaction.channel.send(
                 f"Battle {'timed out' if timed_out else 'declined'} by {opponent.display_name}.")
+            return
 
-        # Deduct wager from both
-        if not self._remove_gold(interaction.user.id, wager_cost):
-            return await interaction.followup.send("Insufficient gold — battle cancelled.")
-        if not self._remove_gold(opponent.id, wager_cost):
-            self._add_gold(interaction.user.id, wager_cost)  # refund
-            return await interaction.followup.send(f"{opponent.display_name} has insufficient gold — battle cancelled.")
+        # Deduct wager from both players atomically — either both succeed or neither does
+        c_ok, o_ok = self._deduct_both_wagers(interaction.user.id, opponent.id, wager_cost)
+        if not c_ok:
+            await interaction.channel.send("Insufficient gold — battle cancelled.")
+            return
+        if not o_ok:
+            await interaction.channel.send(f"{opponent.display_name} doesn't have enough gold — battle cancelled.")
+            return
 
-        # Step 3 — Both players pick cards
-        print(f"[BATTLE] Fetching collections for both players")
-        challenger_cards = self.db.get_user_collection(interaction.user.id)
-        opponent_cards = self.db.get_user_collection(opponent.id)
-        print(f"[BATTLE] Collections: challenger={len(challenger_cards)} cards, opponent={len(opponent_cards)} cards")
+        # Register both players in the battle manager so is_user_in_battle() works
+        self.manager.create_match(
+            match_id=match_id,
+            player1_id=str(interaction.user.id),
+            player1_name=interaction.user.display_name,
+            player2_id=str(opponent.id),
+            player2_name=opponent.display_name,
+            wager_tier=tier_key,
+        )
 
-        if not challenger_cards:
+        rewards_distributed = False
+        try:
+            rewards_distributed = await self._run_card_selection_and_battle(
+                interaction, opponent, match_id, tier_key, tier, wager_cost,
+                accept_view
+            )
+        except Exception:
+            # Unexpected crash after gold was deducted — refund both players
+            if not rewards_distributed:
+                self._add_gold(interaction.user.id, wager_cost)
+                self._add_gold(opponent.id, wager_cost)
+                try:
+                    await interaction.channel.send(
+                        f"{interaction.user.mention} {opponent.mention} An unexpected error occurred. Wagers have been refunded."
+                    )
+                except Exception:
+                    pass
+            raise
+        finally:
+            self.manager.complete_match(match_id)
+
+    async def _run_card_selection_and_battle(
+        self,
+        interaction: Interaction,
+        opponent: discord.User,
+        match_id: str,
+        tier_key: str,
+        tier: dict,
+        wager_cost: int,
+        accept_view: 'AcceptBattleView',
+    ):
+        """Card selection + battle resolution.
+        Returns True once rewards have been distributed (used by caller to skip emergency refund)."""
+
+        # Step 3 — Both players pick a pack to battle with
+        print(f"[BATTLE] Fetching packs for both players")
+        challenger_packs = self.db.get_user_purchased_packs(interaction.user.id)
+        opponent_packs = self.db.get_user_purchased_packs(opponent.id)
+        print(f"[BATTLE] Packs: challenger={len(challenger_packs)}, opponent={len(opponent_packs)}")
+
+        if not challenger_packs:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            return await interaction.followup.send(f"{interaction.user.display_name} has no cards! Battle cancelled, wagers refunded.")
-        if not opponent_cards:
+            await interaction.channel.send(f"{interaction.user.display_name} has no packs! Battle cancelled, wagers refunded.")
+            return True
+        if not opponent_packs:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            return await interaction.followup.send(f"{opponent.display_name} has no cards! Battle cancelled, wagers refunded.")
+            await interaction.channel.send(f"{opponent.display_name} has no packs! Battle cancelled, wagers refunded.")
+            return True
 
-        # Send champion-select prompts privately — only each player sees their own cards
-        c_view = CardSelectView(interaction.user.id, challenger_cards)
-        o_view = CardSelectView(opponent.id, opponent_cards)
+        # Build pack-select views
+        c_view = PackSelectView(interaction.user.id, challenger_packs)
+        o_view = PackSelectView(opponent.id, opponent_packs)
 
+        # Send challenger pack picker — ephemeral so only they see it
         await interaction.followup.send(
-            "⚔️ **Pick your Champion!** Your 4 strongest remaining cards auto-join as your squad. (60s)",
+            "📦 **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
             view=c_view,
             ephemeral=True
         )
-        await accept_view.interaction.followup.send(
-            "⚔️ **Pick your Champion!** Your 4 strongest remaining cards auto-join as your squad. (60s)",
-            view=o_view,
-            ephemeral=True
-        )
+
+        # Send opponent pack picker — use their Accept button interaction (ephemeral only to them)
+        opponent_prompt_sent = False
+        if accept_view.interaction is not None:
+            try:
+                await accept_view.interaction.followup.send(
+                    "📦 **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
+                    view=o_view,
+                    ephemeral=True
+                )
+                opponent_prompt_sent = True
+            except Exception as e:
+                print(f"[BATTLE] Ephemeral opponent pack prompt failed: {e}")
+
+        if not opponent_prompt_sent:
+            # Fallback: public channel message with mention
+            await interaction.channel.send(
+                f"{opponent.mention} **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
+                view=o_view,
+            )
 
         # Wait for BOTH players to pick simultaneously
         c_timed_out, o_timed_out = await asyncio.gather(c_view.wait(), o_view.wait())
 
-        # Check selections
-        if c_timed_out or c_view.selected_card is None:
+        # Check selections — refund if either player didn't pick
+        if c_timed_out or c_view.selected_pack is None:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            return await interaction.followup.send("Battle cancelled — challenger didn't pick a card. Wagers refunded.")
-        if o_timed_out or o_view.selected_card is None:
+            await interaction.channel.send("Battle cancelled — challenger didn't pick a pack. Wagers refunded.")
+            return True
+        if o_timed_out or o_view.selected_pack is None:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            return await interaction.followup.send("Battle cancelled — opponent didn't pick a card. Wagers refunded.")
+            await interaction.channel.send("Battle cancelled — opponent didn't pick a pack. Wagers refunded.")
+            return True
 
-        # Resolve champion card data
-        c_card_data = next((c for c in challenger_cards if c.get('card_id') == c_view.selected_card), challenger_cards[0])
-        o_card_data = next((c for c in opponent_cards if c.get('card_id') == o_view.selected_card), opponent_cards[0])
+        # Resolve cards from each chosen pack
+        challenger_cards = c_view.selected_cards
+        opponent_cards   = o_view.selected_cards
+
+        # Fallback: if pack has no card data, pull from full collection
+        if not challenger_cards:
+            challenger_cards = self.db.get_user_collection(interaction.user.id)
+        if not opponent_cards:
+            opponent_cards = self.db.get_user_collection(opponent.id)
+
+        if not challenger_cards or not opponent_cards:
+            self._add_gold(interaction.user.id, wager_cost)
+            self._add_gold(opponent.id, wager_cost)
+            await interaction.channel.send("Battle cancelled — a pack had no cards. Wagers refunded.")
+            return True
+
+        # Pick champion = strongest card in each pack; rest are squad
+        challenger_cards_sorted = sorted(challenger_cards, key=self._compute_card_power, reverse=True)
+        opponent_cards_sorted   = sorted(opponent_cards,   key=self._compute_card_power, reverse=True)
+
+        c_card_data = challenger_cards_sorted[0]
+        o_card_data = opponent_cards_sorted[0]
 
         card1 = self._card_dict_to_artist(c_card_data)
         card2 = self._card_dict_to_artist(o_card_data)
 
-        # Build squads: champion + top-4 auto-supports (by power, excluding champion)
-        c_supports = self._get_support_cards(challenger_cards, c_card_data.get('card_id', ''))
-        o_supports = self._get_support_cards(opponent_cards, o_card_data.get('card_id', ''))
+        # Squad = remaining pack cards (up to 4), sorted by power
+        c_supports = challenger_cards_sorted[1:5]
+        o_supports = opponent_cards_sorted[1:5]
 
         c_champ_power = self._compute_card_power(c_card_data)
         o_champ_power = self._compute_card_power(o_card_data)
@@ -439,6 +566,7 @@ class BattleCommands(commands.Cog):
         self._add_gold(opponent.id, p2["gold_reward"])
         self._add_xp(interaction.user.id, p1["xp_reward"])
         self._add_xp(opponent.id, p2["xp_reward"])
+        rewards_distributed = True  # Signal to caller: do NOT refund on any later exception
 
         try:
             if result["winner"] == 1:
@@ -462,6 +590,8 @@ class BattleCommands(commands.Cog):
         o_name = o_card_data.get('name', 'Unknown')
         c_title = c_card_data.get('title', '') or ''
         o_title = o_card_data.get('title', '') or ''
+        c_pack_name = c_view.selected_pack.get('pack_name') or 'Pack' if c_view.selected_pack else 'Pack'
+        o_pack_name = o_view.selected_pack.get('pack_name') or 'Pack' if o_view.selected_pack else 'Pack'
 
         def _squad_lines(supports: list) -> str:
             lines = []
@@ -477,20 +607,21 @@ class BattleCommands(commands.Cog):
             color=0xf39c12,
         )
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
+        start_embed.add_field(name="📦 Packs", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
         start_embed.set_footer(text="Champions stepping forward...")
-        anim_msg = await interaction.followup.send(embed=start_embed)
+        anim_msg = await interaction.channel.send(embed=start_embed)
         await asyncio.sleep(1.5)
 
         # Phase 2a — Champion Reveal
         champ_embed = discord.Embed(title="🏆 Champions Revealed!", color=0x9b59b6)
         champ_embed.add_field(
-            name=f"🔵 {interaction.user.display_name}'s Champion",
+            name=f"🔵 {interaction.user.display_name} — {c_pack_name}",
             value=f"{c_rarity_e} **{c_name}**" + (f" — {c_title}" if c_title else "") + f"\nPower: **{c_champ_power}**",
             inline=True,
         )
         champ_embed.add_field(name="⚡", value="**VS**", inline=True)
         champ_embed.add_field(
-            name=f"🔴 {opponent.display_name}'s Champion",
+            name=f"🔴 {opponent.display_name} — {o_pack_name}",
             value=f"{o_rarity_e} **{o_name}**" + (f" — {o_title}" if o_title else "") + f"\nPower: **{o_champ_power}**",
             inline=True,
         )
@@ -501,13 +632,13 @@ class BattleCommands(commands.Cog):
         # Phase 2b — Full Squad Reveal
         squad_embed = discord.Embed(title="🎵 Full Squads!", color=0x3498db)
         squad_embed.add_field(
-            name=f"🔵 {interaction.user.display_name} — Team Power: {c_power}",
+            name=f"🔵 {interaction.user.display_name} [{c_pack_name}] — Team Power: {c_power}",
             value=f"**Champion:** {c_rarity_e} {c_name} ({c_champ_power})\n**Squad:**\n{_squad_lines(c_supports)}",
             inline=True,
         )
         squad_embed.add_field(name="⚡", value="**VS**", inline=True)
         squad_embed.add_field(
-            name=f"🔴 {opponent.display_name} — Team Power: {o_power}",
+            name=f"🔴 {opponent.display_name} [{o_pack_name}] — Team Power: {o_power}",
             value=f"**Champion:** {o_rarity_e} {o_name} ({o_champ_power})\n**Squad:**\n{_squad_lines(o_supports)}",
             inline=True,
         )
@@ -582,6 +713,8 @@ class BattleCommands(commands.Cog):
             )
         except Exception:
             pass
+
+        return rewards_distributed  # True — tells caller not to issue an emergency refund
 
     # ------------------------------------------------------------------
     # /battle_stats
