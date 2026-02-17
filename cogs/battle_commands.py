@@ -167,16 +167,17 @@ class BattleCommands(commands.Cog):
     # ------------------------------------------------------------------
 
     def _ensure_user(self, user: discord.User):
-        """Make sure user row and inventory row both exist"""
+        """Make sure user row and inventory row both exist; always refresh username."""
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?, ?, ?)",
+                f"INSERT INTO users (user_id, username, discord_tag) VALUES ({ph}, {ph}, {ph}) "
+                f"ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username, discord_tag = EXCLUDED.discord_tag",
                 (user.id, user.display_name, str(user))
             )
-            # Ensure inventory row exists with 500 starting gold (schema default)
             cursor.execute(
-                "INSERT OR IGNORE INTO user_inventory (user_id, gold) VALUES (?, 500)",
+                f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, 500) ON CONFLICT (user_id) DO NOTHING",
                 (user.id,)
             )
             conn.commit()
@@ -455,17 +456,32 @@ class BattleCommands(commands.Cog):
         print(f"[BATTLE] Fetching packs for both players")
         challenger_packs = self.db.get_user_purchased_packs(interaction.user.id)
         opponent_packs = self.db.get_user_purchased_packs(opponent.id)
+
+        # Fallback: if no pack_purchases records, build a synthetic pack from their collection
+        def _synth_packs(user_id):
+            cards = self.db.get_user_collection(user_id)
+            if not cards:
+                return []
+            return [{"purchase_id": f"collection_{user_id}", "pack_id": "collection",
+                     "pack_name": "My Collection", "pack_tier": "community",
+                     "genre": "Music", "cards": cards}]
+
+        if not challenger_packs:
+            challenger_packs = _synth_packs(interaction.user.id)
+        if not opponent_packs:
+            opponent_packs = _synth_packs(opponent.id)
+
         print(f"[BATTLE] Packs: challenger={len(challenger_packs)}, opponent={len(opponent_packs)}")
 
         if not challenger_packs:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send(f"{interaction.user.display_name} has no packs! Battle cancelled, wagers refunded.")
+            await interaction.channel.send(f"{interaction.user.display_name} has no cards or packs! Battle cancelled, wagers refunded.")
             return True
         if not opponent_packs:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send(f"{opponent.display_name} has no packs! Battle cancelled, wagers refunded.")
+            await interaction.channel.send(f"{opponent.display_name} has no cards or packs! Battle cancelled, wagers refunded.")
             return True
 
         # Build pack-select views
