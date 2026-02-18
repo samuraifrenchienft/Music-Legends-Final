@@ -625,7 +625,8 @@ class BattleCommands(commands.Cog):
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
         start_embed.add_field(name="📦 Packs", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
         start_embed.set_footer(text="Champions stepping forward...")
-        anim_msg = await interaction.followup.send(embed=start_embed)
+        # wait=True required — followup.send() is a Webhook call, returns None by default
+        anim_msg = await interaction.followup.send(embed=start_embed, wait=True)
         await asyncio.sleep(1.5)
 
         # Phase 2a — Champion Reveal
