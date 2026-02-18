@@ -390,3 +390,161 @@ class TestClaimDailyReward:
         result = db.claim_daily_reward(seed_user)
         if result.get("success") and result.get("cards"):
             assert result.get("pack_name") is not None
+
+
+# ─────────────────────────────────────────────
+# 6. CollectionView._resolve_image — YouTube thumbnail fallback
+# ─────────────────────────────────────────────
+
+class TestResolveImage:
+    """Tests for CollectionView._resolve_image() in cogs/gameplay.py"""
+
+    @pytest.fixture(autouse=True)
+    def _import(self):
+        from cogs.gameplay import CollectionView
+        self.resolve = CollectionView._resolve_image
+
+    def test_real_image_url_returned_as_is(self):
+        """A real (non-placeholder) image_url must be returned directly."""
+        card = {"image_url": "https://i.imgur.com/abc123.jpg", "youtube_url": ""}
+        assert self.resolve(card) == "https://i.imgur.com/abc123.jpg"
+
+    def test_placeholder_example_com_uses_yt_thumbnail(self):
+        """example.com image_url must fall back to YouTube thumbnail."""
+        card = {
+            "image_url": "https://example.com/artist_1.jpg",
+            "youtube_url": "https://www.youtube.com/watch?v=JKbIMxf3d3U",
+        }
+        result = self.resolve(card)
+        assert result == "https://img.youtube.com/vi/JKbIMxf3d3U/hqdefault.jpg"
+
+    def test_placeholder_underscore_example_uses_yt_thumbnail(self):
+        """_example suffix in image_url must fall back to YouTube thumbnail."""
+        card = {
+            "image_url": "https://i.imgur.com/kendrick_example.png",
+            "youtube_url": "https://www.youtube.com/watch?v=ABC123defGH",
+        }
+        result = self.resolve(card)
+        assert result == "https://img.youtube.com/vi/ABC123defGH/hqdefault.jpg"
+
+    def test_empty_image_url_uses_yt_thumbnail(self):
+        """Empty image_url must fall back to YouTube thumbnail."""
+        card = {
+            "image_url": "",
+            "youtube_url": "https://youtu.be/xYzABC12345",
+        }
+        result = self.resolve(card)
+        assert result == "https://img.youtube.com/vi/xYzABC12345/hqdefault.jpg"
+
+    def test_no_image_no_youtube_returns_none(self):
+        """No image_url and no youtube_url must return None (no image shown)."""
+        card = {"image_url": "", "youtube_url": ""}
+        assert self.resolve(card) is None
+
+    def test_youtube_short_url_extracted(self):
+        """youtu.be short URLs must have video ID extracted correctly."""
+        card = {
+            "image_url": "",
+            "youtube_url": "https://youtu.be/dQw4w9WgXcQ",
+        }
+        result = self.resolve(card)
+        assert result == "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+
+
+# ─────────────────────────────────────────────
+# 7. /pack fallback — get_user_purchased_packs empty vs. populated
+# ─────────────────────────────────────────────
+
+class TestPackCommandFallback:
+
+    def test_no_purchases_returns_empty_list(self, db):
+        """Fresh user with no pack_purchases must return empty list."""
+        uid = 100_000_010
+        with db._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
+                      (uid, "FreshUser", "FreshUser#0001"))
+            conn.commit()
+        result = db.get_user_purchased_packs(uid)
+        assert result == [], f"Expected empty list, got: {result}"
+
+    def test_pack_appears_after_drop(self, db, seed_user, seed_creator_pack):
+        """After open_pack_for_drop, pack must appear in get_user_purchased_packs."""
+        uid = 100_000_011
+        with db._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
+                      (uid, "DropUser", "DropUser#0001"))
+            conn.commit()
+        db.open_pack_for_drop(seed_creator_pack, uid)
+        packs = db.get_user_purchased_packs(uid)
+        assert len(packs) >= 1, "Pack not found in get_user_purchased_packs after drop"
+        assert packs[0]["pack_id"] == seed_creator_pack
+
+    def test_pack_has_cards_list(self, db, seed_user, seed_creator_pack, seed_card):
+        """Each pack entry must have a 'cards' list with card dicts."""
+        uid = 100_000_012
+        with db._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
+                      (uid, "CardUser", "CardUser#0001"))
+            conn.commit()
+        db.open_pack_for_drop(seed_creator_pack, uid)
+        packs = db.get_user_purchased_packs(uid)
+        assert len(packs) >= 1
+        cards = packs[0].get("cards", [])
+        assert isinstance(cards, list), "cards field must be a list"
+        assert len(cards) >= 1, "cards list must not be empty"
+        assert "card_id" in cards[0], "card dict must have card_id"
+
+
+# ─────────────────────────────────────────────
+# 8. Battle — collection cards are usable in battle
+# ─────────────────────────────────────────────
+
+class TestBattleCollectionCards:
+
+    def test_collection_cards_have_all_stat_columns(self, db, seed_user, seed_creator_pack, seed_card):
+        """Cards returned by get_user_collection must have all 5 stat columns."""
+        db.open_pack_for_drop(seed_creator_pack, seed_user)
+        collection = db.get_user_collection(seed_user)
+        assert len(collection) > 0
+        for stat in ("impact", "skill", "longevity", "culture", "hype"):
+            assert collection[0].get(stat) is not None, f"Missing stat: {stat}"
+
+    def test_collection_card_power_nonzero(self, db, seed_user, seed_creator_pack, seed_card):
+        """Power computed from collection card must be > 0 (not the null-stat fallback)."""
+        RARITY_BONUS = {"common": 0, "rare": 5, "epic": 10, "legendary": 20, "mythic": 35}
+
+        db.open_pack_for_drop(seed_creator_pack, seed_user)
+        collection = db.get_user_collection(seed_user)
+        assert len(collection) > 0
+        card = next((c for c in collection if c["card_id"] == seed_card["card_id"]), None)
+        assert card is not None
+
+        # Replicate _compute_card_power formula (instance method, no Discord needed)
+        base = ((card.get('impact', 50) or 50) + (card.get('skill', 50) or 50) +
+                (card.get('longevity', 50) or 50) + (card.get('culture', 50) or 50) +
+                (card.get('hype', 50) or 50)) // 5
+        rarity = (card.get('rarity') or 'common').lower()
+        power = base + RARITY_BONUS.get(rarity, 0)
+        # epic: avg=(70+80+60+75+65)//5=70, +10 bonus = 80
+        assert power > 50, f"Power too low ({power}) — stats are probably NULL in DB"
+        assert power == 80, f"Expected 80 for epic card with these stats, got {power}"
+
+    def test_synth_pack_from_collection_has_cards(self, db, seed_user, seed_creator_pack, seed_card):
+        """When pack_purchases empty, get_user_collection still returns cards for battle fallback."""
+        uid = 100_000_020
+        with db._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
+                      (uid, "SynthUser", "SynthUser#0001"))
+            conn.commit()
+        # Grant card directly without going through pack_purchases
+        db.add_card_to_collection(uid, seed_card["card_id"], "test")
+        # pack_purchases empty
+        packs = db.get_user_purchased_packs(uid)
+        assert packs == [], "Should be empty (no pack_purchases)"
+        # collection fallback works
+        collection = db.get_user_collection(uid)
+        assert len(collection) >= 1, "Collection fallback must find the card"
