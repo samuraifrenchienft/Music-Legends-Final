@@ -129,7 +129,7 @@ class PooledConnectionWrapper:
             # Regular pool connection - return to pool
             try:
                 self._conn.rollback()  # Clear any uncommitted transaction
-                wrapped = _PgConnectionWrapper(self._conn, is_overflow=False)
+                wrapped = _PgConnectionWrapper(self._conn)
                 self._pool._pool.put(wrapped, block=False)
             except:
                 # Pool full (shouldn't happen) - close connection
@@ -4080,24 +4080,24 @@ class DatabaseManager:
                 
                 # Update player 1 stats
                 cursor.execute("""
-                    INSERT INTO user_battle_stats (user_id, total_battles, wins, losses, ties, 
+                    INSERT INTO user_battle_stats (user_id, total_battles, wins, losses, ties,
                                                    total_gold_won, total_gold_lost, total_xp_earned,
                                                    current_win_streak, best_win_streak, last_battle_date)
                     VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(user_id) DO UPDATE SET
-                        total_battles = total_battles + 1,
-                        wins = wins + ?,
-                        losses = losses + ?,
-                        ties = ties + ?,
-                        total_gold_won = total_gold_won + ?,
-                        total_gold_lost = total_gold_lost + ?,
-                        total_xp_earned = total_xp_earned + ?,
-                        current_win_streak = CASE 
-                            WHEN ? = 1 THEN current_win_streak + 1 
-                            ELSE 0 
+                        total_battles = user_battle_stats.total_battles + 1,
+                        wins = user_battle_stats.wins + EXCLUDED.wins,
+                        losses = user_battle_stats.losses + EXCLUDED.losses,
+                        ties = user_battle_stats.ties + EXCLUDED.ties,
+                        total_gold_won = user_battle_stats.total_gold_won + EXCLUDED.total_gold_won,
+                        total_gold_lost = user_battle_stats.total_gold_lost + EXCLUDED.total_gold_lost,
+                        total_xp_earned = user_battle_stats.total_xp_earned + EXCLUDED.total_xp_earned,
+                        current_win_streak = CASE
+                            WHEN EXCLUDED.wins = 1 THEN user_battle_stats.current_win_streak + 1
+                            ELSE 0
                         END,
-                        best_win_streak = MAX(best_win_streak, 
-                            CASE WHEN ? = 1 THEN current_win_streak + 1 ELSE 0 END),
+                        best_win_streak = MAX(user_battle_stats.best_win_streak,
+                            CASE WHEN EXCLUDED.wins = 1 THEN user_battle_stats.current_win_streak + 1 ELSE 0 END),
                         last_battle_date = CURRENT_TIMESTAMP,
                         updated_at = CURRENT_TIMESTAMP
                 """, (
@@ -4119,19 +4119,19 @@ class DatabaseManager:
                                                    current_win_streak, best_win_streak, last_battle_date)
                     VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(user_id) DO UPDATE SET
-                        total_battles = total_battles + 1,
-                        wins = wins + ?,
-                        losses = losses + ?,
-                        ties = ties + ?,
-                        total_gold_won = total_gold_won + ?,
-                        total_gold_lost = total_gold_lost + ?,
-                        total_xp_earned = total_xp_earned + ?,
-                        current_win_streak = CASE 
-                            WHEN ? = 2 THEN current_win_streak + 1 
-                            ELSE 0 
+                        total_battles = user_battle_stats.total_battles + 1,
+                        wins = user_battle_stats.wins + EXCLUDED.wins,
+                        losses = user_battle_stats.losses + EXCLUDED.losses,
+                        ties = user_battle_stats.ties + EXCLUDED.ties,
+                        total_gold_won = user_battle_stats.total_gold_won + EXCLUDED.total_gold_won,
+                        total_gold_lost = user_battle_stats.total_gold_lost + EXCLUDED.total_gold_lost,
+                        total_xp_earned = user_battle_stats.total_xp_earned + EXCLUDED.total_xp_earned,
+                        current_win_streak = CASE
+                            WHEN EXCLUDED.wins = 1 THEN user_battle_stats.current_win_streak + 1
+                            ELSE 0
                         END,
-                        best_win_streak = MAX(best_win_streak,
-                            CASE WHEN ? = 2 THEN current_win_streak + 1 ELSE 0 END),
+                        best_win_streak = MAX(user_battle_stats.best_win_streak,
+                            CASE WHEN EXCLUDED.wins = 1 THEN user_battle_stats.current_win_streak + 1 ELSE 0 END),
                         last_battle_date = CURRENT_TIMESTAMP,
                         updated_at = CURRENT_TIMESTAMP
                 """, (
