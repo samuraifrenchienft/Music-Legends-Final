@@ -4216,8 +4216,8 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, {ph}) "
-                f"ON CONFLICT (user_id) DO UPDATE SET gold = gold + {ph}",
-                (user_id, amount, amount)
+                f"ON CONFLICT (user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold",
+                (user_id, amount)
             )
             conn.commit()
 
@@ -4609,8 +4609,8 @@ class DatabaseManager:
                 cursor.execute(
                     f"""INSERT INTO user_inventory (user_id, gold)
                         VALUES ({ph}, {ph})
-                        ON CONFLICT(user_id) DO UPDATE SET gold = COALESCE(gold, 0) + {ph}""",
-                    (trade['receiver_user_id'], trade['gold_from_initiator'], trade['gold_from_initiator'])
+                        ON CONFLICT(user_id) DO UPDATE SET gold = COALESCE(user_inventory.gold, 0) + EXCLUDED.gold""",
+                    (trade['receiver_user_id'], trade['gold_from_initiator'])
                 )
                 print(f"   ✓ {trade['gold_from_initiator']} gold → User {trade['receiver_user_id']}")
 
@@ -4627,8 +4627,8 @@ class DatabaseManager:
                 cursor.execute(
                     f"""INSERT INTO user_inventory (user_id, gold)
                         VALUES ({ph}, {ph})
-                        ON CONFLICT(user_id) DO UPDATE SET gold = COALESCE(gold, 0) + {ph}""",
-                    (trade['initiator_user_id'], trade['gold_from_receiver'], trade['gold_from_receiver'])
+                        ON CONFLICT(user_id) DO UPDATE SET gold = COALESCE(user_inventory.gold, 0) + EXCLUDED.gold""",
+                    (trade['initiator_user_id'], trade['gold_from_receiver'])
                 )
                 print(f"   ✓ {trade['gold_from_receiver']} gold → User {trade['initiator_user_id']}")
 

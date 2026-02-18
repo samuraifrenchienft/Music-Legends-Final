@@ -1118,8 +1118,8 @@ class MarketplaceCommands(commands.Cog):
                     cursor.execute("""
                         INSERT INTO user_inventory (user_id, gold)
                         VALUES (?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
-                    """, (seller_id, price, price))
+                        ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
+                    """, (seller_id, price))
 
                 # Update listing status
                 cursor.execute("""

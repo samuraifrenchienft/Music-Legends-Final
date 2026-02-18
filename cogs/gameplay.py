@@ -1041,8 +1041,8 @@ class GameplayCommands(commands.Cog):
             cursor.execute("""
                 INSERT INTO user_inventory (user_id, gold)
                 VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
-            """, (interaction.user.id, sell_price, sell_price))
+                ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
+            """, (interaction.user.id, sell_price))
             
             conn.commit()
         

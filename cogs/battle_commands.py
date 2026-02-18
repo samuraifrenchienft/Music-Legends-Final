@@ -216,8 +216,8 @@ class BattleCommands(commands.Cog):
             cursor.execute("""
                 INSERT INTO user_inventory (user_id, gold)
                 VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
-            """, (user_id, amount, amount))
+                ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
+            """, (user_id, amount))
             conn.commit()
 
     def _remove_gold(self, user_id: int, amount: int) -> bool:
@@ -260,8 +260,8 @@ class BattleCommands(commands.Cog):
             cursor.execute("""
                 INSERT INTO user_inventory (user_id, xp)
                 VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET xp = COALESCE(xp, 0) + ?
-            """, (user_id, xp, xp))
+                ON CONFLICT(user_id) DO UPDATE SET xp = COALESCE(user_inventory.xp, 0) + EXCLUDED.xp
+            """, (user_id, xp))
             conn.commit()
 
     def _update_battle_stats(self, winner_id: int, loser_id: int):

@@ -200,8 +200,8 @@ class BattlePassCommands(commands.Cog):
                 with self.db._get_connection() as conn:
                     conn.cursor().execute("""
                         INSERT INTO user_inventory (user_id, gold) VALUES (?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET gold = gold + ?
-                    """, (interaction.user.id, amt, amt))
+                        ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
+                    """, (interaction.user.id, amt))
                     conn.commit()
                 rewards_given.append(f"💰 {amt:,} Gold")
             elif rtype == 'tickets':
