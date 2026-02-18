@@ -269,7 +269,11 @@ class CollectionView(discord.ui.View):
 
         img = self._resolve_image(card)
         if img:
-            embed.set_image(url=img)
+            # Append card index as cache-buster — Discord caches embed images by URL;
+            # without this, the same thumbnail domain causes Discord to serve a stale
+            # cached image after card #2-3. YouTube ignores the query param.
+            sep = '&' if '?' in img else '?'
+            embed.set_image(url=f"{img}{sep}_c={self.card_index}")
 
         n = len(self.current_cards)
         embed.set_footer(text=f"Card {self.card_index + 1} of {n} • {self.pack_name}")
