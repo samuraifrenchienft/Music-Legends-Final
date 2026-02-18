@@ -8,6 +8,7 @@ import asyncio
 import discord
 import sqlite3
 import random
+import traceback
 import uuid
 from datetime import datetime
 from discord.ext import commands
@@ -142,13 +143,24 @@ class PackSelectView(ui.View):
         self.add_item(select)
 
     async def _select_callback(self, interaction: Interaction):
-        pack_id = interaction.data['values'][0]
-        self.selected_pack = self._packs_by_id.get(pack_id)
-        self.selected_cards = self.selected_pack.get('cards', []) if self.selected_pack else []
-        # Acknowledge BEFORE stop() so Discord confirms the select interaction
-        # before _run_battle resumes and fires more messages.
-        await interaction.response.defer()
-        self.stop()
+        try:
+            pack_id = interaction.data['values'][0]
+            self.selected_pack = self._packs_by_id.get(pack_id)
+            self.selected_cards = self.selected_pack.get('cards', []) if self.selected_pack else []
+            print(f"[BATTLE] Pack selected: {pack_id} → {len(self.selected_cards)} cards")
+            # Acknowledge BEFORE stop() so Discord confirms the select interaction
+            # before _run_battle resumes and fires more messages.
+            await interaction.response.defer()
+        except Exception as e:
+            import traceback
+            print(f"[BATTLE] _select_callback error: {e}")
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message("Pack selection failed. The battle will time out.", ephemeral=True)
+            except Exception:
+                pass
+        finally:
+            self.stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.user_id
@@ -424,7 +436,9 @@ class BattleCommands(commands.Cog):
                 interaction, opponent, match_id, tier_key, tier, wager_cost,
                 accept_view
             )
-        except Exception:
+        except Exception as e:
+            print(f"[BATTLE] CRASH in _run_card_selection_and_battle: {e}")
+            traceback.print_exc()
             # Unexpected crash after gold was deducted — refund both players
             if not rewards_distributed:
                 self._add_gold(interaction.user.id, wager_cost)
@@ -488,35 +502,60 @@ class BattleCommands(commands.Cog):
         c_view = PackSelectView(interaction.user.id, challenger_packs)
         o_view = PackSelectView(opponent.id, opponent_packs)
 
-        # Send challenger pack picker — ephemeral so only they see it
-        await interaction.followup.send(
-            "📦 **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
-            view=c_view,
-            ephemeral=True
-        )
-
-        # Send opponent pack picker — use their Accept button interaction (ephemeral only to them)
-        opponent_prompt_sent = False
-        if accept_view.interaction is not None:
-            try:
-                await accept_view.interaction.followup.send(
-                    "📦 **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
-                    view=o_view,
-                    ephemeral=True
-                )
-                opponent_prompt_sent = True
-            except Exception as e:
-                print(f"[BATTLE] Ephemeral opponent pack prompt failed: {e}")
-
-        if not opponent_prompt_sent:
-            # Fallback: public channel message with mention
+        # Verify both views have items (pack picker works only if cards/packs are non-empty)
+        if not c_view.children:
+            self._add_gold(interaction.user.id, wager_cost)
+            self._add_gold(opponent.id, wager_cost)
             await interaction.followup.send(
-                f"{opponent.mention} **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
+                f"{interaction.user.display_name} has no valid packs to battle with! Wagers refunded."
+            )
+            return True
+        if not o_view.children:
+            self._add_gold(interaction.user.id, wager_cost)
+            self._add_gold(opponent.id, wager_cost)
+            await interaction.followup.send(
+                f"{opponent.display_name} has no valid packs to battle with! Wagers refunded."
+            )
+            return True
+
+        # Send BOTH pack pickers as public channel messages.
+        # Using interaction.followup.send() (the challenger's token) for both is most
+        # reliable — ephemeral sends from stale interaction tokens can fail silently.
+        # interaction_check on each view ensures only the right player can select.
+        print(f"[BATTLE] Sending pack pickers to channel")
+        try:
+            await interaction.followup.send(
+                f"{interaction.user.mention} 📦 **Choose your pack to battle with!** "
+                "Pick a deck below — your strongest card will lead the squad. (60s)",
+                view=c_view,
+            )
+        except Exception as e:
+            print(f"[BATTLE] Failed to send challenger pack picker: {e}")
+            traceback.print_exc()
+            self._add_gold(interaction.user.id, wager_cost)
+            self._add_gold(opponent.id, wager_cost)
+            await interaction.followup.send("Battle setup failed — couldn't send pack picker. Wagers refunded.")
+            return True
+
+        try:
+            await interaction.followup.send(
+                f"{opponent.mention} 📦 **Choose your pack to battle with!** "
+                "Pick a deck below — your strongest card will lead the squad. (60s)",
                 view=o_view,
             )
+        except Exception as e:
+            print(f"[BATTLE] Failed to send opponent pack picker: {e}")
+            traceback.print_exc()
+            self._add_gold(interaction.user.id, wager_cost)
+            self._add_gold(opponent.id, wager_cost)
+            await interaction.followup.send("Battle setup failed — couldn't send opponent pack picker. Wagers refunded.")
+            return True
 
         # Wait for BOTH players to pick simultaneously
+        print(f"[BATTLE] Waiting for both players to select packs (60s each)")
         c_timed_out, o_timed_out = await asyncio.gather(c_view.wait(), o_view.wait())
+        print(f"[BATTLE] Pack selection done: c_timed_out={c_timed_out}, o_timed_out={o_timed_out}, "
+              f"c_selected={c_view.selected_pack is not None}, o_selected={o_view.selected_pack is not None}")
 
         # Check selections — refund if either player didn't pick
         if c_timed_out or c_view.selected_pack is None:
