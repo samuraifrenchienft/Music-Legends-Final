@@ -423,6 +423,14 @@ class PackDetailView(discord.ui.View):
                 (self.pack_id,),
             )
 
+            # Record in pack_purchases so pack appears in /pack and /battle
+            pp_id = f"purchase_{uuid.uuid4().hex[:12]}"
+            card_ids = [c.get('card_id') for c in cards_data if c.get('card_id')]
+            cursor.execute(
+                "INSERT INTO pack_purchases (purchase_id, pack_id, buyer_id, cards_received) VALUES (?, ?, ?, ?)",
+                (pp_id, self.pack_id, user_id, json.dumps(card_ids))
+            )
+
             conn.commit()
             return cards_data
 

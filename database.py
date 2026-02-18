@@ -2293,14 +2293,17 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Get pack purchases
+            # Get pack purchases — LEFT JOIN so tier packs (not in creator_packs) still appear
             cursor.execute(f"""
                 SELECT pp.purchase_id, pp.pack_id,
                        COALESCE(CAST(pp.purchased_at AS TEXT), pp.purchase_id) AS purchased_at,
                        pp.cards_received,
-                       cp.name AS pack_name, cp.description, cp.pack_tier, cp.genre
+                       COALESCE(cp.name, pp.pack_id) AS pack_name,
+                       cp.description,
+                       COALESCE(cp.pack_tier, pp.pack_id) AS pack_tier,
+                       cp.genre
                 FROM pack_purchases pp
-                JOIN creator_packs cp ON pp.pack_id = cp.pack_id
+                LEFT JOIN creator_packs cp ON pp.pack_id = cp.pack_id
                 WHERE pp.buyer_id = {ph}
                 ORDER BY pp.purchase_id DESC
                 LIMIT {ph}
@@ -2308,6 +2311,23 @@ class DatabaseManager:
 
             columns = [desc[0] for desc in cursor.description]
             purchases = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+            # Normalize tier pack names (pack_id = 'tier_community' etc.)
+            _TIER_NAMES = {
+                'tier_community': 'Community Pack',
+                'tier_gold': 'Gold Pack',
+                'tier_platinum': 'Platinum Pack',
+            }
+            _TIER_DISPLAY = {
+                'tier_community': 'community',
+                'tier_gold': 'gold',
+                'tier_platinum': 'platinum',
+            }
+            for p in purchases:
+                pid = p.get('pack_id', '')
+                if pid in _TIER_NAMES:
+                    p['pack_name'] = _TIER_NAMES[pid]
+                    p['pack_tier'] = _TIER_DISPLAY[pid]
 
             # Enrich with full card data
             for purchase in purchases:
@@ -3901,6 +3921,20 @@ class DatabaseManager:
                     granted_cards.append(card)
                     granted_ids.add(card['card_id'])
                     self.add_card_to_collection(user_id, card['card_id'], 'tier_pack')
+
+            # Record in pack_purchases so this pack appears in /pack and /battle
+            if granted_cards and user_id:
+                import uuid as _uuid
+                purchase_id = f"tier_{_uuid.uuid4().hex[:12]}"
+                card_ids = [c.get('card_id') for c in granted_cards if c.get('card_id')]
+                try:
+                    cursor.execute(
+                        "INSERT INTO pack_purchases (purchase_id, pack_id, buyer_id, cards_received) VALUES (?, ?, ?, ?)",
+                        (purchase_id, f"tier_{tier}", user_id, json.dumps(card_ids))
+                    )
+                    conn.commit()
+                except Exception as pp_err:
+                    print(f"[TIER_PACK] pack_purchases insert failed (non-critical): {pp_err}")
 
             return granted_cards
 

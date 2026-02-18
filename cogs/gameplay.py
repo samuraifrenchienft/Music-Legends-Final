@@ -99,6 +99,201 @@ class CardDropView(discord.ui.View):
                 pass
 
 
+class CollectionView(discord.ui.View):
+    """
+    Pack-organized collection browser.
+    Row 0: pack select dropdown
+    Row 1: ← Prev | Card X/Y | Next →  (only when a pack is open)
+    Row 2: ▶ YouTube link + ↩ Overview  (only when a pack is open)
+    """
+
+    RARITY_EMOJI  = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}
+    RARITY_COLOR  = {"common": 0x95a5a6, "rare": 0x3498db, "epic": 0x9b59b6,
+                     "legendary": 0xf39c12, "mythic": 0xe74c3c}
+    TIER_EMOJI    = {"community": "📦", "gold": "🥇", "platinum": "💎", "all": "🎴"}
+
+    def __init__(self, user_id: int, user_display: str, packs: list, all_cards: list):
+        super().__init__(timeout=180)
+        self.user_id       = user_id
+        self._user_display = user_display
+        self.all_cards     = all_cards   # full flat collection (fallback)
+        self.packs         = packs       # from get_user_purchased_packs()
+        self.current_cards = []
+        self.card_index    = 0
+        self.pack_name     = None
+        self._rebuild()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _virtual_packs(self) -> list:
+        """'All My Cards' is always the first option so no card is ever hidden."""
+        result = []
+        if self.all_cards:
+            result.append({
+                'purchase_id': '__all__',
+                'pack_name':   'All My Cards',
+                'pack_tier':   'all',
+                'cards':       self.all_cards,
+            })
+        result.extend(self.packs)
+        return result
+
+    def _rebuild(self):
+        """Rebuild all child items to reflect current state."""
+        self.clear_items()
+        vpacks = self._virtual_packs()
+
+        # Row 0 — pack select (always present if user has any cards)
+        if vpacks:
+            options = []
+            for p in vpacks[:25]:
+                pid   = p.get('purchase_id') or p.get('pack_id') or ''
+                name  = p.get('pack_name') or 'Pack'
+                tier  = (p.get('pack_tier') or 'community').lower()
+                count = len(p.get('cards', []))
+                options.append(discord.SelectOption(
+                    label       = f"{self.TIER_EMOJI.get(tier, '📦')} {name}"[:100],
+                    value       = pid,
+                    description = f"{count} card(s)",
+                ))
+            sel = discord.ui.Select(placeholder="Browse a pack...", options=options, row=0)
+            sel.callback = self._on_pack_select
+            self.add_item(sel)
+
+        # Rows 1-2 — card navigation (only when a pack is open)
+        if self.current_cards:
+            n = len(self.current_cards)
+
+            prev = discord.ui.Button(label="← Prev", style=discord.ButtonStyle.secondary,
+                                     disabled=(self.card_index == 0), row=1)
+            prev.callback = self._on_prev
+            self.add_item(prev)
+
+            counter = discord.ui.Button(label=f"Card {self.card_index + 1} of {n}",
+                                        style=discord.ButtonStyle.secondary, disabled=True, row=1)
+            self.add_item(counter)
+
+            nxt = discord.ui.Button(label="Next →", style=discord.ButtonStyle.secondary,
+                                    disabled=(self.card_index >= n - 1), row=1)
+            nxt.callback = self._on_next
+            self.add_item(nxt)
+
+            # YouTube link button (row 2) — only if URL exists
+            yt_url = (self.current_cards[self.card_index].get('youtube_url') or '').strip()
+            if yt_url:
+                yt_btn = discord.ui.Button(label="▶️ Watch on YouTube",
+                                           style=discord.ButtonStyle.link, url=yt_url, row=2)
+                self.add_item(yt_btn)
+
+            back = discord.ui.Button(label="↩️ Overview", style=discord.ButtonStyle.primary, row=2)
+            back.callback = self._on_back
+            self.add_item(back)
+
+    # ------------------------------------------------------------------
+    # Embed builders
+    # ------------------------------------------------------------------
+
+    def _overview_embed(self, user_display: str) -> discord.Embed:
+        total = len(self.all_cards)
+        counts = {"common": 0, "rare": 0, "epic": 0, "legendary": 0, "mythic": 0}
+        for c in self.all_cards:
+            r = (c.get('rarity') or 'common').lower()
+            if r in counts:
+                counts[r] += 1
+
+        embed = discord.Embed(
+            title=f"🎴 {user_display}'s Collection",
+            description=f"**{total}** card(s) total — select a pack below to browse",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="📊 By Rarity",
+            value=(f"⚪ Common: {counts['common']}\n"
+                   f"🔵 Rare: {counts['rare']}\n"
+                   f"🟣 Epic: {counts['epic']}\n"
+                   f"⭐ Legendary: {counts['legendary']}\n"
+                   f"🔴 Mythic: {counts['mythic']}"),
+            inline=True
+        )
+        packs_owned = len(self.packs)
+        embed.add_field(
+            name="📦 Packs",
+            value=f"{packs_owned} pack(s) in collection\nUse dropdown to browse by pack",
+            inline=True
+        )
+        embed.set_footer(text="Select a pack from the dropdown • ▶️ buttons open YouTube")
+        return embed
+
+    def _card_embed(self) -> discord.Embed:
+        card    = self.current_cards[self.card_index]
+        rarity  = (card.get('rarity') or 'common').lower()
+        r_emoji = self.RARITY_EMOJI.get(rarity, "⚪")
+        name    = card.get('name', 'Unknown')
+        title   = card.get('title') or ''
+        color   = self.RARITY_COLOR.get(rarity, 0x95a5a6)
+
+        embed = discord.Embed(
+            title=f"{r_emoji} {name}",
+            description=f'**"{title}"**' if title else None,
+            color=color
+        )
+        embed.add_field(
+            name="Stats",
+            value=(f"Impact: **{card.get('impact', '?')}** | "
+                   f"Skill: **{card.get('skill', '?')}** | "
+                   f"Longevity: **{card.get('longevity', '?')}**\n"
+                   f"Culture: **{card.get('culture', '?')}** | "
+                   f"Hype: **{card.get('hype', '?')}**"),
+            inline=False
+        )
+        embed.add_field(name="Rarity", value=f"{r_emoji} {rarity.title()}", inline=True)
+        embed.add_field(name="Pack",   value=self.pack_name or "Unknown",   inline=True)
+
+        if card.get('image_url'):
+            embed.set_thumbnail(url=card['image_url'])
+
+        n = len(self.current_cards)
+        embed.set_footer(text=f"Card {self.card_index + 1} of {n} • {self.pack_name}")
+        return embed
+
+    # ------------------------------------------------------------------
+    # Callbacks
+    # ------------------------------------------------------------------
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return interaction.user.id == self.user_id
+
+    async def _on_pack_select(self, interaction: Interaction):
+        pack_id = interaction.data['values'][0]
+        vpacks  = {(p.get('purchase_id') or p.get('pack_id')): p for p in self._virtual_packs()}
+        pack    = vpacks.get(pack_id)
+        if pack:
+            self.current_cards = pack.get('cards', [])
+            self.pack_name     = pack.get('pack_name', 'Pack')
+            self.card_index    = 0
+        self._rebuild()
+        await interaction.response.edit_message(embed=self._card_embed(), view=self)
+
+    async def _on_prev(self, interaction: Interaction):
+        self.card_index = max(0, self.card_index - 1)
+        self._rebuild()
+        await interaction.response.edit_message(embed=self._card_embed(), view=self)
+
+    async def _on_next(self, interaction: Interaction):
+        self.card_index = min(len(self.current_cards) - 1, self.card_index + 1)
+        self._rebuild()
+        await interaction.response.edit_message(embed=self._card_embed(), view=self)
+
+    async def _on_back(self, interaction: Interaction):
+        self.current_cards = []
+        self.card_index    = 0
+        self.pack_name     = None
+        self._rebuild()
+        await interaction.response.edit_message(embed=self._overview_embed(self._user_display), view=self)
+
+
 class GameplayCommands(commands.Cog):
     """Main gameplay commands - drops, collection, viewing, trading"""
     
@@ -170,124 +365,28 @@ class GameplayCommands(commands.Cog):
 
     @app_commands.command(name="collection", description="View your card collection")
     async def collection_command(self, interaction: Interaction, user: discord.User = None):
-        """View user's card collection with card IDs for viewing"""
-        target_user = user or interaction.user
-        
-        # Get collection using database method that returns dicts
-        cards = self.db.get_user_collection(target_user.id)
-        
-        # Get inventory separately
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM user_inventory WHERE user_id = ?", (target_user.id,))
-            inventory = cursor.fetchone()
-        
-        embed = discord.Embed(
-            title=f"🎴 {target_user.display_name}'s Collection",
-            description=f"**Total Cards:** {len(cards)}\nUse `/view <card_id>` to see full card details",
-            color=discord.Color.blue()
-        )
-        
-        if inventory:
-            embed.add_field(
-                name="💰 Currency",
-                value=f"Gold: {inventory[1] or 0:,}\n"
-                      f"Dust: {inventory[2] or 0}\n"
-                      f"Tickets: {inventory[3] or 0}\n"
-                      f"Gems: {inventory[4] or 0}",
-                inline=True
+        """Pack-organized collection browser with card stats and YouTube links."""
+        target = user or interaction.user
+        await interaction.response.defer()
+
+        try:
+            all_cards = self.db.get_user_collection(target.id)
+            packs     = self.db.get_user_purchased_packs(target.id, limit=25)
+        except Exception as e:
+            print(f"[COLLECTION] DB error for {target.id}: {e}")
+            return await interaction.followup.send("❌ Could not load your collection. Please try again.", ephemeral=True)
+
+        if not all_cards:
+            embed = discord.Embed(
+                title=f"🎴 {target.display_name}'s Collection",
+                description="No cards yet!\n\n🛒 Use `/packs` to browse the marketplace\n🎁 Use `/daily` for a free daily card\n✨ Watch for drops in channels",
+                color=discord.Color.blue()
             )
-        
-        # Group cards by rarity
-        rarity_counts = {"common": 0, "rare": 0, "epic": 0, "legendary": 0, "mythic": 0}
-        for card in cards:
-            rarity = (card.get('rarity') or 'common').lower()
-            if rarity in rarity_counts:
-                rarity_counts[rarity] += 1
-        
-        embed.add_field(
-            name="📊 By Rarity",
-            value=f"⚪ Common: {rarity_counts['common']}\n"
-                  f"� Rare: {rarity_counts['rare']}\n"
-                  f"⭐ Legendary: {rarity_counts['legendary']}\n"
-                  f"🔴 Mythic: {rarity_counts['mythic']}",
-            inline=True
-        )
-        
-        # Show cards with interactive buttons (up to 12)
-        if cards:
-            # Create view with card selection buttons
-            view = discord.ui.View(timeout=180)
-            
-            # Add buttons for first 12 cards
-            for i, card in enumerate(cards[:12]):
-                rarity = (card.get('rarity') or 'common').lower()
-                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity, "⚪")
-                card_name = card.get('name', 'Unknown')
-                card_title = card.get('title', '')
-                card_id = card.get('card_id', '')
-                
-                # Truncate long names for button
-                display = f"{card_name}"
-                if card_title:
-                    display += f" - {card_title}"
-                if len(display) > 25:
-                    display = display[:22] + "..."
-                
-                button_label = f"{rarity_emoji} {display}"
-                
-                # Create button
-                button = discord.ui.Button(
-                    label=button_label,
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=f"view_card_{card_id}"
-                )
-                
-                # Add click handler — call _show_card directly, NOT view_command
-                # (view_command is an app_commands.Command and doesn't work from button callbacks)
-                async def button_callback(interaction: Interaction, card_id=card_id):
-                    await interaction.response.defer(thinking=True)
-                    try:
-                        await self._show_card(interaction, card_id)
-                    except Exception as e:
-                        print(f"❌ Button callback error: {e}")
-                        await interaction.followup.send("❌ Could not load card details. Please try again.", ephemeral=True)
-                
-                button.callback = button_callback
-                view.add_item(button)
-            
-            # Create card list text
-            card_list = ""
-            for card in cards[:12]:
-                rarity = (card.get('rarity') or 'common').lower()
-                rarity_emoji = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}.get(rarity, "⚪")
-                card_name = card.get('name', 'Unknown')
-                card_id = card.get('card_id', '')
-                card_list += f"{rarity_emoji} **{card_name}** - `{card_id}`\n"
-            
-            if len(cards) > 12:
-                card_list += f"\n*...and {len(cards) - 12} more cards (use `/view <card_id>` for others)*"
-            
-            embed.add_field(
-                name="🎴 Click a card to view:",
-                value=card_list or "No cards yet!",
-                inline=False
-            )
-            
-            embed.set_footer(text="Click any card button above to see the full card design!")
-            
-            await interaction.response.send_message(embed=embed, view=view)
-            return
-        else:
-            embed.add_field(
-                name="🎴 Your Cards",
-                value="No cards yet! Use `/drop` or open packs to get cards.",
-                inline=False
-            )
-        
-        embed.set_footer(text="Tip: Use /view <card_id> to see full card with image")
-        
-        await interaction.response.send_message(embed=embed)
+            return await interaction.followup.send(embed=embed)
+
+        view  = CollectionView(target.id, target.display_name, packs, all_cards)
+        embed = view._overview_embed(target.display_name)
+        await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="view", description="View details of a specific card")
     @app_commands.describe(card_identifier="Card ID or serial number to view")
