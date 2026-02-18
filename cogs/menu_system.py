@@ -472,7 +472,7 @@ class UserHubView(discord.ui.View):
     )
     async def battle_button(self, interaction: Interaction, button: discord.ui.Button):
         """Open battle menu"""
-        view = BattleView(self.db, bot=self.bot)
+        view = BattleView(self.db, bot=interaction.client)
         embed = create_battle_embed()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
@@ -719,7 +719,7 @@ class BattleView(discord.ui.View):
             return await interaction.response.send_message(
                 "Pick an opponent from the dropdown first!", ephemeral=True
             )
-        battle_cog = self.bot.cogs.get("BattleCommands") if self.bot else None
+        battle_cog = interaction.client.cogs.get("BattleCommands")
         if not battle_cog:
             return await interaction.response.send_message(
                 "Battle system unavailable — try `/battle @opponent` instead.", ephemeral=True

@@ -371,7 +371,7 @@ class BattleCommands(commands.Cog):
                 f"{opponent.display_name} doesn't have enough gold ({wager_cost}g required).", ephemeral=True)
 
         # Step 2 — Send challenge to opponent
-        # Use channel.send() for ALL public messages — avoids interaction token expiry issues
+        # Use interaction.followup.send() — works even if bot lacks SEND_MESSAGES in the channel
         match_id = f"battle_{uuid.uuid4().hex[:8]}"
         accept_view = AcceptBattleView(opponent.id, match_id)
 
@@ -387,7 +387,7 @@ class BattleCommands(commands.Cog):
         )
         challenge_embed.set_footer(text=f"{opponent.display_name} — accept or decline within 60s")
 
-        await interaction.channel.send(
+        await interaction.followup.send(
             content=f"{opponent.mention}",
             embed=challenge_embed,
             view=accept_view
@@ -395,17 +395,17 @@ class BattleCommands(commands.Cog):
 
         timed_out = await accept_view.wait()
         if timed_out or not accept_view.accepted:
-            await interaction.channel.send(
+            await interaction.followup.send(
                 f"Battle {'timed out' if timed_out else 'declined'} by {opponent.display_name}.")
             return
 
         # Deduct wager from both players atomically — either both succeed or neither does
         c_ok, o_ok = self._deduct_both_wagers(interaction.user.id, opponent.id, wager_cost)
         if not c_ok:
-            await interaction.channel.send("Insufficient gold — battle cancelled.")
+            await interaction.followup.send("Insufficient gold — battle cancelled.")
             return
         if not o_ok:
-            await interaction.channel.send(f"{opponent.display_name} doesn't have enough gold — battle cancelled.")
+            await interaction.followup.send(f"{opponent.display_name} doesn't have enough gold — battle cancelled.")
             return
 
         # Register both players in the battle manager so is_user_in_battle() works
@@ -430,7 +430,7 @@ class BattleCommands(commands.Cog):
                 self._add_gold(interaction.user.id, wager_cost)
                 self._add_gold(opponent.id, wager_cost)
                 try:
-                    await interaction.channel.send(
+                    await interaction.followup.send(
                         f"{interaction.user.mention} {opponent.mention} An unexpected error occurred. Wagers have been refunded."
                     )
                 except Exception:
@@ -476,12 +476,12 @@ class BattleCommands(commands.Cog):
         if not challenger_packs:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send(f"{interaction.user.display_name} has no cards or packs! Battle cancelled, wagers refunded.")
+            await interaction.followup.send(f"{interaction.user.display_name} has no cards or packs! Battle cancelled, wagers refunded.")
             return True
         if not opponent_packs:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send(f"{opponent.display_name} has no cards or packs! Battle cancelled, wagers refunded.")
+            await interaction.followup.send(f"{opponent.display_name} has no cards or packs! Battle cancelled, wagers refunded.")
             return True
 
         # Build pack-select views
@@ -510,7 +510,7 @@ class BattleCommands(commands.Cog):
 
         if not opponent_prompt_sent:
             # Fallback: public channel message with mention
-            await interaction.channel.send(
+            await interaction.followup.send(
                 f"{opponent.mention} **Choose your pack to battle with!** The strongest card leads your squad. (60s)",
                 view=o_view,
             )
@@ -522,12 +522,12 @@ class BattleCommands(commands.Cog):
         if c_timed_out or c_view.selected_pack is None:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send("Battle cancelled — challenger didn't pick a pack. Wagers refunded.")
+            await interaction.followup.send("Battle cancelled — challenger didn't pick a pack. Wagers refunded.")
             return True
         if o_timed_out or o_view.selected_pack is None:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send("Battle cancelled — opponent didn't pick a pack. Wagers refunded.")
+            await interaction.followup.send("Battle cancelled — opponent didn't pick a pack. Wagers refunded.")
             return True
 
         # Resolve cards from each chosen pack
@@ -543,7 +543,7 @@ class BattleCommands(commands.Cog):
         if not challenger_cards or not opponent_cards:
             self._add_gold(interaction.user.id, wager_cost)
             self._add_gold(opponent.id, wager_cost)
-            await interaction.channel.send("Battle cancelled — a pack had no cards. Wagers refunded.")
+            await interaction.followup.send("Battle cancelled — a pack had no cards. Wagers refunded.")
             return True
 
         # Pick champion = strongest card in each pack; rest are squad
@@ -625,7 +625,7 @@ class BattleCommands(commands.Cog):
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
         start_embed.add_field(name="📦 Packs", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
         start_embed.set_footer(text="Champions stepping forward...")
-        anim_msg = await interaction.channel.send(embed=start_embed)
+        anim_msg = await interaction.followup.send(embed=start_embed)
         await asyncio.sleep(1.5)
 
         # Phase 2a — Champion Reveal
