@@ -112,6 +112,22 @@ class CollectionView(discord.ui.View):
                      "legendary": 0xf39c12, "mythic": 0xe74c3c}
     TIER_EMOJI    = {"community": "📦", "gold": "🥇", "platinum": "💎", "all": "🎴"}
 
+    @staticmethod
+    def _resolve_image(card: dict) -> str | None:
+        """Return the best available image URL for a card.
+        Prefers image_url if it looks real, otherwise derives thumbnail from youtube_url."""
+        img = card.get('image_url') or ''
+        # Reject obvious placeholder/example URLs
+        if img and 'example.com' not in img and '_example' not in img:
+            return img
+        yt = card.get('youtube_url') or ''
+        if yt:
+            import re
+            m = re.search(r'(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})', yt)
+            if m:
+                return f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg"
+        return None
+
     def __init__(self, user_id: int, user_display: str, packs: list, all_cards: list):
         super().__init__(timeout=180)
         self.user_id       = user_id
@@ -251,8 +267,9 @@ class CollectionView(discord.ui.View):
         embed.add_field(name="Rarity", value=f"{r_emoji} {rarity.title()}", inline=True)
         embed.add_field(name="Pack",   value=self.pack_name or "Unknown",   inline=True)
 
-        if card.get('image_url'):
-            embed.set_thumbnail(url=card['image_url'])
+        img = self._resolve_image(card)
+        if img:
+            embed.set_image(url=img)
 
         n = len(self.current_cards)
         embed.set_footer(text=f"Card {self.card_index + 1} of {n} • {self.pack_name}")
