@@ -237,6 +237,26 @@ class Bot(commands.Bot):
         self._ready_once = True
         print("🎯 First ready event - running startup tasks")
 
+        # Refund wagers for any battles that were active when the bot last died.
+        # active_battles rows are written when a battle starts (after wager deduction)
+        # and deleted on completion. Any remaining rows = interrupted mid-battle.
+        try:
+            from database import get_db
+            db = get_db()
+            stuck = db.get_all_active_battles()
+            if stuck:
+                print(f"[BATTLE] Found {len(stuck)} interrupted battle(s) — refunding wagers")
+                for b in stuck:
+                    db._add_gold_direct(b['player1_id'], b['wager_amount'])
+                    db._add_gold_direct(b['player2_id'], b['wager_amount'])
+                    print(f"[BATTLE] Refunded {b['wager_amount']}g each to "
+                          f"p1={b['player1_id']} p2={b['player2_id']} (match {b['match_id']})")
+                db.clear_all_active_battles()
+                print("[BATTLE] All interrupted battles cleared")
+        except Exception as e:
+            print(f"[BATTLE] Warning: startup battle cleanup failed (non-critical): {e}")
+            import traceback; traceback.print_exc()
+
         # Commands should auto-sync, skip manual sync to avoid errors
         print("📋 Commands should auto-register with Discord")
 

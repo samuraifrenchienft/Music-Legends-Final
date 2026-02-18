@@ -107,6 +107,11 @@ class PackSelectView(ui.View):
     RARITY_EMOJI = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}
     TIER_EMOJI   = {"community": "📦", "gold": "🥇", "platinum": "💎"}
 
+    @staticmethod
+    def _pack_key(pack: dict) -> str:
+        """Consistent key for a pack — used in both the option value and the lookup dict."""
+        return str(pack.get('purchase_id') or pack.get('pack_id') or '')
+
     def __init__(self, user_id: int, packs: list):
         super().__init__(timeout=60)
         self.user_id = user_id
@@ -121,18 +126,20 @@ class PackSelectView(ui.View):
             tier_e = self.TIER_EMOJI.get(tier, "📦")
             name = pack.get('pack_name') or pack.get('name') or 'Pack'
             label = name[:50]
+            key = self._pack_key(pack)
+            if not key:
+                print(f"[BATTLE] Warning: pack has no purchase_id or pack_id — skipping: {pack}")
+                continue
             options.append(discord.SelectOption(
                 label=f"{tier_e} {label}",
-                value=pack.get('purchase_id', '') or pack.get('pack_id', ''),
+                value=key,
                 description=f"{card_count} card(s) | {(pack.get('genre') or 'Music').title()}",
             ))
 
         if not options:
             return
 
-        self._packs_by_id = {
-            (p.get('purchase_id') or p.get('pack_id')): p for p in packs
-        }
+        self._packs_by_id = {self._pack_key(p): p for p in packs if self._pack_key(p)}
 
         select = ui.Select(
             placeholder="Choose your pack to battle with...",
@@ -429,6 +436,11 @@ class BattleCommands(commands.Cog):
             player2_name=opponent.display_name,
             wager_tier=tier_key,
         )
+        # Persist to DB — if bot restarts before this battle completes,
+        # on_ready will refund both wagers automatically.
+        self.db.persist_active_battle(
+            match_id, interaction.user.id, opponent.id, wager_cost, tier_key
+        )
 
         rewards_distributed = False
         try:
@@ -452,6 +464,7 @@ class BattleCommands(commands.Cog):
             raise
         finally:
             self.manager.complete_match(match_id)
+            self.db.clear_active_battle(match_id)
 
     async def _run_card_selection_and_battle(
         self,

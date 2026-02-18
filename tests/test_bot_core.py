@@ -404,10 +404,11 @@ class TestResolveImage:
         from cogs.gameplay import CollectionView
         self.resolve = CollectionView._resolve_image
 
-    def test_real_image_url_returned_as_is(self):
-        """A real (non-placeholder) image_url must be returned directly."""
+    def test_real_image_url_returned_with_cache_bust(self):
+        """A real image_url must be returned with a ?_c=N cache-buster appended."""
         card = {"image_url": "https://i.imgur.com/abc123.jpg", "youtube_url": ""}
-        assert self.resolve(card) == "https://i.imgur.com/abc123.jpg"
+        assert self.resolve(card, 0) == "https://i.imgur.com/abc123.jpg?_c=0"
+        assert self.resolve(card, 2) == "https://i.imgur.com/abc123.jpg?_c=2"
 
     def test_placeholder_example_com_uses_yt_thumbnail(self):
         """example.com image_url must fall back to YouTube thumbnail."""

@@ -112,20 +112,29 @@ class CollectionView(discord.ui.View):
                      "legendary": 0xf39c12, "mythic": 0xe74c3c}
     TIER_EMOJI    = {"community": "📦", "gold": "🥇", "platinum": "💎", "all": "🎴"}
 
+    # YouTube thumbnail quality variants — cycling through these gives Discord a
+    # genuinely different URL path each time, beating its embed image cache.
+    _YT_QUALITIES = ["hqdefault.jpg", "mqdefault.jpg", "sddefault.jpg", "default.jpg"]
+
     @staticmethod
-    def _resolve_image(card: dict) -> str | None:
+    def _resolve_image(card: dict, card_index: int = 0) -> str | None:
         """Return the best available image URL for a card.
-        Prefers image_url if it looks real, otherwise derives thumbnail from youtube_url."""
+        Cycles YouTube thumbnail quality variants based on card_index so Discord's
+        CDN sees a different path on each page flip instead of serving a cached image."""
         img = card.get('image_url') or ''
         # Reject obvious placeholder/example URLs
         if img and 'example.com' not in img and '_example' not in img:
-            return img
+            # Still append card_index as a query param for non-YT images
+            sep = '&' if '?' in img else '?'
+            return f"{img}{sep}_c={card_index}"
         yt = card.get('youtube_url') or ''
         if yt:
             import re
             m = re.search(r'(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})', yt)
             if m:
-                return f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg"
+                # Rotate quality level by card index — different URL path each time
+                quality = CollectionView._YT_QUALITIES[card_index % len(CollectionView._YT_QUALITIES)]
+                return f"https://img.youtube.com/vi/{m.group(1)}/{quality}"
         return None
 
     def __init__(self, user_id: int, user_display: str, packs: list, all_cards: list):
@@ -267,13 +276,9 @@ class CollectionView(discord.ui.View):
         embed.add_field(name="Rarity", value=f"{r_emoji} {rarity.title()}", inline=True)
         embed.add_field(name="Pack",   value=self.pack_name or "Unknown",   inline=True)
 
-        img = self._resolve_image(card)
+        img = self._resolve_image(card, self.card_index)
         if img:
-            # Append card index as cache-buster — Discord caches embed images by URL;
-            # without this, the same thumbnail domain causes Discord to serve a stale
-            # cached image after card #2-3. YouTube ignores the query param.
-            sep = '&' if '?' in img else '?'
-            embed.set_image(url=f"{img}{sep}_c={self.card_index}")
+            embed.set_image(url=img)
 
         n = len(self.current_cards)
         embed.set_footer(text=f"Card {self.card_index + 1} of {n} • {self.pack_name}")

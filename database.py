@@ -597,6 +597,18 @@ class DatabaseManager:
                 )
             """)
             
+            # Active battles — persisted so we can refund wagers on bot restart
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS active_battles (
+                    match_id TEXT PRIMARY KEY,
+                    player1_id INTEGER NOT NULL,
+                    player2_id INTEGER NOT NULL,
+                    wager_amount INTEGER NOT NULL,
+                    wager_tier TEXT NOT NULL DEFAULT 'casual',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Match rounds (detailed round data)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS match_rounds (
@@ -1333,6 +1345,18 @@ class DatabaseManager:
                     player_a_hype_bonus INTEGER,
                     player_b_hype_bonus INTEGER,
                     tiebreak_method TEXT
+                )
+            """)
+
+            # Active battles — persisted so we can refund wagers on bot restart
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS active_battles (
+                    match_id TEXT PRIMARY KEY,
+                    player1_id BIGINT NOT NULL,
+                    player2_id BIGINT NOT NULL,
+                    wager_amount INTEGER NOT NULL,
+                    wager_tier TEXT NOT NULL DEFAULT 'casual',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -2340,7 +2364,15 @@ class DatabaseManager:
 
             # Enrich with full card data
             for purchase in purchases:
-                card_ids = json.loads(purchase['cards_received']) if purchase['cards_received'] else []
+                raw = purchase.get('cards_received')
+                card_ids = []
+                if raw:
+                    try:
+                        card_ids = json.loads(raw)
+                        if not isinstance(card_ids, list):
+                            card_ids = []
+                    except Exception:
+                        card_ids = []
                 if card_ids:
                     placeholders = ','.join([ph] * len(card_ids))
                     cursor.execute(f"""
@@ -4116,10 +4148,79 @@ class DatabaseManager:
                 
                 conn.commit()
                 return True
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Error recording battle: {e}")
             return False
-    
+
+    # ------------------------------------------------------------------
+    # Active battle persistence — survive bot restarts
+    # ------------------------------------------------------------------
+
+    def persist_active_battle(self, match_id: str, player1_id: int, player2_id: int,
+                              wager_amount: int, wager_tier: str) -> None:
+        """Insert an in-progress battle so wagers can be refunded on restart."""
+        ph = self._get_placeholder()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"INSERT INTO active_battles (match_id, player1_id, player2_id, wager_amount, wager_tier) "
+                    f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}) ON CONFLICT (match_id) DO NOTHING",
+                    (match_id, player1_id, player2_id, wager_amount, wager_tier)
+                )
+                conn.commit()
+        except Exception as e:
+            print(f"[BATTLE] Warning: could not persist active battle {match_id}: {e}")
+
+    def clear_active_battle(self, match_id: str) -> None:
+        """Remove a battle from the active_battles table on completion/cancellation."""
+        ph = self._get_placeholder()
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"DELETE FROM active_battles WHERE match_id = {ph}", (match_id,))
+                conn.commit()
+        except Exception as e:
+            print(f"[BATTLE] Warning: could not clear active battle {match_id}: {e}")
+
+    def get_all_active_battles(self) -> list:
+        """Return all battles still marked active (called on startup to refund interrupted battles)."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT match_id, player1_id, player2_id, wager_amount, wager_tier FROM active_battles"
+                )
+                cols = [d[0] for d in cursor.description]
+                return [dict(zip(cols, row)) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[BATTLE] Warning: could not fetch active battles: {e}")
+            return []
+
+    def clear_all_active_battles(self) -> None:
+        """Wipe the active_battles table (called after refunds on restart)."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM active_battles")
+                conn.commit()
+        except Exception as e:
+            print(f"[BATTLE] Warning: could not clear all active battles: {e}")
+
+    def _add_gold_direct(self, user_id: int, amount: int) -> None:
+        """Add gold to a user's inventory directly (used by startup refund logic)."""
+        if amount <= 0:
+            return
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, {ph}) "
+                f"ON CONFLICT (user_id) DO UPDATE SET gold = gold + {ph}",
+                (user_id, amount, amount)
+            )
+            conn.commit()
+
     def get_user_battle_stats(self, user_id: int) -> Dict:
         """Get user's battle statistics"""
         with self._get_connection() as conn:
