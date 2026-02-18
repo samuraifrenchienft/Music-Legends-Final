@@ -1229,17 +1229,32 @@ class MarketplaceCommands(commands.Cog):
             return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if not purchases:
-            embed = discord.Embed(
-                title="📦 No Packs Yet",
-                description=(
-                    "You haven't acquired any packs yet!\n\n"
-                    "🛒 Use `/packs` to browse marketplace\n"
-                    "🎁 Check daily rewards\n"
-                    "✨ Watch for drops in channels"
-                ),
-                color=discord.Color.blue()
-            )
-            return await interaction.followup.send(embed=embed)
+            # Fallback: user may have cards from before pack_purchases was tracked
+            all_cards = self.db.get_user_collection(interaction.user.id)
+            if not all_cards:
+                embed = discord.Embed(
+                    title="📦 No Packs Yet",
+                    description=(
+                        "You haven't acquired any packs yet!\n\n"
+                        "🛒 Use `/packs` to browse marketplace\n"
+                        "🎁 Check daily rewards\n"
+                        "✨ Watch for drops in channels"
+                    ),
+                    color=discord.Color.blue()
+                )
+                return await interaction.followup.send(embed=embed)
+            # Synthesize a single "My Collection" pack from existing cards
+            purchases = [{
+                'purchase_id': 'synth_collection',
+                'pack_id': 'collection',
+                'pack_name': 'My Collection',
+                'pack_tier': 'community',
+                'purchased_at': 'Before tracking',
+                'description': None,
+                'genre': None,
+                'cards': all_cards,
+            }]
+            print(f"[PACK] No pack_purchases for {interaction.user.id} — synthesized collection pack ({len(all_cards)} cards)")
 
         # Create pack selection view
         view = PackContentsView(self.db, interaction.user.id, purchases)

@@ -472,7 +472,7 @@ class UserHubView(discord.ui.View):
     )
     async def battle_button(self, interaction: Interaction, button: discord.ui.Button):
         """Open battle menu"""
-        view = BattleView(self.db)
+        view = BattleView(self.db, bot=self.bot)
         embed = create_battle_embed()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
@@ -685,27 +685,63 @@ class ShopView(discord.ui.View):
 
 
 class BattleView(discord.ui.View):
-    """Battle sub-menu"""
-    
-    def __init__(self, db: DatabaseManager):
+    """Battle sub-menu — pick opponent then hit a battle button."""
+
+    def __init__(self, db: DatabaseManager, bot=None):
         super().__init__(timeout=300)
         self.db = db
-    
-    @discord.ui.button(label="⚔️ Quick Battle", style=discord.ButtonStyle.danger)
+        self.bot = bot
+        self.selected_opponent = None
+
+    @discord.ui.select(
+        cls=discord.ui.UserSelect,
+        placeholder="1️⃣  Pick an opponent to battle...",
+        row=0,
+    )
+    async def opponent_select(self, interaction: Interaction, select: discord.ui.UserSelect):
+        self.selected_opponent = select.values[0]
+        await interaction.response.send_message(
+            f"Opponent set to **{self.selected_opponent.display_name}**. "
+            "Now choose a battle type below!",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="⚔️ Quick Battle (Casual)", style=discord.ButtonStyle.danger, row=1)
     async def quick_battle(self, interaction: Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "⚔️ **Quick Battle**\n\n"
-            "Use `/battle @opponent casual` to start a battle!",
-            ephemeral=True
-        )
-    
-    @discord.ui.button(label="🏆 Ranked Battle", style=discord.ButtonStyle.primary)
+        await self._start_battle(interaction)
+
+    @discord.ui.button(label="🏆 Ranked Battle", style=discord.ButtonStyle.primary, row=1)
     async def ranked_battle(self, interaction: Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "🏆 **Ranked Battle**\n\n"
-            "Use `/battle @opponent standard` or higher wager for ranked!",
-            ephemeral=True
-        )
+        await self._start_battle(interaction)
+
+    async def _start_battle(self, interaction: Interaction):
+        if not self.selected_opponent:
+            return await interaction.response.send_message(
+                "Pick an opponent from the dropdown first!", ephemeral=True
+            )
+        battle_cog = self.bot.cogs.get("BattleCommands") if self.bot else None
+        if not battle_cog:
+            return await interaction.response.send_message(
+                "Battle system unavailable — try `/battle @opponent` instead.", ephemeral=True
+            )
+        opponent = self.selected_opponent
+        if opponent.id == interaction.user.id:
+            return await interaction.response.send_message("You can't battle yourself!", ephemeral=True)
+        if opponent.bot:
+            return await interaction.response.send_message("You can't battle a bot!", ephemeral=True)
+        if battle_cog.manager.is_user_in_battle(str(interaction.user.id)):
+            return await interaction.response.send_message("You're already in a battle!", ephemeral=True)
+        if battle_cog.manager.is_user_in_battle(str(opponent.id)):
+            return await interaction.response.send_message(
+                f"{opponent.display_name} is already in a battle!", ephemeral=True
+            )
+        try:
+            battle_cog._ensure_user(interaction.user)
+            battle_cog._ensure_user(opponent)
+        except Exception as e:
+            print(f"[MENU_BATTLE] _ensure_user failed: {e}")
+            return await interaction.response.send_message("Battle setup failed. Try again.", ephemeral=True)
+        await battle_cog._run_battle(interaction, opponent)
 
 
 class CollectionView(discord.ui.View):
