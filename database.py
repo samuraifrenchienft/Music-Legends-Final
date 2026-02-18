@@ -174,10 +174,16 @@ class ConnectionPool:
         self._overflow_count = 0
         self._lock = threading.Lock()
 
-        # Pre-populate pool with connections
+        # Pre-populate pool with connections (keepalives keep idle sockets healthy)
         for _ in range(pool_size):
             try:
-                conn = psycopg2.connect(database_url)
+                conn = psycopg2.connect(
+                    database_url,
+                    keepalives=1,
+                    keepalives_idle=60,       # probe after 60s idle
+                    keepalives_interval=10,   # retry every 10s
+                    keepalives_count=3,       # drop after 3 failed probes
+                )
                 self._pool.put(_PgConnectionWrapper(conn))
             except Exception as e:
                 print(f"[POOL] Error creating initial connection: {e}")
@@ -314,8 +320,8 @@ class DatabaseManager:
                 url = self._database_url
                 if url.startswith("postgres://"):
                     url = url.replace("postgres://", "postgresql://", 1)
-                self._pool = ConnectionPool(url, pool_size=3, max_overflow=2)
-                print(f"✅ [DATABASE] PostgreSQL connection pool initialized (size=3, max_overflow=2)")
+                self._pool = ConnectionPool(url, pool_size=2, max_overflow=3)
+                print(f"✅ [DATABASE] PostgreSQL connection pool initialized (size=2, max_overflow=3)")
             except Exception as e:
                 print(f"⚠️ [DATABASE] Connection pool initialization failed, falling back to direct connections: {e}")
                 self._pool = None
@@ -340,7 +346,10 @@ class DatabaseManager:
                 url = self._database_url
                 if url.startswith("postgres://"):
                     url = url.replace("postgres://", "postgresql://", 1)
-                return _PgConnectionWrapper(psycopg2.connect(url))
+                return _PgConnectionWrapper(psycopg2.connect(
+                    url, keepalives=1, keepalives_idle=60,
+                    keepalives_interval=10, keepalives_count=3,
+                ))
         else:
             return sqlite3.connect(self.db_path)
 
