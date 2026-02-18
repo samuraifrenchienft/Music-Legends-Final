@@ -209,8 +209,8 @@ class BattlePassCommands(commands.Cog):
                 with self.db._get_connection() as conn:
                     conn.cursor().execute("""
                         INSERT INTO user_inventory (user_id, tickets) VALUES (?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET tickets = COALESCE(tickets,0) + ?
-                    """, (interaction.user.id, amt, amt))
+                        ON CONFLICT(user_id) DO UPDATE SET tickets = COALESCE(user_inventory.tickets, 0) + EXCLUDED.tickets
+                    """, (interaction.user.id, amt))
                     conn.commit()
                 rewards_given.append(f"🎫 {amt} Tickets")
             else:

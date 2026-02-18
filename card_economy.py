@@ -677,8 +677,8 @@ class CardEconomyManager:
             cursor.execute("""
                 INSERT INTO user_inventory (user_id, dust)
                 VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET dust = COALESCE(dust, 0) + ?
-            """, (user_id, dust, dust))
+                ON CONFLICT(user_id) DO UPDATE SET dust = COALESCE(user_inventory.dust, 0) + EXCLUDED.dust
+            """, (user_id, dust))
 
             conn.commit()
 

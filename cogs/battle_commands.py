@@ -455,6 +455,9 @@ class BattleCommands(commands.Cog):
             if not rewards_distributed:
                 self._add_gold(interaction.user.id, wager_cost)
                 self._add_gold(opponent.id, wager_cost)
+                # Clear DB row BEFORE raise — prevents double refund if bot dies
+                # between here and the finally block.
+                self.db.clear_active_battle(match_id)
                 try:
                     await interaction.followup.send(
                         f"{interaction.user.mention} {opponent.mention} An unexpected error occurred. Wagers have been refunded."

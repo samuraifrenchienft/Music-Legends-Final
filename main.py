@@ -247,12 +247,15 @@ class Bot(commands.Bot):
             if stuck:
                 print(f"[BATTLE] Found {len(stuck)} interrupted battle(s) — refunding wagers")
                 for b in stuck:
-                    db._add_gold_direct(b['player1_id'], b['wager_amount'])
-                    db._add_gold_direct(b['player2_id'], b['wager_amount'])
-                    print(f"[BATTLE] Refunded {b['wager_amount']}g each to "
-                          f"p1={b['player1_id']} p2={b['player2_id']} (match {b['match_id']})")
-                db.clear_all_active_battles()
-                print("[BATTLE] All interrupted battles cleared")
+                    try:
+                        db._add_gold_direct(b['player1_id'], b['wager_amount'])
+                        db._add_gold_direct(b['player2_id'], b['wager_amount'])
+                        db.clear_active_battle(b['match_id'])
+                        print(f"[BATTLE] Refunded {b['wager_amount']}g each to "
+                              f"p1={b['player1_id']} p2={b['player2_id']} (match {b['match_id']})")
+                    except Exception as e:
+                        print(f"[BATTLE] Failed to refund match {b['match_id']}: {e}")
+                print("[BATTLE] Interrupted battle cleanup done")
         except Exception as e:
             print(f"[BATTLE] Warning: startup battle cleanup failed (non-critical): {e}")
             import traceback; traceback.print_exc()
