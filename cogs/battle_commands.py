@@ -762,26 +762,34 @@ class BattleCommands(commands.Cog):
             title=f"🏆 {winner_name.upper()} WINS!" if winner_name else "🤝 TIE!",
             color=winner_color,
         )
-        # Player 1 field
+        # Player 1 — champion + squad
         p1_crit = " 💥 CRIT!" if p1['critical_hit'] else ""
+        p1_squad = "\n".join(
+            f"  {CARD_RARITY_EMOJI.get((s.get('rarity') or 'common').lower(), '⚪')} {s.get('name', '?')} ({self._compute_card_power(s)})"
+            for s in c_supports
+        ) or "  _No squad_"
         result_embed.add_field(
-            name=f"🔵 {interaction.user.display_name}",
+            name=f"🔵 {interaction.user.display_name} {'🏆' if result['winner'] == 1 else ''}",
             value=(
-                f"{c_rarity_e} **{c_name}**{p1_crit}\n"
-                f"{_power_bar(p1['final_power'])}\n"
-                f"{'🏆 **WINNER**' if result['winner'] == 1 else ''}"
+                f"{c_rarity_e} **{c_name}** ({c_champ_power}){p1_crit}\n"
+                f"{p1_squad}\n"
+                f"{_power_bar(p1['final_power'])}"
             ),
             inline=True,
         )
         result_embed.add_field(name="⚡", value="**VS**", inline=True)
-        # Player 2 field
+        # Player 2 — champion + squad
         p2_crit = " 💥 CRIT!" if p2['critical_hit'] else ""
+        p2_squad = "\n".join(
+            f"  {CARD_RARITY_EMOJI.get((s.get('rarity') or 'common').lower(), '⚪')} {s.get('name', '?')} ({self._compute_card_power(s)})"
+            for s in o_supports
+        ) or "  _No squad_"
         result_embed.add_field(
-            name=f"🔴 {opponent.display_name}",
+            name=f"🔴 {opponent.display_name} {'🏆' if result['winner'] == 2 else ''}",
             value=(
-                f"{o_rarity_e} **{o_name}**{p2_crit}\n"
-                f"{_power_bar(p2['final_power'])}\n"
-                f"{'🏆 **WINNER**' if result['winner'] == 2 else ''}"
+                f"{o_rarity_e} **{o_name}** ({o_champ_power}){p2_crit}\n"
+                f"{p2_squad}\n"
+                f"{_power_bar(p2['final_power'])}"
             ),
             inline=True,
         )
