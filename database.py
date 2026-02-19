@@ -1965,10 +1965,14 @@ class DatabaseManager:
                 except Exception:
                     pass
 
-            # pack_purchases — may be missing purchased_at if table was created before this column was added
+            # pack_purchases — add any columns that were added after initial table creation
             for col_def in [
                 "purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
                 "cards_received TEXT",
+                "purchase_amount_cents INTEGER",
+                "platform_revenue_cents INTEGER",
+                "creator_revenue_cents INTEGER",
+                "stripe_payment_id TEXT",
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE pack_purchases ADD COLUMN IF NOT EXISTS {col_def}")
@@ -2957,10 +2961,8 @@ class DatabaseManager:
                 card_ids = [c.get('card_id') for c in cards_data if c.get('card_id')]
                 cursor.execute(f"""
                     INSERT INTO pack_purchases
-                    (purchase_id, pack_id, buyer_id, purchase_amount_cents,
-                     platform_revenue_cents, creator_revenue_cents,
-                     stripe_payment_id, cards_received)
-                    VALUES ({ph}, {ph}, {ph}, NULL, NULL, NULL, NULL, {ph})
+                    (purchase_id, pack_id, buyer_id, cards_received)
+                    VALUES ({ph}, {ph}, {ph}, {ph})
                 """, (purchase_id, pack_id, user_id, json.dumps(card_ids)))
 
                 print(f"[DROP] Opening pack '{pack_name}' for user {user_id} with {len(cards_data)} cards")
@@ -3053,10 +3055,8 @@ class DatabaseManager:
                 card_ids = [c.get('card_id') for c in cards_data if c.get('card_id')]
                 cursor.execute(f"""
                     INSERT INTO pack_purchases
-                    (purchase_id, pack_id, buyer_id, purchase_amount_cents,
-                     platform_revenue_cents, creator_revenue_cents,
-                     stripe_payment_id, cards_received)
-                    VALUES ({ph}, {ph}, {ph}, NULL, NULL, NULL, NULL, {ph})
+                    (purchase_id, pack_id, buyer_id, cards_received)
+                    VALUES ({ph}, {ph}, {ph}, {ph})
                 """, (purchase_id, pack_id, target_user_id, json.dumps(card_ids)))
 
                 # Grant cards

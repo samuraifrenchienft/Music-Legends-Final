@@ -644,6 +644,13 @@ class BattleCommands(commands.Cog):
         c_pack_name = c_view.selected_pack.get('pack_name') or 'Pack' if c_view.selected_pack else 'Pack'
         o_pack_name = o_view.selected_pack.get('pack_name') or 'Pack' if o_view.selected_pack else 'Pack'
 
+        def _power_bar(power: int, max_power: int = 135, width: int = 10) -> str:
+            """Visual power bar: █████░░░░░ 87/135"""
+            filled = round((power / max_power) * width) if max_power > 0 else 0
+            filled = max(0, min(width, filled))
+            empty = width - filled
+            return f"{'█' * filled}{'░' * empty} {power}/{max_power}"
+
         def _squad_lines(supports: list) -> str:
             lines = []
             for s in supports:
@@ -680,17 +687,25 @@ class BattleCommands(commands.Cog):
         await anim_msg.edit(embed=champ_embed)
         await asyncio.sleep(1.5)
 
-        # Phase 2b — Full Squad Reveal
+        # Phase 2b — Full Squad Reveal + Power Bars
         squad_embed = discord.Embed(title="🎵 Full Squads!", color=0x3498db)
         squad_embed.add_field(
-            name=f"🔵 {interaction.user.display_name} [{c_pack_name}] — Team Power: {c_power}",
-            value=f"**Champion:** {c_rarity_e} {c_name} ({c_champ_power})\n**Squad:**\n{_squad_lines(c_supports)}",
+            name=f"🔵 {interaction.user.display_name} [{c_pack_name}]",
+            value=(
+                f"**Champion:** {c_rarity_e} {c_name} ({c_champ_power})\n"
+                f"**Squad:**\n{_squad_lines(c_supports)}\n\n"
+                f"🔵 {_power_bar(c_power)}"
+            ),
             inline=True,
         )
         squad_embed.add_field(name="⚡", value="**VS**", inline=True)
         squad_embed.add_field(
-            name=f"🔴 {opponent.display_name} [{o_pack_name}] — Team Power: {o_power}",
-            value=f"**Champion:** {o_rarity_e} {o_name} ({o_champ_power})\n**Squad:**\n{_squad_lines(o_supports)}",
+            name=f"🔴 {opponent.display_name} [{o_pack_name}]",
+            value=(
+                f"**Champion:** {o_rarity_e} {o_name} ({o_champ_power})\n"
+                f"**Squad:**\n{_squad_lines(o_supports)}\n\n"
+                f"🔴 {_power_bar(o_power)}"
+            ),
             inline=True,
         )
         squad_embed.set_footer(text="Powers clashing...")
@@ -710,9 +725,88 @@ class BattleCommands(commands.Cog):
             await anim_msg.edit(embed=crit_embed)
             await asyncio.sleep(1.5)
 
-        # Phase 4 — Final Result
-        result_embed = BattleEngine.create_battle_embed(result, interaction.user.display_name, opponent.display_name)
+        # Phase 4 — Suspense: Powers Clashing
+        clash_embed = discord.Embed(
+            title="🔥 Powers Clashing...",
+            description=(
+                f"🔵 {interaction.user.display_name}: {_power_bar(p1['final_power'])}\n"
+                f"🔴 {opponent.display_name}: {_power_bar(p2['final_power'])}"
+            ),
+            color=0xe74c3c,
+        )
+        clash_embed.set_footer(text="Who will emerge victorious?")
+        await anim_msg.edit(embed=clash_embed)
+        await asyncio.sleep(1.2)
+
+        # Phase 5 — Countdown
+        countdown_embed = discord.Embed(
+            title="⚡ 3... 2... 1...",
+            description="**The winner is...**",
+            color=0xe67e22,
+        )
+        await anim_msg.edit(embed=countdown_embed)
+        await asyncio.sleep(1.5)
+
+        # Phase 6 — Final Result (custom embed with power bars)
+        if result["winner"] == 1:
+            winner_name = interaction.user.display_name
+            winner_color = 0x2ecc71
+        elif result["winner"] == 2:
+            winner_name = opponent.display_name
+            winner_color = 0xe74c3c
+        else:
+            winner_name = None
+            winner_color = 0xf39c12
+
+        result_embed = discord.Embed(
+            title=f"🏆 {winner_name.upper()} WINS!" if winner_name else "🤝 TIE!",
+            color=winner_color,
+        )
+        # Player 1 field
+        p1_crit = " 💥 CRIT!" if p1['critical_hit'] else ""
+        result_embed.add_field(
+            name=f"🔵 {interaction.user.display_name}",
+            value=(
+                f"{c_rarity_e} **{c_name}**{p1_crit}\n"
+                f"{_power_bar(p1['final_power'])}\n"
+                f"{'🏆 **WINNER**' if result['winner'] == 1 else ''}"
+            ),
+            inline=True,
+        )
+        result_embed.add_field(name="⚡", value="**VS**", inline=True)
+        # Player 2 field
+        p2_crit = " 💥 CRIT!" if p2['critical_hit'] else ""
+        result_embed.add_field(
+            name=f"🔴 {opponent.display_name}",
+            value=(
+                f"{o_rarity_e} **{o_name}**{p2_crit}\n"
+                f"{_power_bar(p2['final_power'])}\n"
+                f"{'🏆 **WINNER**' if result['winner'] == 2 else ''}"
+            ),
+            inline=True,
+        )
+        # Rewards summary
+        result_embed.add_field(
+            name="━━━━━━━━━━━━━━━━━━━━",
+            value=(
+                f"🔵 {interaction.user.display_name}: **+{p1['gold_reward']}g** | +{p1['xp_reward']} XP\n"
+                f"🔴 {opponent.display_name}: **+{p2['gold_reward']}g** | +{p2['xp_reward']} XP"
+            ),
+            inline=False,
+        )
         await anim_msg.edit(embed=result_embed)
+
+        # Phase 7 — Winner's YouTube video (separate message, auto-embeds)
+        winning_card = c_card_data if result["winner"] == 1 else (o_card_data if result["winner"] == 2 else None)
+        if winning_card:
+            yt_url = winning_card.get('youtube_url') or ''
+            if yt_url:
+                try:
+                    await interaction.followup.send(
+                        f"🏆 **Winner's Track:**\n{yt_url}"
+                    )
+                except Exception as e:
+                    print(f"[BATTLE] Could not send winner YouTube link: {e}")
 
         # Record match in DB
         winner_id = interaction.user.id if result["winner"] == 1 else (
