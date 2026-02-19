@@ -288,6 +288,29 @@ class CollectionView(discord.ui.View):
     async def interaction_check(self, interaction: Interaction) -> bool:
         return interaction.user.id == self.user_id
 
+    async def on_error(self, interaction: Interaction, error: Exception, item) -> None:
+        print(f"[COLLECTION] View error on {item}: {error}")
+        import traceback; traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+        except Exception:
+            pass
+
+    async def _safe_update(self, interaction: Interaction, embed: discord.Embed):
+        """Edit the message with the new embed+view; always acknowledge the interaction."""
+        try:
+            self._rebuild()
+            await interaction.response.edit_message(embed=embed, view=self)
+        except Exception as e:
+            print(f"[COLLECTION] _safe_update error (index={self.card_index}): {e}")
+            import traceback; traceback.print_exc()
+            # Still acknowledge so Discord doesn't show "interaction failed"
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
+
     async def _on_pack_select(self, interaction: Interaction):
         pack_id = interaction.data['values'][0]
         vpacks  = {(p.get('purchase_id') or p.get('pack_id')): p for p in self._virtual_packs()}
@@ -296,33 +319,21 @@ class CollectionView(discord.ui.View):
             self.current_cards = pack.get('cards', [])
             self.pack_name     = pack.get('pack_name', 'Pack')
             self.card_index    = 0
-        self._rebuild()
-        await interaction.response.edit_message(embed=self._card_embed(), view=self)
+        await self._safe_update(interaction, self._card_embed())
 
     async def _on_prev(self, interaction: Interaction):
         self.card_index = max(0, self.card_index - 1)
-        self._rebuild()
-        try:
-            await interaction.response.edit_message(embed=self._card_embed(), view=self)
-        except Exception as e:
-            print(f"[COLLECTION] _on_prev error at index {self.card_index}: {e}")
-            import traceback; traceback.print_exc()
+        await self._safe_update(interaction, self._card_embed())
 
     async def _on_next(self, interaction: Interaction):
         self.card_index = min(len(self.current_cards) - 1, self.card_index + 1)
-        self._rebuild()
-        try:
-            await interaction.response.edit_message(embed=self._card_embed(), view=self)
-        except Exception as e:
-            print(f"[COLLECTION] _on_next error at index {self.card_index}: {e}")
-            import traceback; traceback.print_exc()
+        await self._safe_update(interaction, self._card_embed())
 
     async def _on_back(self, interaction: Interaction):
         self.current_cards = []
         self.card_index    = 0
         self.pack_name     = None
-        self._rebuild()
-        await interaction.response.edit_message(embed=self._overview_embed(self._user_display), view=self)
+        await self._safe_update(interaction, self._overview_embed(self._user_display))
 
 
 class GameplayCommands(commands.Cog):

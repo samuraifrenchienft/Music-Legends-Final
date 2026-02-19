@@ -176,10 +176,19 @@ class PackOpeningAnimator:
         power_text = f"💪 **{power}** Power"
         embed.add_field(name="⚡ Overall", value=power_text, inline=True)
         
-        # Image if available - use safe_image to validate and get fallback
-        if card.get('image_url'):
-            safe_url = safe_image(card['image_url'])
-            embed.set_image(url=safe_url)  # Use set_image for full-size instead of thumbnail
+        # Image — try image_url first, fall back to YouTube thumbnail
+        img_url = card.get('image_url') or ''
+        if img_url and 'example.com' not in img_url and '_example' not in img_url:
+            safe_url = safe_image(img_url)
+            embed.set_image(url=safe_url)
+        else:
+            # Derive thumbnail from youtube_url if available
+            yt = card.get('youtube_url') or ''
+            if yt:
+                import re
+                yt_m = re.search(r'(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})', yt)
+                if yt_m:
+                    embed.set_image(url=f"https://img.youtube.com/vi/{yt_m.group(1)}/hqdefault.jpg")
         
         # Progress footer with logo
         embed.set_footer(text=f"🎵 Music Legends • Opening pack... {card_number}/{total_cards} cards revealed")

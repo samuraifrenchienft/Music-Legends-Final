@@ -1993,6 +1993,35 @@ class DatabaseManager:
 
             print("✅ [DATABASE] Schema migrations complete")
 
+            # Seed YouTube URLs for cards that are missing them (idempotent)
+            _yt_seed = {
+                'abu1': ('https://www.youtube.com/watch?v=xpVfcZ0ZcFM', "Drake", "God's Plan"),
+                'abu2': ('https://www.youtube.com/watch?v=tvTRZJ--gYA', "Kendrick Lamar", "HUMBLE"),
+                'abu3': ('https://www.youtube.com/watch?v=6ONRf7h3Mdk', "Travis Scott", "SICKO MODE"),
+                'abu4': ('https://www.youtube.com/watch?v=mWsZ_ReO2Cs', "J. Cole", "4 Your Eyez Only"),
+                'abu5': ('https://www.youtube.com/watch?v=r5FL0ICJLuY', "Lil Baby", "Drip Too Hard"),
+                'cc1':  ('https://www.youtube.com/watch?v=ViwtNLUqkMY', "Beyonce", "Crazy in Love"),
+                'cc2':  ('https://www.youtube.com/watch?v=WwoM5fLITfk', "Jay-Z", "99 Problems"),
+                'cc3':  ('https://www.youtube.com/watch?v=CvBfHwUxHIk', "Rihanna", "Umbrella"),
+                'cc4':  ('https://www.youtube.com/watch?v=_Yhyp-_hX2s', "Eminem", "Lose Yourself"),
+                'cc5':  ('https://www.youtube.com/watch?v=4JipHEz53sU', "Nicki Minaj", "Super Bass"),
+            }
+            for card_id, (yt_url, _artist, _title) in _yt_seed.items():
+                # Build image_url from the YouTube thumbnail (always available)
+                import re as _re
+                _m = _re.search(r'v=([A-Za-z0-9_-]{11})', yt_url)
+                img_url = f"https://img.youtube.com/vi/{_m.group(1)}/hqdefault.jpg" if _m else None
+                try:
+                    cursor.execute(
+                        f"UPDATE cards SET youtube_url = {ph}, image_url = COALESCE(image_url, {ph}) "
+                        f"WHERE card_id = {ph} AND (youtube_url IS NULL OR youtube_url = '')",
+                        (yt_url, img_url, card_id)
+                    )
+                except Exception:
+                    pass
+            conn.commit()
+            print("✅ [DATABASE] YouTube URL seed complete")
+
             # Dev pack supply — tracks copies held for giveaways/prizes
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS dev_pack_supply (

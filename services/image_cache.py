@@ -10,7 +10,8 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 
 # Default image for missing/inappropriate images
-DEFAULT_IMG = "https://via.placeholder.com/300x300/cccccc/000000?text=No+Image"
+# Using placehold.co (more reliable than via.placeholder.com)
+DEFAULT_IMG = "https://placehold.co/300x300/1a1a2e/e0e0e0?text=Music+Legends"
 
 # Cache directory
 CACHE_DIR = Path("cache")
