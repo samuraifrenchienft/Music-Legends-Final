@@ -6,22 +6,18 @@ Lets users challenge each other to card battles with wagers
 
 import asyncio
 import discord
-import sqlite3
 import random
 import traceback
 import uuid
-from datetime import datetime
 from discord.ext import commands
 from discord import Interaction, app_commands, ui
 from typing import Optional
 
-from battle_engine import (
-    BattleManager, BattleEngine, BattleWagerConfig,
-    BattleCard, PlayerState, MatchState, BattleStatus
-)
+from battle_engine import BattleManager, BattleEngine, BattleWagerConfig
 from discord_cards import ArtistCard
-from database import DatabaseManager, get_db
+from database import get_db
 from config.economy import BATTLE_WAGERS, calculate_battle_rewards
+from config.cards import RARITY_EMOJI as CARD_RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_team_power
 
 
 # Shared battle manager (per-bot instance)
@@ -277,18 +273,8 @@ class BattleCommands(commands.Cog):
             )
             conn.commit()
 
-    _RARITY_BONUS = {"common": 0, "rare": 5, "epic": 10, "legendary": 20, "mythic": 35}
-
     def _compute_card_power(self, card: dict) -> int:
-        """Compute battle power directly from card DB stats (no lossy view_count conversion).
-        Formula: average of 5 stats (0-100 each) + rarity bonus → range 0-135."""
-        base = ((card.get('impact', 50) or 50) +
-                (card.get('skill', 50) or 50) +
-                (card.get('longevity', 50) or 50) +
-                (card.get('culture', 50) or 50) +
-                (card.get('hype', 50) or 50)) // 5
-        rarity = (card.get('rarity') or 'common').lower()
-        return base + self._RARITY_BONUS.get(rarity, 0)
+        return compute_card_power(card)
 
     def _get_support_cards(self, cards: list, champion_card_id: str, n: int = 4) -> list:
         """Return top-n cards by power, excluding the chosen champion."""
@@ -297,11 +283,7 @@ class BattleCommands(commands.Cog):
         return others[:n]
 
     def _compute_team_power(self, champ_power: int, support_powers: list) -> int:
-        """Weighted team power: champion counts double, auto-supports fill the squad.
-        Formula: (champ*2 + sum(supports)) / (2 + len(supports))"""
-        if not support_powers:
-            return champ_power
-        return (champ_power * 2 + sum(support_powers)) // (2 + len(support_powers))
+        return compute_team_power(champ_power, support_powers)
 
     def _card_dict_to_artist(self, card: dict) -> ArtistCard:
         """Convert a DB card dict to an ArtistCard for display metadata in the battle engine.
@@ -390,7 +372,6 @@ class BattleCommands(commands.Cog):
                 f"{opponent.display_name} doesn't have enough gold ({wager_cost}g required).", ephemeral=True)
 
         # Step 2 — Send challenge to opponent
-        # Use interaction.followup.send() — works even if bot lacks SEND_MESSAGES in the channel
         match_id = f"battle_{uuid.uuid4().hex[:8]}"
         accept_view = AcceptBattleView(opponent.id, match_id)
 
@@ -654,9 +635,8 @@ class BattleCommands(commands.Cog):
             print(f"[BATTLE] Warning: battle stats update failed (non-critical): {e}")
 
         # --- Battle Animation ---
-        _re = {"common": "⚪", "rare": "🔵", "epic": "🟣", "legendary": "⭐", "mythic": "🔴"}
-        c_rarity_e = _re.get((c_card_data.get('rarity') or 'common').lower(), "⚪")
-        o_rarity_e = _re.get((o_card_data.get('rarity') or 'common').lower(), "⚪")
+        c_rarity_e = CARD_RARITY_EMOJI.get((c_card_data.get('rarity') or 'common').lower(), "\u26aa")
+        o_rarity_e = CARD_RARITY_EMOJI.get((o_card_data.get('rarity') or 'common').lower(), "\u26aa")
         c_name = c_card_data.get('name', 'Unknown')
         o_name = o_card_data.get('name', 'Unknown')
         c_title = c_card_data.get('title', '') or ''
@@ -667,8 +647,8 @@ class BattleCommands(commands.Cog):
         def _squad_lines(supports: list) -> str:
             lines = []
             for s in supports:
-                re = _re.get((s.get('rarity') or 'common').lower(), "⚪")
-                lines.append(f"{re} {s.get('name', 'Unknown')} ({self._compute_card_power(s)})")
+                r_e = CARD_RARITY_EMOJI.get((s.get('rarity') or 'common').lower(), "\u26aa")
+                lines.append(f"{r_e} {s.get('name', 'Unknown')} ({self._compute_card_power(s)})")
             return "\n".join(lines) if lines else "_No squad members_"
 
         # Phase 1 — Battle Start
@@ -680,7 +660,6 @@ class BattleCommands(commands.Cog):
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
         start_embed.add_field(name="📦 Packs", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
         start_embed.set_footer(text="Champions stepping forward...")
-        # wait=True required — followup.send() is a Webhook call, returns None by default
         anim_msg = await interaction.followup.send(embed=start_embed, wait=True)
         await asyncio.sleep(1.5)
 

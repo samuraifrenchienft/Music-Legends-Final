@@ -4,7 +4,8 @@ import os
 import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
-from database import DatabaseManager, get_db
+from database import get_db
+from config.cards import RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_compute_team_power
 
 
 def _is_dev(user_id: int) -> bool:
@@ -235,22 +236,6 @@ class DevSupplyCog(commands.Cog):
         from battle_engine import BattleEngine, BattleWagerConfig
         from discord_cards import ArtistCard
 
-        RARITY_BONUS = {"common": 0, "rare": 5, "epic": 10, "legendary": 20, "mythic": 35}
-
-        def compute_power(card: dict) -> int:
-            base = ((card.get('impact', 50) or 50) +
-                    (card.get('skill', 50) or 50) +
-                    (card.get('longevity', 50) or 50) +
-                    (card.get('culture', 50) or 50) +
-                    (card.get('hype', 50) or 50)) // 5
-            return base + RARITY_BONUS.get((card.get('rarity') or 'common').lower(), 0)
-
-        def team_power(champ_power: int, supports: list) -> int:
-            sp = [compute_power(c) for c in supports]
-            if not sp:
-                return champ_power
-            return (champ_power * 2 + sum(sp)) // (2 + len(sp))
-
         def card_to_artist(card: dict) -> ArtistCard:
             return ArtistCard(
                 card_id=card.get('card_id', ''),
@@ -262,10 +247,8 @@ class DevSupplyCog(commands.Cog):
                 rarity=(card.get('rarity') or 'common').lower(),
             )
 
-        RARITY_ICON = {"mythic": "🔮", "legendary": "⭐", "epic": "💜", "rare": "💙", "common": "⚪"}
-
         def format_card(card: dict, power: int) -> str:
-            icon = RARITY_ICON.get((card.get('rarity') or 'common').lower(), "⚪")
+            icon = RARITY_EMOJI.get((card.get('rarity') or 'common').lower(), "\u26aa")
             name = card.get('name', 'Unknown')
             title = card.get('title', '') or ''
             return f"{icon} **{name}**" + (f" — {title}" if title else "") + f" | Power: **{power}**"
@@ -282,18 +265,18 @@ class DevSupplyCog(commands.Cog):
             return
 
         # Auto-pick strongest card as champion for each
-        u1_sorted = sorted(u1_cards, key=compute_power, reverse=True)
-        u2_sorted = sorted(u2_cards, key=compute_power, reverse=True)
+        u1_sorted = sorted(u1_cards, key=compute_card_power, reverse=True)
+        u2_sorted = sorted(u2_cards, key=compute_card_power, reverse=True)
 
         u1_champ = u1_sorted[0]
         u2_champ = u2_sorted[0]
         u1_supports = u1_sorted[1:5]
         u2_supports = u2_sorted[1:5]
 
-        u1_cp = compute_power(u1_champ)
-        u2_cp = compute_power(u2_champ)
-        u1_tp = team_power(u1_cp, u1_supports)
-        u2_tp = team_power(u2_cp, u2_supports)
+        u1_cp = compute_card_power(u1_champ)
+        u2_cp = compute_card_power(u2_champ)
+        u1_tp = compute_team_power(u1_cp, u1_supports)
+        u2_tp = compute_team_power(u2_cp, u2_supports)
 
         card1 = card_to_artist(u1_champ)
         card2 = card_to_artist(u2_champ)
@@ -318,8 +301,8 @@ class DevSupplyCog(commands.Cog):
                 return "_No squad_"
             lines = []
             for s in supports:
-                icon = RARITY_ICON.get((s.get('rarity') or 'common').lower(), "⚪")
-                lines.append(f"{icon} {s.get('name','?')} ({compute_power(s)})")
+                icon = RARITY_EMOJI.get((s.get('rarity') or 'common').lower(), "\u26aa")
+                lines.append(f"{icon} {s.get('name','?')} ({compute_card_power(s)})")
             return "\n".join(lines)
 
         embed.add_field(

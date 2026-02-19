@@ -1,12 +1,7 @@
 # cogs/gameplay.py
 import discord
-import asyncio
-import time
-import sqlite3
-from datetime import datetime, timedelta
 from discord.ext import commands
 from discord import Interaction, app_commands, ui
-from typing import Dict, List
 import random
 from card_economy import CardEconomyManager
 from database import DatabaseManager, get_db
@@ -431,7 +426,7 @@ class GameplayCommands(commands.Cog):
                     SELECT c.*, uc.acquired_at, uc.acquired_from, uc.is_favorite
                     FROM cards c
                     JOIN user_cards uc ON c.card_id = uc.card_id
-                    WHERE (c.card_id = ? OR c.serial_number = ? OR c.name ILIKE ?) AND uc.user_id = ?
+                    WHERE (c.card_id = ? OR c.serial_number = ? OR LOWER(c.name) LIKE LOWER(?)) AND uc.user_id = ?
                 """, (card_identifier, card_identifier, f"%{card_identifier}%", interaction.user.id))
                 row = cursor.fetchone()
 

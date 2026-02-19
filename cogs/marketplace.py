@@ -3,10 +3,8 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 from discord import app_commands, Interaction
-import sqlite3
 import json
 import uuid
-import os
 import math
 from database import DatabaseManager, get_db
 
@@ -966,7 +964,6 @@ class MarketplaceCommands(commands.Cog):
         """List a card for sale in the marketplace"""
 
         conn = self.db._get_connection()
-        db_type = self.db._db_type
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -983,22 +980,14 @@ class MarketplaceCommands(commands.Cog):
 
             card_name, rarity = card
 
-            # List the card - use correct table name and columns
             listing_id = f"listing_{uuid.uuid4().hex[:8]}"
 
-            if db_type == "postgresql":
-                cursor.execute("""
-                    INSERT INTO market_listings
-                    (listing_id, card_id, seller_user_id, asking_gold, status, created_at)
-                    VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
-                    ON CONFLICT (listing_id) DO UPDATE SET asking_gold = EXCLUDED.asking_gold
-                """, (listing_id, card_id, interaction.user.id, price))
-            else:
-                cursor.execute("""
-                    INSERT OR REPLACE INTO market_listings
-                    (listing_id, card_id, seller_user_id, asking_gold, status, created_at)
-                    VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
-                """, (listing_id, card_id, interaction.user.id, price))
+            cursor.execute("""
+                INSERT INTO market_listings
+                (listing_id, card_id, seller_user_id, asking_gold, status, created_at)
+                VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
+                ON CONFLICT (listing_id) DO UPDATE SET asking_gold = EXCLUDED.asking_gold
+            """, (listing_id, card_id, interaction.user.id, price))
             conn.commit()
         finally:
             conn.close()
@@ -1032,11 +1021,10 @@ class MarketplaceCommands(commands.Cog):
         """Purchase a card from the marketplace"""
 
         conn = self.db._get_connection()
-        db_type = self.db._db_type
         try:
             cursor = conn.cursor()
 
-            # Check if card is listed - use correct table and column names
+            # Check if card is listed
             cursor.execute("""
                 SELECT c.card_id, c.name, c.rarity, c.image_url,
                        m.asking_gold, m.seller_user_id, m.status, m.listing_id
@@ -1107,19 +1095,12 @@ class MarketplaceCommands(commands.Cog):
                     UPDATE user_inventory SET gold = gold - ? WHERE user_id = ?
                 """, (price, interaction.user.id))
 
-                # Ensure seller has inventory record (PostgreSQL vs SQLite syntax)
-                if db_type == "postgresql":
-                    cursor.execute("""
-                        INSERT INTO user_inventory (user_id, gold)
-                        VALUES (?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
-                    """, (seller_id, price))
-                else:
-                    cursor.execute("""
-                        INSERT INTO user_inventory (user_id, gold)
-                        VALUES (?, ?)
-                        ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
-                    """, (seller_id, price))
+                # Ensure seller has inventory record and add gold
+                cursor.execute("""
+                    INSERT INTO user_inventory (user_id, gold)
+                    VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
+                """, (seller_id, price))
 
                 # Update listing status
                 cursor.execute("""
