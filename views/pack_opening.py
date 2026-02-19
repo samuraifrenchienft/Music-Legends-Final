@@ -273,164 +273,119 @@ class PackOpeningAnimator:
         delay: float = 2.0
     ):
         """
-        Animate the pack opening with sequential card reveals
-        
-        Args:
-            interaction: Discord interaction
-            cards: List of card data dicts
-            pack_id: Optional pack ID
-            check_duplicates: Whether to check for duplicate cards
-            delay: Delay between card reveals in seconds
+        Animate the pack opening with sequential card reveals.
+
+        IMPORTANT: This is called AFTER the interaction has already been responded to
+        (e.g. via edit_message on a button click).  All messages here use
+        interaction.followup.send() and message.edit() — NEVER edit_original_response
+        (which would clobber the claim button) or channel.send (which needs perms).
         """
-        
+
         try:
             # Create skip view
             skip_view = SkipView()
-            
-            # Show loading message with skip button and pack opening sound
+
+            # Send the loading/"shuffling" message as a followup — this is the
+            # message we'll .edit() for the entire animation sequence.
             loading_embed = self.create_loading_embed()
             audio_file = self.get_audio_file('pack_opening')
-            
-            # Send with audio if available
+
             try:
                 if audio_file:
-                    message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False, file=audio_file)
+                    anim_msg = await interaction.followup.send(
+                        embed=loading_embed, view=skip_view, wait=True, file=audio_file
+                    )
                 else:
-                    message = await interaction.followup.send(embed=loading_embed, view=skip_view, ephemeral=False)
-            except discord.NotFound:
-                # Interaction expired, send simple message instead
-                await interaction.channel.send(f"🎁 Opening pack...")
-                message = None
-            
-            # Wait a moment
+                    anim_msg = await interaction.followup.send(
+                        embed=loading_embed, view=skip_view, wait=True
+                    )
+            except Exception as e:
+                print(f"[PACK_ANIM] Could not send loading message: {e}")
+                # Last-resort fallback — just confirm cards were granted
+                try:
+                    await interaction.followup.send(
+                        f"✅ Pack opened! {len(cards)} cards added to your collection."
+                    )
+                except Exception:
+                    pass
+                return
+
             await asyncio.sleep(1.5)
-            
+
             # Track new cards
-            new_cards_count = 0
-            
-            # Check for legendary cards upfront
-            legendary_indices = [i for i, c in enumerate(cards) if c.get('rarity') == 'legendary']
-            
-            # Reveal each card sequentially
+            new_cards_count = len(cards)  # All are new from a fresh pack open
+
+            # Reveal each card sequentially by editing the animation message
             for i, card in enumerate(cards, 1):
-                # Check if user skipped
                 if skip_view.skipped:
                     break
-                
-                # Check if duplicate (simplified - would need DB check in real implementation)
-                is_duplicate = False
-                if not check_duplicates:
-                    is_duplicate = False
-                else:
-                    # TODO: Check database for existing card
-                    is_duplicate = False
-                
-                if not is_duplicate:
-                    new_cards_count += 1
-                
-                # Get rarity for delay adjustment
+
                 rarity = card.get('rarity', 'common')
-                
-                # Show legendary teaser if this is a legendary card
+
+                # Legendary teaser
                 if rarity == 'legendary':
-                    legendary_teaser = self.create_legendary_teaser_embed()
-                    # Get audio file if available
-                    audio_file = self.get_audio_file('legendary_pull')
                     try:
-                        if audio_file:
-                            await interaction.edit_original_response(embed=legendary_teaser, attachments=[audio_file], view=skip_view)
-                        else:
-                            await interaction.edit_original_response(embed=legendary_teaser, view=skip_view)
-                    except discord.NotFound:
-                        # Interaction expired, skip animation
-                        pass
-                    
-                    # Add emoji reactions for celebration
-                    try:
-                        msg = await interaction.original_response()
-                        await self.send_emoji_fireworks(interaction, msg)
-                    except:
-                        pass
-                    
-                    await asyncio.sleep(2.0)  # Dramatic pause
-                
-                # Create reveal embed
-                reveal_embed = self.create_card_reveal_embed(
-                    card,
-                    i,
-                    len(cards),
-                    is_duplicate
-                )
-                
-                # Update message with card reveal
+                        legendary_teaser = self.create_legendary_teaser_embed()
+                        await anim_msg.edit(embed=legendary_teaser, view=skip_view)
+                        # Celebration reactions
+                        try:
+                            await self.send_emoji_fireworks(interaction, anim_msg)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(2.0)
+                    except Exception as e:
+                        print(f"[PACK_ANIM] Legendary teaser edit failed: {e}")
+
+                # Card reveal
+                reveal_embed = self.create_card_reveal_embed(card, i, len(cards), False)
                 try:
-                    await interaction.edit_original_response(embed=reveal_embed, view=skip_view)
-                except discord.NotFound:
-                    # Interaction expired, send to channel instead
-                    if interaction.channel:
-                        await interaction.channel.send(embed=reveal_embed)
-                
+                    await anim_msg.edit(embed=reveal_embed, view=skip_view)
+                except Exception as e:
+                    print(f"[PACK_ANIM] Card {i} reveal edit failed: {e}")
+
                 # Rarity-specific delays
                 if i < len(cards):
                     if rarity == 'legendary':
-                        await asyncio.sleep(3.0)  # Longer for legendary
+                        await asyncio.sleep(3.0)
                     elif rarity == 'epic':
-                        await asyncio.sleep(2.5)  # Longer for epic
+                        await asyncio.sleep(2.5)
                     elif rarity == 'rare':
-                        await asyncio.sleep(2.0)  # Standard for rare
+                        await asyncio.sleep(2.0)
                     else:
-                        await asyncio.sleep(1.0)  # Quick for common
-            
-            # Wait before showing summary
+                        await asyncio.sleep(1.0)
+
+            # Final summary
             await asyncio.sleep(1.5)
-            
-            # Show final summary
-            summary_embed = self.create_summary_embed(
-                cards,
-                pack_id,
-                new_cards_count
-            )
+            summary_embed = self.create_summary_embed(cards, pack_id, new_cards_count)
             try:
-                await interaction.edit_original_response(embed=summary_embed, view=None)
-            except discord.NotFound:
-                # Interaction expired, send to channel
-                if interaction.channel:
-                    await interaction.channel.send(embed=summary_embed)
-            
+                await anim_msg.edit(embed=summary_embed, view=None)
+            except Exception as e:
+                print(f"[PACK_ANIM] Summary edit failed: {e}")
+
             # Trigger backup if rare cards were received
             rare_rarities = ['legendary', 'epic', 'mythic']
-            has_rare_cards = any(card.get('rarity') in rare_rarities for card in cards)
-            
-            if has_rare_cards:
+            if any(card.get('rarity') in rare_rarities for card in cards):
                 try:
                     from services.backup_service import backup_service
                     user_id = interaction.user.id if hasattr(interaction, 'user') else None
                     backup_path = await backup_service.backup_critical(
-                        'pack_opening',
-                        f"user_{user_id}" if user_id else ""
+                        'pack_opening', f"user_{user_id}" if user_id else ""
                     )
                     if backup_path:
-                        print(f"💾 Critical backup created after rare card pull: {backup_path}")
+                        print(f"💾 Critical backup after rare card pull: {backup_path}")
                 except Exception as e:
                     print(f"⚠️ Backup trigger failed (non-critical): {e}")
-            
+
         except Exception as e:
             print(f"❌ Error in pack opening animation: {e}")
             import traceback
             traceback.print_exc()
-            
-            # Fallback to simple message
             try:
                 await interaction.followup.send(
-                    f"✅ Pack opened! {len(cards)} cards added to your collection.",
-                    ephemeral=True
+                    f"✅ Pack opened! {len(cards)} cards added to your collection."
                 )
-            except:
-                # If that fails too, try channel
-                if interaction.channel:
-                    await interaction.channel.send(
-                        f"✅ Pack opened! {len(cards)} cards added to your collection."
-                    )
+            except Exception:
+                pass
 
 
 # Convenience function for quick pack opening

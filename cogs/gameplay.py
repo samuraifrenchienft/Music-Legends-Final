@@ -109,7 +109,9 @@ class CollectionView(discord.ui.View):
 
     # YouTube thumbnail quality variants — cycling through these gives Discord a
     # genuinely different URL path each time, beating its embed image cache.
-    _YT_QUALITIES = ["hqdefault.jpg", "mqdefault.jpg", "sddefault.jpg", "default.jpg"]
+    # Only hqdefault and mqdefault are reliably available for all videos;
+    # sddefault returns 404 for many videos which breaks Discord embeds.
+    _YT_QUALITIES = ["hqdefault.jpg", "mqdefault.jpg", "0.jpg", "1.jpg", "2.jpg", "3.jpg"]
 
     @staticmethod
     def _resolve_image(card: dict, card_index: int = 0) -> str | None:
@@ -133,7 +135,7 @@ class CollectionView(discord.ui.View):
         return None
 
     def __init__(self, user_id: int, user_display: str, packs: list, all_cards: list):
-        super().__init__(timeout=180)
+        super().__init__(timeout=600)
         self.user_id       = user_id
         self._user_display = user_display
         self.all_cards     = all_cards   # full flat collection (fallback)
@@ -300,12 +302,20 @@ class CollectionView(discord.ui.View):
     async def _on_prev(self, interaction: Interaction):
         self.card_index = max(0, self.card_index - 1)
         self._rebuild()
-        await interaction.response.edit_message(embed=self._card_embed(), view=self)
+        try:
+            await interaction.response.edit_message(embed=self._card_embed(), view=self)
+        except Exception as e:
+            print(f"[COLLECTION] _on_prev error at index {self.card_index}: {e}")
+            import traceback; traceback.print_exc()
 
     async def _on_next(self, interaction: Interaction):
         self.card_index = min(len(self.current_cards) - 1, self.card_index + 1)
         self._rebuild()
-        await interaction.response.edit_message(embed=self._card_embed(), view=self)
+        try:
+            await interaction.response.edit_message(embed=self._card_embed(), view=self)
+        except Exception as e:
+            print(f"[COLLECTION] _on_next error at index {self.card_index}: {e}")
+            import traceback; traceback.print_exc()
 
     async def _on_back(self, interaction: Interaction):
         self.current_cards = []

@@ -138,7 +138,7 @@ class PackSelectView(ui.View):
         self._packs_by_id = {self._pack_key(p): p for p in packs if self._pack_key(p)}
 
         select = ui.Select(
-            placeholder="Choose your pack to battle with...",
+            placeholder="Select your deck...",
             options=options,
             custom_id="pack_select"
         )
@@ -463,7 +463,7 @@ class BattleCommands(commands.Cog):
         """Card selection + battle resolution.
         Returns True once rewards have been distributed (used by caller to skip emergency refund)."""
 
-        # Step 3 — Both players pick a pack to battle with
+        # Step 3 — Both players select a deck; best cards are auto-picked
         print(f"[BATTLE] Fetching packs for both players")
         challenger_packs = self.db.get_user_purchased_packs(interaction.user.id)
         opponent_packs = self.db.get_user_purchased_packs(opponent.id)
@@ -522,8 +522,8 @@ class BattleCommands(commands.Cog):
         print(f"[BATTLE] Sending pack pickers to channel")
         try:
             await interaction.followup.send(
-                f"{interaction.user.mention} 📦 **Choose your pack to battle with!** "
-                "Pick a deck below — your strongest card will lead the squad. (60s)",
+                f"{interaction.user.mention} 📦 **Select your deck!** "
+                "Your strongest card will be auto-picked as champion. (60s)",
                 view=c_view,
             )
         except Exception as e:
@@ -536,8 +536,8 @@ class BattleCommands(commands.Cog):
 
         try:
             await interaction.followup.send(
-                f"{opponent.mention} 📦 **Choose your pack to battle with!** "
-                "Pick a deck below — your strongest card will lead the squad. (60s)",
+                f"{opponent.mention} 📦 **Select your deck!** "
+                "Your strongest card will be auto-picked as champion. (60s)",
                 view=o_view,
             )
         except Exception as e:
@@ -665,8 +665,8 @@ class BattleCommands(commands.Cog):
             color=0xf39c12,
         )
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
-        start_embed.add_field(name="📦 Packs", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
-        start_embed.set_footer(text="Champions stepping forward...")
+        start_embed.add_field(name="📦 Decks", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
+        start_embed.set_footer(text="Auto-selecting strongest champions...")
         anim_msg = await interaction.followup.send(embed=start_embed, wait=True)
         await asyncio.sleep(1.5)
 
@@ -801,9 +801,17 @@ class BattleCommands(commands.Cog):
         if winning_card:
             yt_url = winning_card.get('youtube_url') or ''
             if yt_url:
+                # Normalize to canonical https://www.youtube.com/watch?v=ID format
+                # so Discord reliably auto-embeds it as a playable video
+                import re
+                yt_match = re.search(r'(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})', yt_url)
+                if yt_match:
+                    canonical_url = f"https://www.youtube.com/watch?v={yt_match.group(1)}"
+                else:
+                    canonical_url = yt_url  # fallback — send as-is
                 try:
                     await interaction.followup.send(
-                        f"🏆 **Winner's Track:**\n{yt_url}"
+                        f"🏆 **Winner's Track:**\n{canonical_url}"
                     )
                 except Exception as e:
                     print(f"[BATTLE] Could not send winner YouTube link: {e}")
