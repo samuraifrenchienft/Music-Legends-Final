@@ -3772,7 +3772,16 @@ class DatabaseManager:
         # Check if can claim
         if economy['last_daily_claim']:
             ldc = economy['last_daily_claim']
-            last_claim = ldc if isinstance(ldc, datetime) else datetime.fromisoformat(str(ldc))
+            if isinstance(ldc, datetime):
+                last_claim = ldc
+            else:
+                # PostgreSQL may return '+00' instead of '+00:00' which
+                # Python 3.10's fromisoformat() can't parse. Normalize it.
+                ldc_str = str(ldc)
+                # Convert '+00' → '+00:00' for fromisoformat compatibility
+                import re as _re
+                ldc_str = _re.sub(r'([+-]\d{2})$', r'\g<1>:00', ldc_str)
+                last_claim = datetime.fromisoformat(ldc_str)
             # Strip timezone so naive datetime.utcnow() can be subtracted
             if last_claim.tzinfo is not None:
                 last_claim = last_claim.replace(tzinfo=None)
