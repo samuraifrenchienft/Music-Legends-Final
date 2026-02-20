@@ -29,31 +29,63 @@ class StartGameCog(commands.Cog):
         await interaction.response.defer()
 
         # Check how many seed packs exist
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
-            pack_count = cursor.fetchone()[0]
+        try:
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                pack_count = cursor.fetchone()[0]
 
-            cursor.execute("""
-                SELECT name, pack_size FROM creator_packs
-                WHERE status = 'LIVE'
-                ORDER BY name
-                LIMIT 10
-            """)
-            sample_packs = cursor.fetchall()
+                cursor.execute("""
+                    SELECT name, pack_size FROM creator_packs
+                    WHERE status = 'LIVE'
+                    ORDER BY name
+                    LIMIT 10
+                """)
+                sample_packs = cursor.fetchall()
+            print(f"[START_GAME] Found {pack_count} LIVE packs")
+        except Exception as e:
+            print(f"[START_GAME] DB query failed: {e}")
+            import traceback; traceback.print_exc()
+            await interaction.followup.send(
+                f"Database error while checking packs: `{e}`", ephemeral=True
+            )
+            return
 
         if pack_count == 0:
-            # No packs - seed packs may not have loaded
-            error_embed = discord.Embed(
-                title="⚠️ No Packs Available",
-                description=(
-                    "Seed packs haven't loaded yet. This usually fixes itself on the next restart.\n\n"
-                    "If this persists, check Railway logs for seed pack errors."
-                ),
-                color=discord.Color.orange()
-            )
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-            return
+            # No packs - try forcing a reseed
+            print("[START_GAME] 0 LIVE packs — attempting emergency reseed...")
+            try:
+                import asyncio
+                from services.seed_packs import seed_packs_into_db
+                result = await asyncio.to_thread(seed_packs_into_db, force_reseed=True)
+                print(f"[START_GAME] Emergency reseed result: {result}")
+                # Re-check after reseed
+                with self.db._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                    pack_count = cursor.fetchone()[0]
+                    cursor.execute("""
+                        SELECT name, pack_size FROM creator_packs
+                        WHERE status = 'LIVE'
+                        ORDER BY name LIMIT 10
+                    """)
+                    sample_packs = cursor.fetchall()
+                print(f"[START_GAME] After reseed: {pack_count} LIVE packs")
+            except Exception as e:
+                print(f"[START_GAME] Emergency reseed failed: {e}")
+                import traceback; traceback.print_exc()
+
+            if pack_count == 0:
+                error_embed = discord.Embed(
+                    title="⚠️ No Packs Available",
+                    description=(
+                        "Seed packs haven't loaded yet. This usually fixes itself on the next restart.\n\n"
+                        "If this persists, check Railway logs for seed pack errors."
+                    ),
+                    color=discord.Color.orange()
+                )
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+                return
 
         # Create announcement embed
         embed = discord.Embed(

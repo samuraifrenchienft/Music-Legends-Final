@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Force rebuild - change this to invalidate cache
-ARG CACHE_BUST=2026-02-13-FIX-V4
+ARG CACHE_BUST=2026-02-20-SEED-FIX
 
 # Set working directory
 WORKDIR /app
