@@ -113,11 +113,23 @@ class CollectionView(discord.ui.View):
     # sddefault returns 404 for many videos which breaks Discord embeds.
     _YT_QUALITIES = ["hqdefault.jpg", "mqdefault.jpg", "0.jpg", "1.jpg", "2.jpg", "3.jpg"]
 
+    # Fallback placeholder for cards with no image or YouTube URL.
+    # Uses a public-domain music note image so embeds aren't blank.
+    _FALLBACK_IMAGES = [
+        "https://img.icons8.com/fluency/512/musical-notes.png",
+        "https://img.icons8.com/fluency/512/music.png",
+        "https://img.icons8.com/fluency/512/headphones.png",
+        "https://img.icons8.com/fluency/512/guitar.png",
+        "https://img.icons8.com/fluency/512/microphone.png",
+        "https://img.icons8.com/fluency/512/piano.png",
+    ]
+
     @staticmethod
     def _resolve_image(card: dict, card_index: int = 0) -> str | None:
         """Return the best available image URL for a card.
         Cycles YouTube thumbnail quality variants based on card_index so Discord's
-        CDN sees a different path on each page flip instead of serving a cached image."""
+        CDN sees a different path on each page flip instead of serving a cached image.
+        Falls back to a music-themed icon if no image or YouTube URL exists."""
         img = card.get('image_url') or ''
         # Reject obvious placeholder/example URLs
         if img and 'example.com' not in img and '_example' not in img:
@@ -132,7 +144,8 @@ class CollectionView(discord.ui.View):
                 # Rotate quality level by card index — different URL path each time
                 quality = CollectionView._YT_QUALITIES[card_index % len(CollectionView._YT_QUALITIES)]
                 return f"https://img.youtube.com/vi/{m.group(1)}/{quality}"
-        return None
+        # Fallback: cycle through music-themed placeholder icons
+        return CollectionView._FALLBACK_IMAGES[card_index % len(CollectionView._FALLBACK_IMAGES)]
 
     def __init__(self, user_id: int, user_display: str, packs: list, all_cards: list):
         super().__init__(timeout=600)
@@ -427,7 +440,12 @@ class GameplayCommands(commands.Cog):
             return await interaction.followup.send(embed=embed)
 
         view  = CollectionView(target.id, target.display_name, packs, all_cards)
-        embed = view._overview_embed(target.display_name)
+        # Auto-open "All My Cards" so users see their full collection immediately
+        view.current_cards = all_cards
+        view.pack_name = "All My Cards"
+        view.card_index = 0
+        view._rebuild()
+        embed = view._card_embed()
         await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="view", description="View details of a specific card")

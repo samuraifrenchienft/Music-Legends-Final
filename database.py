@@ -2348,8 +2348,8 @@ class DatabaseManager:
         finally:
             conn.close()
     
-    def get_user_deck(self, user_id: int, limit: int = 3) -> List[Dict]:
-        """Get user's deck (first N cards from collection)"""
+    def get_user_deck(self, user_id: int, limit: int = 5) -> List[Dict]:
+        """Get user's deck (top N cards from collection)"""
         collection = self.get_user_collection(user_id)
         return collection[:limit]
 
@@ -3017,14 +3017,19 @@ class DatabaseManager:
                             (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url,
                              impact, skill, longevity, culture, hype)
                             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-                            ON CONFLICT (card_id) DO NOTHING
+                            ON CONFLICT (card_id) DO UPDATE SET
+                                image_url = CASE WHEN COALESCE(cards.image_url, '') = '' THEN EXCLUDED.image_url ELSE cards.image_url END,
+                                youtube_url = CASE WHEN COALESCE(cards.youtube_url, '') = '' THEN EXCLUDED.youtube_url ELSE cards.youtube_url END
                         """, card_vals)
                     else:
                         cursor.execute(f"""
-                            INSERT OR IGNORE INTO cards
+                            INSERT INTO cards
                             (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url,
                              impact, skill, longevity, culture, hype)
                             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                            ON CONFLICT (card_id) DO UPDATE SET
+                                image_url = CASE WHEN COALESCE(cards.image_url, '') = '' THEN excluded.image_url ELSE cards.image_url END,
+                                youtube_url = CASE WHEN COALESCE(cards.youtube_url, '') = '' THEN excluded.youtube_url ELSE cards.youtube_url END
                         """, card_vals)
                     cursor.execute(f"""
                         INSERT INTO user_cards (user_id, card_id, acquired_from)
@@ -3112,14 +3117,19 @@ class DatabaseManager:
                             (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url,
                              impact, skill, longevity, culture, hype)
                             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
-                            ON CONFLICT (card_id) DO NOTHING
+                            ON CONFLICT (card_id) DO UPDATE SET
+                                image_url = CASE WHEN COALESCE(cards.image_url, '') = '' THEN EXCLUDED.image_url ELSE cards.image_url END,
+                                youtube_url = CASE WHEN COALESCE(cards.youtube_url, '') = '' THEN EXCLUDED.youtube_url ELSE cards.youtube_url END
                         """, stat_vals)
                     else:
                         cursor.execute(f"""
-                            INSERT OR IGNORE INTO cards
+                            INSERT INTO cards
                             (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url,
                              impact, skill, longevity, culture, hype)
                             VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                            ON CONFLICT (card_id) DO UPDATE SET
+                                image_url = CASE WHEN COALESCE(cards.image_url, '') = '' THEN excluded.image_url ELSE cards.image_url END,
+                                youtube_url = CASE WHEN COALESCE(cards.youtube_url, '') = '' THEN excluded.youtube_url ELSE cards.youtube_url END
                         """, stat_vals)
                     cursor.execute(f"""
                         INSERT INTO user_cards (user_id, card_id, acquired_from)

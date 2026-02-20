@@ -93,16 +93,16 @@ class CardGameCog(Cog):
             str(interaction.user)
         )
         
-        # Get user's deck (first 3 cards from collection)
-        deck_cards = self.db.get_user_deck(interaction.user.id, 3)
-        
-        if len(deck_cards) < 3:
-            await interaction.response.send_message(f"You need at least 3 cards to make a deck! You currently have {len(deck_cards)} cards.", ephemeral=True)
+        # Get user's deck (top 5 cards from collection)
+        deck_cards = self.db.get_user_deck(interaction.user.id, 5)
+
+        if len(deck_cards) < 5:
+            await interaction.response.send_message(f"You need at least 5 cards to make a deck! You currently have {len(deck_cards)} cards.", ephemeral=True)
             return
 
         embed = discord.Embed(
             title=f"⚔️ {interaction.user.name}'s Battle Deck",
-            description="Your top 3 cards for battle",
+            description="Your top 5 cards for battle",
             color=discord.Color.red()
         )
         
