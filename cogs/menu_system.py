@@ -5,6 +5,7 @@ Music Legends - Persistent Menu System
 No need to check user IDs in commands - channel permissions handle access!
 """
 
+import asyncio
 import discord
 from discord import app_commands, Interaction
 from discord.ext import commands
@@ -20,6 +21,7 @@ from music_api_manager import music_api
 from views.song_selection import SongSelectionView
 from cogs.pack_creation_helpers import show_song_selection_lastfm, finalize_pack_creation_lastfm
 from services.image_cache import safe_image
+from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL, rarity_emoji, rarity_badge
 
 
 # ============================================
@@ -495,49 +497,84 @@ class UserHubView(discord.ui.View):
         row=1
     )
     async def daily_button(self, interaction: Interaction, button: discord.ui.Button):
-        """Claim daily reward"""
+        """Claim daily reward — multi-phase animation"""
+        await interaction.response.defer(ephemeral=True)
+
+        # ── Phase 1: suspense ──────────────────────────────────────
+        phase1 = discord.Embed(
+            title="🎁 Preparing Your Daily Reward...",
+            description="✨ Checking your streak...\n🔮 Rolling your free pack...\n⏳ Almost ready!",
+            color=PURPLE,
+        )
+        phase1.set_author(name="Music Legends", icon_url=LOGO_URL)
+        phase1.set_image(url=BANNER_URL)
+        phase1.set_footer(text="🎵 Music Legends • Daily claim")
+        msg = await interaction.followup.send(embed=phase1, ephemeral=True, wait=True)
+
+        await asyncio.sleep(2.0)
+
+        # ── Fetch reward ───────────────────────────────────────────
         result = self.db.claim_daily_reward(interaction.user.id)
-        
-        if result.get('success'):
-            embed = discord.Embed(
-                title="✅ Daily Reward Claimed!",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="💰 Gold", value=f"+{result.get('gold', 0)}", inline=True)
-            embed.add_field(name="🔥 Streak", value=f"{result.get('streak', 1)} days", inline=True)
-            if result.get('tickets', 0) > 0:
-                embed.add_field(name="🎫 Tickets", value=f"+{result['tickets']}", inline=True)
 
-            # Display daily free pack cards
-            cards = result.get('cards') or []
-            pack_name = result.get('pack_name') or 'Daily Pack'
-            if cards:
-                rarity_emoji = {'common': '⚪', 'rare': '🔵', 'epic': '🟣',
-                                'legendary': '⭐', 'mythic': '🔴'}
-                card_lines = []
-                for card in cards[:5]:  # show up to 5
-                    re = rarity_emoji.get((card.get('rarity') or 'common').lower(), '⚪')
-                    card_lines.append(f"{re} **{card.get('name', 'Unknown')}**")
-                if len(cards) > 5:
-                    card_lines.append(f"...+{len(cards) - 5} more")
-                embed.add_field(
-                    name=f"🎴 {pack_name} ({len(cards)} cards)",
-                    value="\n".join(card_lines),
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="🎴 Daily Pack",
-                    value="No cards available right now — check back later!",
-                    inline=False
-                )
-
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"❌ {result.get('error', 'Already claimed today!')}",
-                ephemeral=True
+        if not result.get('success'):
+            err = discord.Embed(
+                title="⏰ Already Claimed!",
+                description=result.get('error', 'You already claimed today. Come back tomorrow!'),
+                color=PINK,
             )
+            err.set_author(name="Music Legends", icon_url=LOGO_URL)
+            err.set_footer(text="🎵 Music Legends")
+            await msg.edit(embed=err)
+            return
+
+        # ── Phase 2: gold + streak reveal ─────────────────────────
+        streak = result.get('streak', 1)
+        gold = result.get('gold', 0)
+        tickets = result.get('tickets', 0)
+        streak_bonus = "🔥 Streak Bonus!" if streak >= 7 else ""
+
+        phase2 = discord.Embed(
+            title="💰 Daily Reward Unlocked!",
+            description=(
+                f"**{streak_bonus}**\n\n"
+                f"💰 **+{gold:,} Gold**\n"
+                f"🔥 **{streak} day streak**"
+                + (f"\n🎫 **+{tickets} Tickets**" if tickets else "")
+            ),
+            color=GOLD,
+        )
+        phase2.set_author(name="Music Legends", icon_url=LOGO_URL)
+        phase2.set_thumbnail(url=LOGO_URL)
+        phase2.set_footer(text="🎵 Music Legends • And that's not all...")
+        await msg.edit(embed=phase2)
+
+        await asyncio.sleep(2.0)
+
+        # ── Phase 3: free pack card reveal ────────────────────────
+        cards = result.get('cards') or []
+        pack_name = result.get('pack_name') or 'Daily Pack'
+
+        phase3 = discord.Embed(
+            title=f"🎴 {pack_name}",
+            description=(
+                f"Your daily free pack contains **{len(cards)} card(s)**!"
+                if cards else "No cards available today — check back tomorrow!"
+            ),
+            color=BLUE,
+        )
+        phase3.set_author(name="Music Legends", icon_url=LOGO_URL)
+
+        if cards:
+            lines = []
+            for card in cards[:5]:
+                r = (card.get('rarity') or 'common').lower()
+                lines.append(f"{rarity_emoji(r)} **{card.get('name', 'Unknown')}** — {rarity_badge(r)}")
+            if len(cards) > 5:
+                lines.append(f"...+{len(cards) - 5} more")
+            phase3.add_field(name="🎴 Cards Received", value="\n".join(lines), inline=False)
+
+        phase3.set_footer(text="🎵 Music Legends • See you tomorrow!")
+        await msg.edit(embed=phase3)
     
     @discord.ui.button(
         label="📊 Stats",
