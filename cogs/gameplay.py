@@ -5,7 +5,8 @@ from discord import Interaction, app_commands, ui
 import random
 from card_economy import CardEconomyManager
 from database import DatabaseManager, get_db
-from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL
+from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL, power_tier
+from config.cards import compute_card_power
 
 
 
@@ -614,13 +615,14 @@ class GameplayCommands(commands.Cog):
             inline=True
         )
         
-        # Power rating with enhanced visual
-        total_power = (impact + skill + longevity + culture + hype) // 5
-        power_bar = "██████████"[:total_power // 10] + "░░░░░░░░░░"[total_power // 10:]
-        
+        # Power rating: use same formula as battle (stats avg + rarity bonus → 0–135)
+        total_power = compute_card_power(card)
+        filled = round((total_power / 135) * 10)
+        power_bar = "█" * filled + "░" * (10 - filled)
+
         embed.add_field(
             name="💪 **POWER LEVEL**",
-            value=f"```{power_bar}```\n**{total_power}** / 100 **POWER**\n{self._get_power_tier(total_power)}",
+            value=f"```{power_bar}```\n**{total_power}** / 135 **POWER**\n{power_tier(total_power)}",
             inline=False
         )
         

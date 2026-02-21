@@ -17,6 +17,7 @@ from ui.brand import (
     LOGO_URL, BANNER_URL, VIDEO_URL,
     stat_bar, power_tier, rarity_badge, rarity_emoji,
 )
+from config.cards import compute_card_power
 
 
 class SkipView(discord.ui.View):
@@ -183,10 +184,10 @@ class PackOpeningAnimator:
         )
         embed.add_field(name="📊 Stats", value=f"```\n{stats_text}\n```", inline=False)
 
-        # Power rating using all 5 stats
-        power = (impact + skill + longevity + culture + hype) // 5
+        # Power rating: use same formula as battle (stats avg + rarity bonus → 0–135)
+        power = compute_card_power(card)
 
-        power_text = f"💪 **{power}** Power  —  {power_tier(power)}"
+        power_text = f"💪 **{power}** / 135 Power  —  {power_tier(power)}"
         embed.add_field(name="⚡ Overall", value=power_text, inline=True)
 
         # Image — try image_url first, fall back to YouTube thumbnail

@@ -97,10 +97,7 @@ def cleanup_old_states():
                     cleanup_count += 1
                 except:
                     pass
-                    
-        except Exception as e:
-            print(f"Error during cleanup: {e}")
-        
+
         if cleanup_count > 0:
             print(f"Cleaned up {cleanup_count} old state files")
             

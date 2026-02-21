@@ -119,7 +119,7 @@ class SafeDashboardView(View):
             # Verify timestamp (optional but recommended)
             last_updated = current_state.get("last_updated", 0)
             current_time = int(time.time())
-            if current_time - last_updated > 86400: 24 hours
+            if current_time - last_updated > 86400:  # 24 hours
                 print(f"⚠️ State expired for user {self.user_id} (last updated: {last_updated})")
                 return False
             
@@ -277,7 +277,7 @@ class SafePackActionsView(View):
             # Verify timestamp (optional but recommended)
             last_updated = current_state.get("last_updated", 0)
             current_time = int(time.time())
-            if current_time - last_updated > 86400: 24 hours
+            if current_time - last_updated > 86400:  # 24 hours
                 print(f"⚠️ State expired for user {self.user_id} (last updated: {last_updated})")
                 return False
             
