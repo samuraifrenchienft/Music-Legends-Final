@@ -7,6 +7,7 @@ from discord import app_commands, Interaction
 from discord.ext import commands
 import sqlite3
 import os
+from ui.brand import PURPLE, BLUE, PINK, GOLD, NAVY, LOGO_URL, BANNER_URL
 
 
 class StartGameCog(commands.Cog):
@@ -82,7 +83,7 @@ class StartGameCog(commands.Cog):
                         "Seed packs haven't loaded yet. This usually fixes itself on the next restart.\n\n"
                         "If this persists, check Railway logs for seed pack errors."
                     ),
-                    color=discord.Color.orange()
+                    color=PINK,
                 )
                 await interaction.followup.send(embed=error_embed, ephemeral=True)
                 return
@@ -106,8 +107,10 @@ class StartGameCog(commands.Cog):
 • `/battle @friend` - Challenge someone to a card battle
 • `/packs` - Browse available card packs
             """,
-            color=discord.Color.purple()
+            color=PURPLE,
         )
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        embed.set_image(url=BANNER_URL)
 
         # Show sample packs
         if sample_packs:
@@ -124,7 +127,7 @@ class StartGameCog(commands.Cog):
             inline=False
         )
 
-        embed.set_footer(text="Use /help for a full list of commands")
+        embed.set_footer(text="🎵 Music Legends • Use /help for all commands")
 
         await interaction.followup.send("@everyone", embed=embed)
 
@@ -136,7 +139,7 @@ class StartGameCog(commands.Cog):
                 drop_embed = discord.Embed(
                     title="⚪ WELCOME PACK DROP! ⚪",
                     description=f"**{pack['name']}**\nFirst to click claims all {pack['pack_size']} cards!",
-                    color=discord.Color.light_gray()
+                    color=NAVY,
                 )
                 drop_embed.add_field(name="Tier", value="Community", inline=True)
                 drop_embed.add_field(name="Cards", value=str(pack['pack_size']), inline=True)

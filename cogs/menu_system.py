@@ -71,7 +71,7 @@ def create_battle_pass_embed(user_id: int, db: DatabaseManager) -> discord.Embed
     embed = discord.Embed(
         title=f"🎵 Battle Pass - Season {BattlePass.SEASON_NUMBER}: {BattlePass.SEASON_NAME}",
         description=f"{'👑 **PREMIUM ACTIVE**' if has_premium else '🔒 Free Track Only'}",
-        color=discord.Color.gold() if has_premium else discord.Color.blue()
+        color=discord.Color(GOLD) if has_premium else discord.Color(BLUE)
     )
     
     embed.add_field(
@@ -113,7 +113,7 @@ def create_vip_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
     
     embed = discord.Embed(
         title="👑 VIP Membership",
-        color=discord.Color.gold() if is_vip else discord.Color.light_grey()
+        color=discord.Color(GOLD) if is_vip else discord.Color(NAVY)
     )
     
     if is_vip:
@@ -162,7 +162,7 @@ def create_shop_embed() -> discord.Embed:
     embed = discord.Embed(
         title="🏪 Music Legends Shop",
         description="Purchase packs, tickets, and premium features!",
-        color=discord.Color.green()
+        color=discord.Color(GREEN)
     )
     
     embed.add_field(
@@ -197,7 +197,7 @@ def create_battle_embed() -> discord.Embed:
     embed = discord.Embed(
         title="⚔️ Battle Arena",
         description="Challenge other players to card battles!",
-        color=discord.Color.red()
+        color=discord.Color(PINK)
     )
     
     embed.add_field(
@@ -235,7 +235,7 @@ def create_collection_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
     embed = discord.Embed(
         title="🎴 Your Collection",
         description=f"**Total Cards:** {len(cards)}",
-        color=discord.Color.purple()
+        color=discord.Color(PURPLE)
     )
     
     embed.add_field(
@@ -277,7 +277,7 @@ def create_stats_embed(user_id: int, db: DatabaseManager) -> discord.Embed:
     
     embed = discord.Embed(
         title="📊 Your Stats",
-        color=discord.Color.blue()
+        color=discord.Color(BLUE)
     )
     
     if user:
@@ -325,7 +325,7 @@ def create_leaderboard_embed(db: DatabaseManager) -> discord.Embed:
     embed = discord.Embed(
         title="🏆 Leaderboard",
         description="Top 10 Players by Wins",
-        color=discord.Color.gold()
+        color=discord.Color(GOLD)
     )
     
     if top_players:
@@ -365,7 +365,7 @@ def create_bot_stats_embed(db: DatabaseManager) -> discord.Embed:
     
     embed = discord.Embed(
         title="📊 Bot Statistics",
-        color=discord.Color.blue()
+        color=discord.Color(BLUE)
     )
     
     embed.add_field(name="👥 Total Users", value=f"{total_users:,}", inline=True)
@@ -382,7 +382,7 @@ def create_database_embed() -> discord.Embed:
     embed = discord.Embed(
         title="🗄️ Database Management",
         description="Manage the bot's database",
-        color=discord.Color.orange()
+        color=discord.Color(GOLD)
     )
     
     embed.add_field(
@@ -401,7 +401,7 @@ def create_settings_embed() -> discord.Embed:
     embed = discord.Embed(
         title="⚙️ Bot Settings",
         description="Configure bot behavior",
-        color=discord.Color.greyple()
+        color=discord.Color(NAVY)
     )
     
     embed.add_field(
@@ -624,7 +624,7 @@ class BattlePassView(discord.ui.View):
             free = FREE_TRACK_REWARDS.get(tier, {})
             tiers_text += f"**Tier {tier}:** {bp.format_reward(free)}\n"
         
-        embed = discord.Embed(title="📜 Battle Pass Tiers (Free Track)", description=tiers_text, color=discord.Color.blue())
+        embed = discord.Embed(title="📜 Battle Pass Tiers (Free Track)", description=tiers_text, color=discord.Color(BLUE))
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @discord.ui.button(label="Upgrade to Premium", style=discord.ButtonStyle.primary, emoji="💎")
@@ -646,7 +646,7 @@ class BattlePassView(discord.ui.View):
                         "- Exclusive Cosmetics\n\n"
                         f"[Click here to checkout]({result['checkout_url']})"
                     ),
-                    color=discord.Color.purple()
+                    color=discord.Color(PURPLE)
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             else:
@@ -697,7 +697,7 @@ class ShopView(discord.ui.View):
         embed = discord.Embed(
             title="📦 Buy a Pack",
             description="Select a tier below to see details and purchase.",
-            color=discord.Color.gold(),
+            color=discord.Color(GOLD),
         )
         embed.add_field(
             name="Available Tiers",
@@ -1038,7 +1038,7 @@ class LegendaryCosmeticsView(discord.ui.View):
             embed = discord.Embed(
                 title="✨ Legendary Card Cosmetics Settings",
                 description=settings['description'],
-                color=discord.Color.gold()
+                color=discord.Color(GOLD)
             )
             
             embed.add_field(
@@ -1097,7 +1097,7 @@ class SetLegendaryFrameModal(discord.ui.Modal, title="Set Legendary Frame"):
             embed = discord.Embed(
                 title="✅ Frame Style Updated",
                 description=f"Legendary cards will now have **{frame.title()}** frames",
-                color=discord.Color.green()
+                color=discord.Color(GREEN)
             )
             
             embed.add_field(
@@ -1142,7 +1142,7 @@ class SetLegendaryFoilModal(discord.ui.Modal, title="Set Legendary Foil"):
             embed = discord.Embed(
                 title="✅ Foil Effect Updated",
                 description=f"Legendary cards will now have **{foil.title()}** foil effect",
-                color=discord.Color.green()
+                color=discord.Color(GREEN)
             )
             
             embed.add_field(
@@ -1335,7 +1335,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                         f"**{artist_data['playcount']:,}** total plays\n\n"
                         f"Found **{len(tracks)}** top tracks from Last.fm"
                     ),
-                    color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
+                    color=discord.Color(GOLD) if self.pack_type == 'gold' else discord.Color(BLUE)
                 )
                 
                 # Get Last.fm artist image
@@ -1596,7 +1596,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
             embed = discord.Embed(
                 title="✅ Pack Created Successfully!",
                 description=f"**{pack_name}** featuring {artist['name']}",
-                color=discord.Color.green()
+                color=discord.Color(GREEN)
             )
             
             embed.add_field(name="📦 Pack ID", value=f"`{pack_id}`", inline=True)
@@ -1869,7 +1869,7 @@ class PackCreationModal(discord.ui.Modal, title="Create Pack"):
                 f"🎥 Using YouTube video thumbnails\n"
                 f"Found **{len(normalized_videos)}** videos. Select up to 5 songs for your pack."
             ),
-            color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
+            color=discord.Color(GOLD) if self.pack_type == 'gold' else discord.Color(BLUE)
         )
         
         if artist.get('image_url'):
@@ -2003,7 +2003,7 @@ class GiveCardModal(discord.ui.Modal, title="Give Card"):
             embed = discord.Embed(
                 title="✅ Card Given",
                 description=f"Gave **{self.rarity.upper()}** card to {user.mention}",
-                color=discord.Color.green()
+                color=discord.Color(GREEN)
             )
             embed.add_field(name="Card Name", value=self.card_name.value, inline=False)
             embed.add_field(name="User", value=f"{user.name} ({target_id})", inline=False)
@@ -2110,7 +2110,7 @@ class UserLookupModal(discord.ui.Modal, title="User Lookup"):
                 cursor.execute("SELECT COUNT(*) FROM user_cards WHERE user_id = ?", (target_id,))
                 card_count = cursor.fetchone()[0]
             
-            embed = discord.Embed(title=f"👥 User Lookup: {target_id}", color=discord.Color.blue())
+            embed = discord.Embed(title=f"👥 User Lookup: {target_id}", color=discord.Color(BLUE))
             
             if user:
                 embed.add_field(name="User Found", value="✅ Yes", inline=True)
@@ -2148,7 +2148,7 @@ class AnnouncementModal(discord.ui.Modal, title="Send Announcement"):
         embed = discord.Embed(
             title="📢 Announcement",
             description=self.message.value,
-            color=discord.Color.gold()
+            color=discord.Color(GOLD)
         )
         embed.set_footer(text=f"From: {interaction.user.display_name}")
         
@@ -2231,8 +2231,10 @@ class MenuSystemCog(commands.Cog):
                 "**Important:** After bot restarts, run `/setup_user_hub` again\n"
                 "to refresh the menu buttons in this channel."
             ),
-            color=discord.Color.blue()
+            color=discord.Color(PURPLE)
         )
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        embed.set_image(url=BANNER_URL)
 
         # Add server owner revenue sharing info
         if interaction.guild and interaction.user.id == interaction.guild.owner_id:
@@ -2273,7 +2275,7 @@ class MenuSystemCog(commands.Cog):
         embed = discord.Embed(
             title="🎵 Music Legends - Quick Menu",
             description="Select an option below:",
-            color=discord.Color.blue()
+            color=discord.Color(BLUE)
         )
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
