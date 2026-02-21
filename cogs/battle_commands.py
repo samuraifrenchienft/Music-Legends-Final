@@ -18,6 +18,7 @@ from discord_cards import ArtistCard
 from database import get_db
 from config.economy import BATTLE_WAGERS, calculate_battle_rewards
 from config.cards import RARITY_EMOJI as CARD_RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_team_power
+from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, LOGO_URL
 
 
 # Shared battle manager (per-bot instance)
@@ -635,8 +636,8 @@ class BattleCommands(commands.Cog):
             print(f"[BATTLE] Warning: battle stats update failed (non-critical): {e}")
 
         # --- Battle Animation ---
-        c_rarity_e = CARD_RARITY_EMOJI.get((c_card_data.get('rarity') or 'common').lower(), "\u26aa")
-        o_rarity_e = CARD_RARITY_EMOJI.get((o_card_data.get('rarity') or 'common').lower(), "\u26aa")
+        c_rarity_e = CARD_RARITY_EMOJI.get((c_card_data.get('rarity') or 'common').lower(), "⚪")
+        o_rarity_e = CARD_RARITY_EMOJI.get((o_card_data.get('rarity') or 'common').lower(), "⚪")
         c_name = c_card_data.get('name', 'Unknown')
         o_name = o_card_data.get('name', 'Unknown')
         c_title = c_card_data.get('title', '') or ''
@@ -662,16 +663,19 @@ class BattleCommands(commands.Cog):
         start_embed = discord.Embed(
             title="⚔️ Battle Commencing!",
             description=f"**{interaction.user.display_name}** vs **{opponent.display_name}**",
-            color=0xf39c12,
+            color=GOLD,
         )
+        start_embed.set_author(name="Music Legends", icon_url=LOGO_URL)
         start_embed.add_field(name=f"{tier['emoji']} Wager", value=f"{wager_cost}g ({tier['name']})", inline=True)
-        start_embed.add_field(name="📦 Decks", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
-        start_embed.set_footer(text="Auto-selecting strongest champions...")
+        start_embed.add_field(name="📦 Packs", value=f"{c_pack_name} vs {o_pack_name}", inline=True)
+        start_embed.set_footer(text="⚔️ Champions stepping forward...")
+        # wait=True required — followup.send() is a Webhook call, returns None by default
         anim_msg = await interaction.followup.send(embed=start_embed, wait=True)
         await asyncio.sleep(1.5)
 
         # Phase 2a — Champion Reveal
-        champ_embed = discord.Embed(title="🏆 Champions Revealed!", color=0x9b59b6)
+        champ_embed = discord.Embed(title="🏆 Champions Revealed!", color=PURPLE)
+        champ_embed.set_author(name="Music Legends", icon_url=LOGO_URL)
         champ_embed.add_field(
             name=f"🔵 {interaction.user.display_name} — {c_pack_name}",
             value=f"{c_rarity_e} **{c_name}**" + (f" — {c_title}" if c_title else "") + f"\nPower: **{c_champ_power}**",
@@ -688,7 +692,8 @@ class BattleCommands(commands.Cog):
         await asyncio.sleep(1.5)
 
         # Phase 2b — Full Squad Reveal + Power Bars
-        squad_embed = discord.Embed(title="🎵 Full Squads!", color=0x3498db)
+        squad_embed = discord.Embed(title="🎵 Full Squads!", color=BLUE)
+        squad_embed.set_author(name="Music Legends", icon_url=LOGO_URL)
         squad_embed.add_field(
             name=f"🔵 {interaction.user.display_name} [{c_pack_name}]",
             value=(
@@ -714,7 +719,8 @@ class BattleCommands(commands.Cog):
 
         # Phase 3 — Critical Hit reveal (if any)
         if p1['critical_hit'] or p2['critical_hit']:
-            crit_embed = discord.Embed(title="💥 CRITICAL HIT!", color=0xe74c3c)
+            crit_embed = discord.Embed(title="💥 CRITICAL HIT!", color=PINK)
+            crit_embed.set_author(name="Music Legends", icon_url=LOGO_URL)
             crit_lines = []
             if p1['critical_hit']:
                 crit_lines.append(f"🔵 **{interaction.user.display_name}**'s team lands a CRIT! {c_power} → **{p1['final_power']}** ⚡")
@@ -898,13 +904,15 @@ class BattleCommands(commands.Cog):
 
         embed = discord.Embed(
             title=f"⚔️ Battle Stats — {target.display_name}",
-            color=0x3498db
+            color=BLUE,
         )
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
         embed.set_thumbnail(url=target.display_avatar.url)
         embed.add_field(name="🏆 Wins", value=str(wins), inline=True)
         embed.add_field(name="💀 Losses", value=str(losses), inline=True)
         embed.add_field(name="🎮 Total", value=str(total), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
+        embed.set_footer(text="🎵 Music Legends")
 
         await interaction.response.send_message(embed=embed)
 
