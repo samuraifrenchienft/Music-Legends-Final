@@ -12,6 +12,11 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 from services.image_cache import safe_image
+from ui.brand import (
+    GOLD, PURPLE, BLUE, NAVY, PINK, GREEN,
+    LOGO_URL, BANNER_URL, VIDEO_URL,
+    stat_bar, power_tier, rarity_badge, rarity_emoji,
+)
 
 
 class SkipView(discord.ui.View):
@@ -46,36 +51,36 @@ class PackOpeningAnimator:
         'card_pickup': AUDIO_DIR / 'card_pickup.mp3',
     }
     
-    # Rarity colors and emojis
+    # Rarity colors and emojis (brand palette from ui/brand.py)
     RARITY_CONFIG = {
         'common': {
-            'color': discord.Color.light_gray(),
+            'color': 0x95A5A6,
             'emoji': '⚪',
             'effect': '',
             'name': 'Common'
         },
         'rare': {
-            'color': discord.Color.blue(),
+            'color': BLUE,
             'emoji': '🔵',
             'effect': '✨',
             'name': 'Rare'
         },
         'epic': {
-            'color': discord.Color.purple(),
+            'color': PURPLE,
             'emoji': '🟣',
             'effect': '✨✨',
             'name': 'Epic'
         },
         'legendary': {
-            'color': discord.Color.gold(),
-            'emoji': '🟡',
+            'color': GOLD,
+            'emoji': '👑',
             'effect': '⭐✨',
             'name': 'Legendary'
         },
         'mythic': {
-            'color': discord.Color.red(),
-            'emoji': '🔴',
-            'effect': '🔥✨',
+            'color': PINK,
+            'emoji': '💎',
+            'effect': '🔥✨💎',
             'name': 'Mythic'
         }
     }
@@ -89,9 +94,11 @@ class PackOpeningAnimator:
         embed = discord.Embed(
             title="🎁 Opening Pack... 🎁",
             description=f"**{self.pack_name}**\n\n✨ Shuffling cards...\n🔮 The universe is deciding your fate...\n⏳ Preparing your rewards...",
-            color=discord.Color.gold() if self.pack_type == 'gold' else discord.Color.blue()
+            color=GOLD
         )
-        embed.set_footer(text="✨ Get ready for your new cards!")
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        embed.set_image(url=BANNER_URL)
+        embed.set_footer(text="🎵 Music Legends • Get ready!")
         return embed
     
     def create_legendary_teaser_embed(self) -> discord.Embed:
@@ -99,11 +106,12 @@ class PackOpeningAnimator:
         embed = discord.Embed(
             title="✨ LEGENDARY PULL! ✨",
             description="🌟 Something amazing is coming... 🌟\n\n⭐ **LEGENDARY CARD INCOMING!** ⭐\n\n💎💎💎💎💎",
-            color=discord.Color.gold()
+            color=GOLD
         )
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
         # Add celebration GIF
         embed.set_image(url=self.CELEBRATION_GIFS['legendary'])
-        embed.set_footer(text="Get ready for something special!")
+        embed.set_footer(text="🎵 Music Legends • Get ready for something special!")
         return embed
     
     async def send_emoji_fireworks(self, interaction: Interaction, message):
@@ -149,33 +157,38 @@ class PackOpeningAnimator:
         else:
             description += "🆕 **NEW CARD!** First time getting this one!\n\n"
         
-        description += f"**Rarity:** {config['name']} {config['emoji']}\n"
-        
+        description += f"**Rarity:** {rarity_badge(rarity)}\n"
+
         # Create embed
         embed = discord.Embed(
             title=title,
             description=description,
             color=config['color']
         )
-        
-        # Stats
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+
+        # Stats — backwards-compat: try new stat names first, fall back to legacy
+        impact    = card.get('impact', card.get('attack', 50))
+        skill     = card.get('skill', card.get('defense', 50))
+        longevity = card.get('longevity', card.get('speed', 50))
+        culture   = card.get('culture', 50)
+        hype      = card.get('hype', 50)
+
         stats_text = (
-            f"⚔️ **Attack:** {card.get('attack', card.get('impact', 50))}\n"
-            f"🛡️ **Defense:** {card.get('defense', card.get('skill', 50))}\n"
-            f"⚡ **Speed:** {card.get('speed', card.get('longevity', 50))}"
+            f"🎤 Impact:    {stat_bar(impact)}\n"
+            f"🎸 Skill:     {stat_bar(skill)}\n"
+            f"⏳ Longevity: {stat_bar(longevity)}\n"
+            f"🌍 Culture:   {stat_bar(culture)}\n"
+            f"🔥 Hype:      {stat_bar(hype)}"
         )
-        embed.add_field(name="📊 Stats", value=stats_text, inline=True)
-        
-        # Power rating
-        power = (
-            card.get('attack', card.get('impact', 50)) +
-            card.get('defense', card.get('skill', 50)) +
-            card.get('speed', card.get('longevity', 50))
-        ) // 3
-        
-        power_text = f"💪 **{power}** Power"
+        embed.add_field(name="📊 Stats", value=f"```\n{stats_text}\n```", inline=False)
+
+        # Power rating using all 5 stats
+        power = (impact + skill + longevity + culture + hype) // 5
+
+        power_text = f"💪 **{power}** Power  —  {power_tier(power)}"
         embed.add_field(name="⚡ Overall", value=power_text, inline=True)
-        
+
         # Image — try image_url first, fall back to YouTube thumbnail
         img_url = card.get('image_url') or ''
         if img_url and 'example.com' not in img_url and '_example' not in img_url:
@@ -189,7 +202,8 @@ class PackOpeningAnimator:
                 yt_m = re.search(r'(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})', yt)
                 if yt_m:
                     embed.set_image(url=f"https://img.youtube.com/vi/{yt_m.group(1)}/hqdefault.jpg")
-        
+
+
         # Progress footer with logo
         embed.set_footer(text=f"🎵 Music Legends • Opening pack... {card_number}/{total_cards} cards revealed")
         
@@ -206,8 +220,10 @@ class PackOpeningAnimator:
         embed = discord.Embed(
             title="✅ Pack Opened Successfully!",
             description=f"**{self.pack_name}**\n\nAll cards have been added to your collection!",
-            color=discord.Color.green()
+            color=GREEN
         )
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        embed.set_thumbnail(url=LOGO_URL)
         
         # Pack info
         if pack_id:
@@ -269,7 +285,7 @@ class PackOpeningAnimator:
                 inline=True
             )
         
-        embed.set_footer(text="🎵 Music Legends • Check your collection with the Collection button in the User Hub!")
+        embed.set_footer(text="🎵 Music Legends • Check your collection with the Collection button in the User Hub!", icon_url=LOGO_URL)
         
         return embed
     
@@ -299,6 +315,14 @@ class PackOpeningAnimator:
             loading_embed = self.create_loading_embed()
             audio_file = self.get_audio_file('pack_opening')
 
+            # Video teaser before the pack opening animation
+            try:
+                await interaction.followup.send(VIDEO_URL, ephemeral=False)
+                await asyncio.sleep(1.5)
+            except Exception:
+                pass
+
+            # Send with audio if available
             try:
                 if audio_file:
                     anim_msg = await interaction.followup.send(
@@ -344,6 +368,26 @@ class PackOpeningAnimator:
                         await asyncio.sleep(2.0)
                     except Exception as e:
                         print(f"[PACK_ANIM] Legendary teaser edit failed: {e}")
+
+                elif rarity == 'mythic':
+                    # Mythic teaser — even rarer than legendary
+                    mythic_teaser = discord.Embed(
+                        title="💎 MYTHIC PULL! 💎",
+                        description="🔥 The stars have aligned... 🔥\n\n💎 **MYTHIC CARD INCOMING!** 💎\n\n🔥✨💎✨🔥",
+                        color=PINK
+                    )
+                    mythic_teaser.set_author(name="Music Legends", icon_url=LOGO_URL)
+                    mythic_teaser.set_image(url=self.CELEBRATION_GIFS['legendary'])
+                    mythic_teaser.set_footer(text="🎵 Music Legends • Something mythic approaches!")
+                    try:
+                        await anim_msg.edit(embed=mythic_teaser, view=skip_view)
+                    except Exception as e:
+                        print(f"[PACK_ANIM] Mythic teaser edit failed: {e}")
+                    try:
+                        await self.send_emoji_fireworks(interaction, anim_msg)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(2.5)  # Extra dramatic pause for mythic
 
                 # Card reveal
                 reveal_embed = self.create_card_reveal_embed(card, i, len(cards), False)
