@@ -148,10 +148,20 @@ class PackSelectView(ui.View):
 
     async def _select_callback(self, interaction: Interaction):
         try:
+            # Hard guard: should never fire for the wrong user, but log loudly if it does
+            if interaction.user.id != self.user_id:
+                print(f"[BATTLE] ⚠️ ROLE SWAP CAUGHT: _select_callback fired for wrong user! "
+                      f"view_owner={self.user_id} actual_clicker={interaction.user.id}({interaction.user.display_name})")
+                await interaction.response.send_message(
+                    "⚠️ Pack selection error — please try `/battle` again.", ephemeral=True
+                )
+                return  # do NOT set selected_pack; view will time out
+
             pack_id = interaction.data['values'][0]
             self.selected_pack = self._packs_by_id.get(pack_id)
             self.selected_cards = self.selected_pack.get('cards', []) if self.selected_pack else []
-            print(f"[BATTLE] Pack selected: {pack_id} → {len(self.selected_cards)} cards")
+            first_card = self.selected_cards[0].get('name', '?') if self.selected_cards else 'none'
+            print(f"[BATTLE] Pack selected: view_owner={self.user_id} clicker={interaction.user.id}({interaction.user.display_name}) pack={pack_id} cards={len(self.selected_cards)} first={first_card}")
             # Acknowledge BEFORE stop() so Discord confirms the select interaction
             # before _run_battle resumes and fires more messages.
             await interaction.response.defer()
@@ -465,7 +475,7 @@ class BattleCommands(commands.Cog):
         Returns True once rewards have been distributed (used by caller to skip emergency refund)."""
 
         # Step 3 — Both players select a deck; best cards are auto-picked
-        print(f"[BATTLE] Fetching packs for both players")
+        print(f"[BATTLE] === ROLE MAP === challenger={interaction.user.id}({interaction.user.display_name}) opponent={opponent.id}({opponent.display_name})")
         challenger_packs = self.db.get_user_purchased_packs(interaction.user.id)
         opponent_packs = self.db.get_user_purchased_packs(opponent.id)
 
@@ -570,6 +580,7 @@ class BattleCommands(commands.Cog):
         # Resolve cards from each chosen pack
         challenger_cards = c_view.selected_cards
         opponent_cards   = o_view.selected_cards
+        print(f"[BATTLE] CARDS RESOLVED: {interaction.user.display_name}(c) first={challenger_cards[0].get('name','?') if challenger_cards else 'none'} | {opponent.display_name}(o) first={opponent_cards[0].get('name','?') if opponent_cards else 'none'}")
 
         # Fallback: if pack has no card data, pull from full collection
         if not challenger_cards:
