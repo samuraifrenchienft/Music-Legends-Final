@@ -26,7 +26,7 @@ export default function Pack() {
           title: `Open ${pack.pack_name}?`,
           message: `This will open your ${pack.pack_tier?.toUpperCase() || ''} pack.`,
           buttons: [
-            { id: 'open', type: 'ok', text: 'Open It!' },
+            { id: 'open', type: 'default', text: 'Open It!' },
             { id: 'cancel', type: 'cancel' },
           ],
         })

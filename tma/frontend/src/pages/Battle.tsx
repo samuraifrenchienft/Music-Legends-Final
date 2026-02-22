@@ -19,7 +19,7 @@ export default function Battle() {
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [battleLink, setBattleLink] = useState('')
   const [result, setResult] = useState<any>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval>>()
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   useEffect(() => {
     getPacks().then(r => setPacks(r.data.packs))
