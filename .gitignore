@@ -39,3 +39,5 @@ startup_log.txt
 
 # Temp files
 nul
+# Git worktrees
+.worktrees/
