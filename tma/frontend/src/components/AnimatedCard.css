@@ -1,0 +1,73 @@
+/* 3D card flip */
+.card-scene {
+  perspective: 800px;
+  width: 100%;
+  aspect-ratio: 3/4;
+}
+.card-flip {
+  width: 100%; height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+.card-flip.flipped { transform: rotateY(180deg); }
+
+.card-face {
+  position: absolute; width: 100%; height: 100%;
+  backface-visibility: hidden;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.card-back {
+  background: linear-gradient(135deg, #1a1740 0%, #6B2EBE 50%, #1a1740 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 48px;
+}
+.card-front { transform: rotateY(180deg); }
+
+/* Rarity glow animation */
+.glow-common    { box-shadow: 0 0 0 2px #95A5A6; }
+.glow-rare      { box-shadow: 0 0 16px 4px #4488FF; animation: pulse-rare 2s infinite; }
+.glow-epic      { box-shadow: 0 0 20px 6px #6B2EBE; animation: pulse-epic 1.8s infinite; }
+.glow-legendary { box-shadow: 0 0 28px 8px #F4A800; animation: pulse-legendary 1.5s infinite; }
+.glow-mythic    { box-shadow: 0 0 36px 12px #E74C3C; animation: pulse-mythic 1.2s infinite; }
+
+@keyframes pulse-rare      { 0%,100% { box-shadow: 0 0 16px 4px #4488FF } 50% { box-shadow: 0 0 24px 8px #4488FFAA } }
+@keyframes pulse-epic      { 0%,100% { box-shadow: 0 0 20px 6px #6B2EBE } 50% { box-shadow: 0 0 30px 10px #6B2EBEAA } }
+@keyframes pulse-legendary { 0%,100% { box-shadow: 0 0 28px 8px #F4A800 } 50% { box-shadow: 0 0 40px 14px #F4A800AA } }
+@keyframes pulse-mythic    { 0%,100% { box-shadow: 0 0 36px 12px #E74C3C } 50% { box-shadow: 0 0 52px 18px #FF4E9A } }
+
+/* Mythic overlay */
+.mythic-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; animation: fadeIn 0.3s ease;
+}
+.mythic-spotlight {
+  width: 260px; height: 360px;
+  filter: drop-shadow(0 0 60px #E74C3C);
+  animation: mythicSlam 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+@keyframes mythicSlam {
+  0% { transform: scale(2) translateY(-80px); opacity: 0 }
+  60% { transform: scale(0.95) translateY(4px) }
+  100% { transform: scale(1) translateY(0); opacity: 1 }
+}
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* Screen shake */
+@keyframes shake {
+  0%,100% { transform: translate(0,0) rotate(0deg) }
+  20% { transform: translate(-6px, 4px) rotate(-1deg) }
+  40% { transform: translate(6px, -4px) rotate(1deg) }
+  60% { transform: translate(-4px, 6px) rotate(-0.5deg) }
+  80% { transform: translate(4px, -4px) rotate(0.5deg) }
+}
+.shake { animation: shake 0.4s ease; }
+
+/* Skeleton pulse */
+@keyframes pulse {
+  0%,100% { opacity: 0.6 }
+  50% { opacity: 0.3 }
+}
