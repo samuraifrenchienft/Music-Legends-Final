@@ -1157,8 +1157,44 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_user_id ON transaction_audit_log(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON transaction_audit_log(timestamp)")
 
+            # TMA identity columns — safe guard per existing migration pattern
+            tma_cols = [("discord_id", "INTEGER"), ("telegram_id", "INTEGER")]
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(users)")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                for col, typ in tma_cols:
+                    if col not in existing_cols:
+                        cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {typ}")
+            cursor.execute("UPDATE users SET discord_id = user_id WHERE discord_id IS NULL")
+
+            # TMA link codes — one-time codes for linking Discord ↔ Telegram accounts
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tma_link_codes (
+                    code TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+            """)
+
+            # Pending TMA battles — share-link async battles
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_tma_battles (
+                    battle_id       TEXT PRIMARY KEY,
+                    challenger_id   INTEGER NOT NULL,
+                    opponent_id     INTEGER,
+                    challenger_pack TEXT NOT NULL,
+                    opponent_pack   TEXT,
+                    wager_tier      TEXT DEFAULT 'casual',
+                    status          TEXT DEFAULT 'waiting',
+                    result_json     TEXT,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at      TIMESTAMP
+                )
+            """)
+
             conn.commit()
-    
+
     def _init_postgresql(self):
         """Initialize all tables in PostgreSQL."""
         print("🗄️ [DATABASE] Creating PostgreSQL tables...")
@@ -2046,6 +2082,52 @@ class DatabaseManager:
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_user_id ON transaction_audit_log(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON transaction_audit_log(timestamp)")
+
+            # Platform-agnostic identity — TMA support
+            _tma_alters = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id BIGINT",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT",
+            ]
+            for stmt in _tma_alters:
+                try:
+                    cursor.execute(stmt)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+            try:
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id)")
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)")
+                cursor.execute("UPDATE users SET discord_id = user_id WHERE discord_id IS NULL")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+            # TMA link codes
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tma_link_codes (
+                    code TEXT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+
+            # Pending TMA battles — share-link async battles
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_tma_battles (
+                    battle_id       TEXT PRIMARY KEY,
+                    challenger_id   BIGINT NOT NULL,
+                    opponent_id     BIGINT,
+                    challenger_pack TEXT NOT NULL,
+                    opponent_pack   TEXT,
+                    wager_tier      TEXT DEFAULT 'casual',
+                    status          TEXT DEFAULT 'waiting',
+                    result_json     TEXT,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at      TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+                )
+            """)
+            conn.commit()
 
             conn.commit()
             print("✅ [DATABASE] All PostgreSQL tables created successfully")
