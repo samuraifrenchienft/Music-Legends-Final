@@ -13,12 +13,12 @@ All operations are ATOMIC - either all succeed or all fail (no partial trades)
 from rq_queue.locks import RedisLock
 from models.trade import Trade, TradeSQLite
 from datetime import datetime, timedelta
-from database import DatabaseManager
+from database import get_db
 
 TRADE_TIMEOUT = 300  # 5 minutes
 
-# Initialize database manager
-db = DatabaseManager()
+# Use shared singleton — never instantiate DatabaseManager() directly
+db = get_db()
 
 def finalize(trade_id: str):
     """

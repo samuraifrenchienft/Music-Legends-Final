@@ -2,9 +2,28 @@
 import sqlite3
 import json
 import os
+import urllib.parse
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
+
+
+def _parse_db_url(url: str) -> dict:
+    """Parse a DATABASE_URL into psycopg2 keyword arguments.
+
+    Handles passwords with special characters that break naive URL parsing.
+    Adds sslmode=require for Railway external proxy connections.
+    """
+    parsed = urllib.parse.urlparse(url)
+    params = {
+        'host': parsed.hostname,
+        'port': parsed.port or 5432,
+        'dbname': parsed.path.lstrip('/'),
+        'user': parsed.username,
+        'password': urllib.parse.unquote(parsed.password or ''),
+        'sslmode': 'require',
+    }
+    return params
 
 
 class _PgCursorWrapper:
@@ -175,15 +194,16 @@ class ConnectionPool:
         self._lock = threading.Lock()
 
         # Pre-populate pool with connections (keepalives keep idle sockets healthy)
+        self._conn_params = {
+            **_parse_db_url(database_url),
+            'keepalives': 1,
+            'keepalives_idle': 60,
+            'keepalives_interval': 10,
+            'keepalives_count': 3,
+        }
         for _ in range(pool_size):
             try:
-                conn = psycopg2.connect(
-                    database_url,
-                    keepalives=1,
-                    keepalives_idle=60,       # probe after 60s idle
-                    keepalives_interval=10,   # retry every 10s
-                    keepalives_count=3,       # drop after 3 failed probes
-                )
+                conn = psycopg2.connect(**self._conn_params)
                 self._pool.put(_PgConnectionWrapper(conn))
             except Exception as e:
                 print(f"[POOL] Error creating initial connection: {e}")
@@ -213,7 +233,7 @@ class ConnectionPool:
                 return PooledConnectionWrapper(conn._conn, self, is_overflow=False)
             except:
                 # Connection dead, create new one
-                conn = psycopg2.connect(self.database_url)
+                conn = psycopg2.connect(**self._conn_params)
                 return PooledConnectionWrapper(conn, self, is_overflow=False)
         except Empty:
             # Pool exhausted, check if we can create overflow connection
@@ -221,7 +241,7 @@ class ConnectionPool:
                 if self._overflow_count < self.max_overflow:
                     self._overflow_count += 1
                     try:
-                        conn = psycopg2.connect(self.database_url)
+                        conn = psycopg2.connect(**self._conn_params)
                         return PooledConnectionWrapper(conn, self, is_overflow=True)
                     except Exception as e:
                         self._overflow_count -= 1
@@ -346,10 +366,12 @@ class DatabaseManager:
                 url = self._database_url
                 if url.startswith("postgres://"):
                     url = url.replace("postgres://", "postgresql://", 1)
-                return _PgConnectionWrapper(psycopg2.connect(
-                    url, keepalives=1, keepalives_idle=60,
-                    keepalives_interval=10, keepalives_count=3,
-                ))
+                conn_params = {
+                    **_parse_db_url(url),
+                    'keepalives': 1, 'keepalives_idle': 60,
+                    'keepalives_interval': 10, 'keepalives_count': 3,
+                }
+                return _PgConnectionWrapper(psycopg2.connect(**conn_params))
         else:
             return sqlite3.connect(self.db_path)
 
