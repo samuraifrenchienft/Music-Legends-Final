@@ -1157,8 +1157,44 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_user_id ON transaction_audit_log(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON transaction_audit_log(timestamp)")
 
+            # TMA identity columns — safe guard per existing migration pattern
+            tma_cols = [("discord_id", "INTEGER"), ("telegram_id", "INTEGER")]
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(users)")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                for col, typ in tma_cols:
+                    if col not in existing_cols:
+                        cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {typ}")
+            cursor.execute("UPDATE users SET discord_id = user_id WHERE discord_id IS NULL")
+
+            # TMA link codes — one-time codes for linking Discord ↔ Telegram accounts
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tma_link_codes (
+                    code TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+            """)
+
+            # Pending TMA battles — share-link async battles
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_tma_battles (
+                    battle_id       TEXT PRIMARY KEY,
+                    challenger_id   INTEGER NOT NULL,
+                    opponent_id     INTEGER,
+                    challenger_pack TEXT NOT NULL,
+                    opponent_pack   TEXT,
+                    wager_tier      TEXT DEFAULT 'casual',
+                    status          TEXT DEFAULT 'waiting',
+                    result_json     TEXT,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at      TIMESTAMP
+                )
+            """)
+
             conn.commit()
-    
+
     def _init_postgresql(self):
         """Initialize all tables in PostgreSQL."""
         print("🗄️ [DATABASE] Creating PostgreSQL tables...")
@@ -2046,6 +2082,52 @@ class DatabaseManager:
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_user_id ON transaction_audit_log(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON transaction_audit_log(timestamp)")
+
+            # Platform-agnostic identity — TMA support
+            _tma_alters = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id BIGINT",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id BIGINT",
+            ]
+            for stmt in _tma_alters:
+                try:
+                    cursor.execute(stmt)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+            try:
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id)")
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)")
+                cursor.execute("UPDATE users SET discord_id = user_id WHERE discord_id IS NULL")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+            # TMA link codes
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tma_link_codes (
+                    code TEXT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+
+            # Pending TMA battles — share-link async battles
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pending_tma_battles (
+                    battle_id       TEXT PRIMARY KEY,
+                    challenger_id   BIGINT NOT NULL,
+                    opponent_id     BIGINT,
+                    challenger_pack TEXT NOT NULL,
+                    opponent_pack   TEXT,
+                    wager_tier      TEXT DEFAULT 'casual',
+                    status          TEXT DEFAULT 'waiting',
+                    result_json     TEXT,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at      TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+                )
+            """)
+            conn.commit()
 
             conn.commit()
             print("✅ [DATABASE] All PostgreSQL tables created successfully")
@@ -4761,6 +4843,84 @@ class DatabaseManager:
     def close(self):
         """Close database connection"""
         pass  # SQLite connections are closed automatically
+
+    # ── TMA ──────────────────────────────────────────────────────────────
+
+    def get_or_create_telegram_user(self, telegram_id: int, telegram_username: str = "", first_name: str = "") -> dict:
+        """Find or create a user record for a Telegram Mini App user.
+        Returns dict with user_id, username, telegram_id, is_new."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT user_id, username FROM users WHERE telegram_id = {ph}",
+                (telegram_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {"user_id": row[0], "username": row[1],
+                        "telegram_id": telegram_id, "is_new": False}
+            # Synthetic user_id: 9B + telegram_id avoids Discord snowflake collisions
+            synthetic_id = 9_000_000_000 + telegram_id
+            display = telegram_username or first_name or f"tg_{telegram_id}"
+            cursor.execute(
+                f"INSERT OR IGNORE INTO users (user_id, username, telegram_id) VALUES ({ph}, {ph}, {ph})",
+                (synthetic_id, display, telegram_id)
+            )
+            cursor.execute(
+                f"INSERT OR IGNORE INTO user_inventory (user_id, gold) VALUES ({ph}, 500)",
+                (synthetic_id,)
+            )
+            conn.commit()
+            return {"user_id": synthetic_id, "username": display,
+                    "telegram_id": telegram_id, "is_new": True}
+
+    def generate_tma_link_code(self, user_id: int) -> str:
+        """Generate a 6-char one-time code so a user can link their Discord account.
+        Code expires in 10 minutes. Stored in tma_link_codes table."""
+        import secrets
+        from datetime import datetime, timedelta
+        code = secrets.token_hex(3).upper()  # 6 hex chars
+        expires = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"INSERT OR REPLACE INTO tma_link_codes (code, user_id, expires_at) VALUES ({ph}, {ph}, {ph})",
+                (code, user_id, expires)
+            )
+            conn.commit()
+        return code
+
+    def consume_tma_link_code(self, code: str, discord_id: int) -> dict:
+        """Validate and consume a TMA link code, writing discord_id to the user's row.
+        Returns {"success": True, "user_id": ...} or {"success": False, "error": ...}."""
+        from datetime import datetime
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT user_id, expires_at FROM tma_link_codes WHERE code = {ph}",
+                (code.upper(),)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return {"success": False, "error": "Invalid or already used code"}
+            user_id, expires_at = row
+            if datetime.utcnow().isoformat() > expires_at:
+                cursor.execute(f"DELETE FROM tma_link_codes WHERE code = {ph}", (code,))
+                conn.commit()
+                return {"success": False, "error": "Code expired"}
+            cursor.execute(
+                f"UPDATE users SET discord_id = {ph} WHERE user_id = {ph}",
+                (discord_id, user_id)
+            )
+            cursor.execute(f"DELETE FROM tma_link_codes WHERE code = {ph}", (code,))
+            conn.commit()
+        return {"success": True, "user_id": user_id}
+
+    # ── end TMA ──────────────────────────────────────────────────────────
+
 
 # Global singleton instance — all cogs share this one pool
 _db_instance: DatabaseManager = None

@@ -27,8 +27,8 @@ SUSPICIOUS_PATTERNS = [
     r'\.com$',  # URLs
     r'http[s]?://',  # HTTP/HTTPS
     r'www\.',  # www
-    r'\.org$',  .org domains
-    r'\.net$',  .net domains
+    r'\.org$',  # .org domains
+    r'\.net$',  # .net domains
     r'@',  # Email addresses
     r'\d{4,}',  # Long numbers (potential phone numbers)
 ]

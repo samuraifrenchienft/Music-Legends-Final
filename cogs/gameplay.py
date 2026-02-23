@@ -5,6 +5,8 @@ from discord import Interaction, app_commands, ui
 import random
 from card_economy import CardEconomyManager
 from database import DatabaseManager, get_db
+from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL, power_tier
+from config.cards import compute_card_power
 
 
 
@@ -397,26 +399,54 @@ class GameplayCommands(commands.Cog):
             return
 
         tier_colors = {
-            "community": discord.Color.light_gray(),
-            "gold": discord.Color.gold(),
-            "platinum": discord.Color.purple()
+            "community": BLUE,
+            "gold":      GOLD,
+            "platinum":  PURPLE,
         }
-        tier_emoji = {"community": "⚪", "gold": "🟡", "platinum": "🟣"}.get(tier, "⚪")
+        tier_emoji = {"community": "⚪", "gold": "👑", "platinum": "💎"}.get(tier, "⚪")
 
-        embed = discord.Embed(
-            title=f"{tier_emoji} PACK DROP! {tier_emoji}",
-            description=f"**{pack['name']}**\nFirst to click claims all {pack['pack_size']} cards!",
-            color=tier_colors.get(tier, discord.Color.gold())
+        # ── Phase 1: incoming drop alert ──────────────────────────────
+        alert_embed = discord.Embed(
+            title=f"📦 PACK DROP INCOMING! {tier_emoji}",
+            description=f"**{pack['name']}**\n{pack['pack_size']} cards up for grabs!\n\n**Dropping in...**",
+            color=tier_colors.get(tier, GOLD),
         )
-        embed.add_field(name="Tier", value=tier.title(), inline=True)
-        embed.add_field(name="Cards", value=str(pack['pack_size']), inline=True)
+        alert_embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        alert_embed.set_image(url=BANNER_URL)
+        alert_embed.set_footer(text="🎵 Music Legends • Be ready!")
+        await interaction.response.send_message(embed=alert_embed)
+        msg = await interaction.original_response()
+
+        # ── Countdown 3 → 2 → 1 ──────────────────────────────────
+        for count in ["3️⃣", "2️⃣", "1️⃣"]:
+            await asyncio.sleep(1.0)
+            cd = discord.Embed(
+                title=f"📦 PACK DROP! {count}",
+                description=f"**{pack['name']}**\n{pack['pack_size']} cards • First to click wins!",
+                color=tier_colors.get(tier, GOLD),
+            )
+            cd.set_author(name="Music Legends", icon_url=LOGO_URL)
+            cd.set_footer(text="🎵 Music Legends • Get ready!")
+            await msg.edit(embed=cd)
+
+        # ── Phase 2: drop live ─────────────────────────────────────
+        await asyncio.sleep(0.5)
+        drop_embed = discord.Embed(
+            title=f"{tier_emoji} DROP IS LIVE! {tier_emoji}",
+            description=f"**{pack['name']}**\nFirst to click claims all **{pack['pack_size']}** cards!",
+            color=tier_colors.get(tier, GOLD),
+        )
+        drop_embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        drop_embed.set_thumbnail(url=LOGO_URL)
         if pack.get("genre"):
-            embed.add_field(name="Genre", value=pack["genre"], inline=True)
-        embed.set_footer(text=f"Dropped by {interaction.user.display_name} • Expires in 5 min")
+            drop_embed.add_field(name="🎵 Genre", value=pack["genre"], inline=True)
+        drop_embed.add_field(name="📦 Tier", value=tier.title(), inline=True)
+        drop_embed.add_field(name="🎴 Cards", value=str(pack["pack_size"]), inline=True)
+        drop_embed.set_footer(text=f"🎵 Music Legends • Dropped by {interaction.user.display_name} • Expires in 5 min")
 
         view = CardDropView(pack=pack, db=self.db, timeout=300)
-        await interaction.response.send_message(embed=embed, view=view)
-        view.message = await interaction.original_response()
+        await msg.edit(embed=drop_embed, view=view)
+        view.message = msg
 
     @app_commands.command(name="collection", description="View your card collection")
     async def collection_command(self, interaction: Interaction, user: discord.User = None):
@@ -585,13 +615,14 @@ class GameplayCommands(commands.Cog):
             inline=True
         )
         
-        # Power rating with enhanced visual
-        total_power = (impact + skill + longevity + culture + hype) // 5
-        power_bar = "██████████"[:total_power // 10] + "░░░░░░░░░░"[total_power // 10:]
-        
+        # Power rating: use same formula as battle (stats avg + rarity bonus → 0–135)
+        total_power = compute_card_power(card)
+        filled = round((total_power / 135) * 10)
+        power_bar = "█" * filled + "░" * (10 - filled)
+
         embed.add_field(
             name="💪 **POWER LEVEL**",
-            value=f"```{power_bar}```\n**{total_power}** / 100 **POWER**\n{self._get_power_tier(total_power)}",
+            value=f"```{power_bar}```\n**{total_power}** / 135 **POWER**\n{power_tier(total_power)}",
             inline=False
         )
         

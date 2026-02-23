@@ -151,6 +151,7 @@ class Bot(commands.Bot):
         # Load essential cogs without duplicates
         cogs = [
             'cogs.start_game',                # Start game command
+            'cogs.game_info',                 # /post_game_info — branded game guide
             'cogs.gameplay',                  # Drop, collection, viewing commands
             'cogs.card_game',                 # Collection and pack creation commands
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
