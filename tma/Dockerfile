@@ -6,15 +6,16 @@ RUN npm ci --prefer-offline
 COPY tma/frontend/ .
 RUN npm run build
 
-# Stage 2: Python FastAPI serving built frontend
+# Stage 2: Python FastAPI + repo root (database.py, battle_engine.py, config/, etc.)
 FROM python:3.11-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libpq-dev gcc postgresql-client && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy full repo so database.py, battle_engine.py, config/ etc. are available
 COPY . .
 
 # Copy built React app from Stage 1
