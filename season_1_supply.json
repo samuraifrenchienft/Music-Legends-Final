@@ -1,0 +1,20 @@
+{
+  "season_number": 1,
+  "state": "active",
+  "total_supply_target": 250000,
+  "current_mints": {
+    "community": 0,
+    "gold": 0,
+    "platinum": 0,
+    "legendary": 0
+  },
+  "artist_mints": {},
+  "pack_contributions": {
+    "drops": 0,
+    "silver_packs": 0,
+    "black_packs": 0,
+    "creator_packs": 0
+  },
+  "season_start": "2026-02-15T11:31:59.680637",
+  "last_updated": "2026-02-15T11:31:59.680637"
+}
