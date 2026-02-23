@@ -85,15 +85,28 @@ export default function Battle() {
       })
       return () => { off(); unmountMainButton() }
     }
+    if (phase === 'result') {
+      // "Play Again" button on result screen
+      setMainButtonParams({ text: 'Battle Again', isEnabled: true, isVisible: true, backgroundColor: '#E74C3C' })
+      const off = onMainButtonClick(() => {
+        setResult(null)
+        setSelectedPackId('')
+        setBattleId('')
+        setBattleLink('')
+        setPhase('select-pack')
+      })
+      return () => { off(); unmountMainButton() }
+    }
     unmountMainButton()
   }, [phase, selectedPackId, battleLink]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (phase === 'result' && result) {
     const c = result.challenger, o = result.opponent, winner = result.winner
+    const winnerCard = winner === 1 ? c : winner === 2 ? o : null
     return (
-      <div className={result.is_critical ? 'shake' : ''} style={{ padding: '20px 16px 80px', textAlign: 'center' }}>
+      <div className={result.is_critical ? 'shake' : ''} style={{ padding: '20px 16px 100px', textAlign: 'center' }}>
         <h3 style={{ color: '#F4A800', fontSize: 22 }}>
-          {winner === 1 ? '?? You Won!' : winner === 2 ? '?? You Lost' : '?? Draw!'}
+          {winner === 1 ? '🏆 You Won!' : winner === 2 ? '😔 You Lost' : '🤝 Draw!'}
         </h3>
         {result.is_critical && <p style={{ color: '#FF4E9A', fontWeight: 700 }}>⚡ CRITICAL HIT!</p>}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', margin: '20px 0' }}>
@@ -106,10 +119,25 @@ export default function Battle() {
               {player?.image_url && <img src={player.image_url} alt={player.name} style={{ width: '100%', borderRadius: 8, aspectRatio: '16/9', objectFit: 'cover' }} />}
               <div style={{ fontWeight: 700, marginTop: 6, fontSize: 12 }}>{player?.name}</div>
               <div style={{ color: RARITY_COLORS[player?.rarity || 'common'], fontSize: 18, fontWeight: 700 }}>{player?.power}</div>
-              <div style={{ color: '#2ECC71', fontSize: 12 }}>+{player?.gold_reward} ??</div>
+              <div style={{ color: '#2ECC71', fontSize: 12 }}>+{player?.gold_reward} 💰</div>
             </div>
           ))}
         </div>
+        {/* YouTube link for the winning card */}
+        {winnerCard?.youtube_url && (
+          <a
+            href={winnerCard.youtube_url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: 'inline-block', marginTop: 8, padding: '8px 18px',
+              background: '#FF0000', color: '#fff', borderRadius: 8,
+              fontSize: 13, fontWeight: 700, textDecoration: 'none',
+            }}
+          >
+            ▶ Watch {winnerCard.name} on YouTube
+          </a>
+        )}
       </div>
     )
   }
