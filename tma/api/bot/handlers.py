@@ -69,13 +69,24 @@ def setup_webhook_route(app) -> None:
         _app = build_application()
         await _app.initialize()
         _bot = _app.bot
-        webhook_url = os.environ.get("TMA_URL", "").rstrip("/")
-        if webhook_url.startswith("https://"):
+        # Use Railway's auto-provided domain (the FastAPI service URL).
+        # Fall back to TMA_API_URL if set, but never use TMA_URL (that's the t.me link).
+        railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+        api_base = os.environ.get("TMA_API_URL", "")
+        if railway_domain:
+            webhook_base = f"https://{railway_domain.rstrip('/')}"
+        elif api_base:
+            webhook_base = api_base.rstrip("/")
+        else:
+            webhook_base = ""
+        if webhook_base.startswith("https://"):
             try:
-                await _bot.set_webhook(f"{webhook_url}/webhook")
-                print(f"[BOT] Webhook set: {webhook_url}/webhook")
+                await _bot.set_webhook(f"{webhook_base}/webhook")
+                print(f"[BOT] Webhook set: {webhook_base}/webhook")
             except Exception as e:
                 print(f"[BOT] Webhook setup failed: {e}")
+        else:
+            print(f"[BOT] No webhook URL found (RAILWAY_PUBLIC_DOMAIN not set) — skipping")
 
     @app.on_event("shutdown")
     async def _shutdown():
