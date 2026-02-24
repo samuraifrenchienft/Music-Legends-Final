@@ -24,7 +24,7 @@ export default function Daily() {
         next.setHours(next.getHours() + 24)
         setCanClaim(next.getTime() - Date.now() <= 0)
       })
-      .catch(() => setError('Could not load economy data. Please try again.'))
+      .catch((e: any) => setError(`API error ${e?.response?.status || 'network'}: ${e?.response?.data?.detail || e?.message || 'Could not load economy data'}`))
   }, [])
 
   useEffect(() => { loadEconomy() }, [loadEconomy])

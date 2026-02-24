@@ -18,7 +18,7 @@ export default function Pack() {
   useEffect(() => {
     getPacks()
       .then(r => { setPacks(r.data.packs); setLoading(false) })
-      .catch(() => { setError('Failed to load packs. Please close and reopen the app.'); setLoading(false) })
+      .catch((e: any) => { setError(`API error ${e?.response?.status || 'network'}: ${e?.response?.data?.detail || e?.message || 'Failed to load packs'}`); setLoading(false) })
   }, [])
 
   const handleOpenPack = async (pack: any) => {
