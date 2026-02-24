@@ -48,7 +48,7 @@ async def cmd_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def build_application() -> Application:
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    token = os.environ["TELEGRAM_BOT_TOKEN"].strip()
     application = Application.builder().token(token).build()
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("link", cmd_link))
@@ -62,7 +62,7 @@ def setup_webhook_route(app) -> None:
     @app.on_event("startup")
     async def _startup():
         global _app, _bot
-        token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
         if not token or token == "dummy":
             print("[BOT] No real bot token — skipping Telegram bot setup")
             return
