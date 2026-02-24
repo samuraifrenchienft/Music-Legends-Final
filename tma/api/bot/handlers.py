@@ -69,7 +69,7 @@ def setup_webhook_route(app) -> None:
         _app = build_application()
         await _app.initialize()
         _bot = _app.bot
-        webhook_url = os.environ.get("TMA_URL", "")
+        webhook_url = os.environ.get("TMA_URL", "").rstrip("/")
         if webhook_url.startswith("https://"):
             try:
                 await _bot.set_webhook(f"{webhook_url}/webhook")
