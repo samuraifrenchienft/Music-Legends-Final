@@ -11,9 +11,14 @@ export default function Collection() {
   const [selected, setSelected] = useState<any>(null)
   const navigate = useNavigate()
 
+  const [error, setError] = useState('')
+
   const load = useCallback(() => {
     setLoading(true)
-    getCards().then(r => { setCards(r.data.cards); setLoading(false) })
+    setError('')
+    getCards()
+      .then(r => { setCards(r.data.cards); setLoading(false) })
+      .catch(() => { setError('Failed to load cards.'); setLoading(false) })
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -31,6 +36,14 @@ export default function Collection() {
       return () => { unmountMainButton() }
     }
   }, [selected, navigate])
+
+  if (error) return (
+    <div style={{ padding: 16, paddingBottom: 80 }}>
+      <h3 style={{ color: '#F4A800' }}>🃏 My Collection</h3>
+      <p style={{ color: '#E74C3C' }}>{error}</p>
+      <button onClick={load} style={{ background: '#6B2EBE', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer' }}>Retry</button>
+    </div>
+  )
 
   if (loading) return (
     <div style={{ padding: 16, paddingBottom: 80 }}>

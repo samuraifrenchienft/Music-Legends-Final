@@ -13,9 +13,12 @@ export default function Pack() {
   const [revealedCards, setRevealedCards] = useState<any[]>([])
   const [revealIndex, setRevealIndex] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    getPacks().then(r => { setPacks(r.data.packs); setLoading(false) })
+    getPacks()
+      .then(r => { setPacks(r.data.packs); setLoading(false) })
+      .catch(() => { setError('Failed to load packs. Please close and reopen the app.'); setLoading(false) })
   }, [])
 
   const handleOpenPack = async (pack: any) => {
@@ -86,6 +89,7 @@ export default function Pack() {
   }, [phase])
 
   if (loading) return <div style={{ padding: 16, paddingBottom: 80, color: '#8888aa' }}>Loading packs...</div>
+  if (error) return <div style={{ padding: 16, paddingBottom: 80, color: '#E74C3C' }}>{error}</div>
 
   if (phase === 'list') return (
     <div style={{ padding: '16px 16px 80px' }}>

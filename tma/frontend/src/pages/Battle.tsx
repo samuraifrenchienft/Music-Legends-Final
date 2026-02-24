@@ -22,7 +22,9 @@ export default function Battle() {
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   useEffect(() => {
-    getPacks().then(r => setPacks(r.data.packs))
+    getPacks()
+      .then(r => setPacks(r.data.packs))
+      .catch(() => setPacks([]))
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
@@ -78,7 +80,7 @@ export default function Battle() {
       return () => { off(); unmountMainButton() }
     }
     if (phase === 'challenge-sent') {
-      setMainButtonParams({ text: '?? Share Challenge Link', isEnabled: true, isVisible: true, backgroundColor: '#6B2EBE' })
+      setMainButtonParams({ text: '🔗 Share Challenge Link', isEnabled: true, isVisible: true, backgroundColor: '#6B2EBE' })
       const off = onMainButtonClick(() => {
         if (openTelegramLink.isAvailable()) openTelegramLink(battleLink)
         else window.open(battleLink, '_blank')
@@ -170,6 +172,22 @@ export default function Battle() {
             </div>
           ))}
           {packs.length === 0 && <p style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>You need packs to battle! Claim your daily reward first.</p>}
+          {packs.length > 0 && !mountMainButton.isAvailable() && (
+            <button
+              onClick={phase === 'accept' ? handleAccept : handleChallenge}
+              disabled={!selectedPackId}
+              style={{
+                width: '100%', padding: '14px 0', marginTop: 16,
+                background: selectedPackId ? '#E74C3C' : '#4a2a4a',
+                color: '#fff', border: 'none', borderRadius: 12,
+                fontWeight: 700, fontSize: 15, cursor: selectedPackId ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {phase === 'accept'
+                ? (selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Pack')
+                : (selectedPackId ? '⚔️ Create Challenge' : 'Select a Pack First')}
+            </button>
+          )}
         </>
       )}
     </div>

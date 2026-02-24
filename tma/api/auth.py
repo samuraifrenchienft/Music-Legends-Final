@@ -10,7 +10,7 @@ from fastapi import Header, HTTPException
 
 
 def _get_secret_key() -> bytes:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     return hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
 
 
