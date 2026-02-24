@@ -1,19 +1,19 @@
 import axios from 'axios'
-import { retrieveLaunchParams } from '@telegram-apps/sdk'
 
 // In production FastAPI serves both API and frontend on same origin.
 // In dev, Vite proxy forwards /api → localhost:8001.
 const api = axios.create({ baseURL: '' })
 
 api.interceptors.request.use(config => {
-  try {
-    const { initDataRaw } = retrieveLaunchParams()
-    if (initDataRaw) config.headers['Authorization'] = `tma ${initDataRaw}`
-  } catch {
-    // Outside Telegram — dev mode, requests will 401 without real initData
-    if (import.meta.env.DEV) {
-      config.headers['Authorization'] = `tma ${import.meta.env.VITE_DEV_INIT_DATA || 'dev'}`
-    }
+  // Read initData directly from Telegram's injected global — always available
+  // inside a Mini App regardless of SDK initialization state.
+  const tg = (window as any)?.Telegram?.WebApp
+  const initDataRaw = tg?.initData || ''
+
+  if (initDataRaw) {
+    config.headers['Authorization'] = `tma ${initDataRaw}`
+  } else if (import.meta.env.DEV) {
+    config.headers['Authorization'] = `tma ${import.meta.env.VITE_DEV_INIT_DATA || 'dev'}`
   }
   return config
 })
