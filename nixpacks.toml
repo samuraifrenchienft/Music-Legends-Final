@@ -1,0 +1,10 @@
+[phases.setup]
+nixPkgs = ["python311", "gcc", "postgresql"]
+
+[phases.install]
+cmds = [
+    "pip install --no-cache-dir -r requirements.txt"
+]
+
+[start]
+cmd = "python run_bot.py"

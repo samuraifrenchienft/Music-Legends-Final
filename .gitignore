@@ -1,0 +1,43 @@
+﻿.env
+.env.*
+.env.txt
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary test files (root-level only; tests/ directory is tracked)
+/test_*.py
+!tests/
+debug_*.py
+cleanup_*.py
+check_*.py
+verify_*.py
+fix_*.py
+list_*.py
+clear_*.py
+
+# IDE/Editor directories
+.cursor/
+.windsurf/
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+startup_log.txt
+
+# Temp files
+nul
+# Git worktrees
+.worktrees/

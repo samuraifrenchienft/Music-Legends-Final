@@ -1,0 +1,158 @@
+"""
+Start Game Command - Initialize Music Legends using pre-seeded packs
+No YouTube API required - uses seed packs loaded on startup
+"""
+import discord
+from discord import app_commands, Interaction
+from discord.ext import commands
+import sqlite3
+import os
+from ui.brand import PURPLE, BLUE, PINK, GOLD, NAVY, LOGO_URL, BANNER_URL
+
+
+class StartGameCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        from database import get_db
+        self.db = get_db()
+
+    @app_commands.command(name="start_game", description="🎮 Start Music Legends in this server!")
+    async def start_game(self, interaction: Interaction):
+        """Initialize Music Legends - announces the game and shows available packs"""
+
+        # Check if user is admin/owner
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "🔒 Only server administrators can start the game!", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        # Check how many seed packs exist
+        try:
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                pack_count = cursor.fetchone()[0]
+
+                cursor.execute("""
+                    SELECT name, pack_size FROM creator_packs
+                    WHERE status = 'LIVE'
+                    ORDER BY name
+                    LIMIT 10
+                """)
+                sample_packs = cursor.fetchall()
+            print(f"[START_GAME] Found {pack_count} LIVE packs")
+        except Exception as e:
+            print(f"[START_GAME] DB query failed: {e}")
+            import traceback; traceback.print_exc()
+            await interaction.followup.send(
+                f"Database error while checking packs: `{e}`", ephemeral=True
+            )
+            return
+
+        if pack_count == 0:
+            # No packs - try forcing a reseed
+            print("[START_GAME] 0 LIVE packs — attempting emergency reseed...")
+            try:
+                import asyncio
+                from services.seed_packs import seed_packs_into_db
+                result = await asyncio.to_thread(seed_packs_into_db, force_reseed=True)
+                print(f"[START_GAME] Emergency reseed result: {result}")
+                # Re-check after reseed
+                with self.db._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                    pack_count = cursor.fetchone()[0]
+                    cursor.execute("""
+                        SELECT name, pack_size FROM creator_packs
+                        WHERE status = 'LIVE'
+                        ORDER BY name LIMIT 10
+                    """)
+                    sample_packs = cursor.fetchall()
+                print(f"[START_GAME] After reseed: {pack_count} LIVE packs")
+            except Exception as e:
+                print(f"[START_GAME] Emergency reseed failed: {e}")
+                import traceback; traceback.print_exc()
+
+            if pack_count == 0:
+                error_embed = discord.Embed(
+                    title="⚠️ No Packs Available",
+                    description=(
+                        "Seed packs haven't loaded yet. This usually fixes itself on the next restart.\n\n"
+                        "If this persists, check Railway logs for seed pack errors."
+                    ),
+                    color=PINK,
+                )
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+                return
+
+        # Create announcement embed
+        embed = discord.Embed(
+            title="🎵🎮 MUSIC LEGENDS IS NOW LIVE! 🎮🎵",
+            description=f"""
+**Welcome to Music Legends - The Ultimate Card Battle Game!**
+
+🎴 **Collect cards** of your favorite music artists
+⚔️ **Battle friends** with strategic card decks
+🎁 **Open packs** for rare cards
+💰 **Trade & sell** cards in the marketplace
+
+📦 **{pack_count} packs available** across multiple genres!
+
+🚀 **Getting Started:**
+• `/drop` - Claim cards from community drops
+• `/deck` - View your battle deck and cards
+• `/battle @friend` - Challenge someone to a card battle
+• `/packs` - Browse available card packs
+            """,
+            color=PURPLE,
+        )
+        embed.set_author(name="Music Legends", icon_url=LOGO_URL)
+        embed.set_image(url=BANNER_URL)
+
+        # Show sample packs
+        if sample_packs:
+            pack_list = "\n".join([f"• **{name}** ({size} cards)" for name, size in sample_packs[:6]])
+            embed.add_field(
+                name="📦 Sample Packs",
+                value=pack_list,
+                inline=False
+            )
+
+        embed.add_field(
+            name="🎯 Status",
+            value="✅ **Game Ready!** All systems operational.",
+            inline=False
+        )
+
+        embed.set_footer(text="🎵 Music Legends • Use /help for all commands")
+
+        await interaction.followup.send("@everyone", embed=embed)
+
+        # Drop a welcome pack using the same mechanism as /drop
+        try:
+            from cogs.gameplay import CardDropView
+            pack = self.db.get_random_live_pack_by_tier("community")
+            if pack:
+                drop_embed = discord.Embed(
+                    title="⚪ WELCOME PACK DROP! ⚪",
+                    description=f"**{pack['name']}**\nFirst to click claims all {pack['pack_size']} cards!",
+                    color=NAVY,
+                )
+                drop_embed.add_field(name="Tier", value="Community", inline=True)
+                drop_embed.add_field(name="Cards", value=str(pack['pack_size']), inline=True)
+                if pack.get("genre"):
+                    drop_embed.add_field(name="Genre", value=pack["genre"], inline=True)
+                drop_embed.set_footer(text="Welcome drop! • Expires in 5 min")
+
+                view = CardDropView(pack=pack, db=self.db, timeout=300)
+                msg = await interaction.followup.send(embed=drop_embed, view=view)
+                view.message = msg
+        except Exception as e:
+            print(f"⚠️ Welcome drop failed (non-critical): {e}")
+
+
+async def setup(bot):
+    await bot.add_cog(StartGameCog(bot))

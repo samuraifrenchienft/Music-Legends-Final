@@ -1,0 +1,11 @@
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+# startCommand is intentionally omitted — each service uses its Dockerfile CMD
+# Force rebuild - 2026-02-24
+
+[[services]]
+name = "music-legends-bot"
+
+[services.variables]
+PYTHON_VERSION = "3.11"

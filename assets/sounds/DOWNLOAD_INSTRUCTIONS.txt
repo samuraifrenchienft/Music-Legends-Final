@@ -1,0 +1,44 @@
+AUDIO FILES NEEDED - Download Instructions
+==========================================
+
+This bot requires 4 audio files to provide premium audio feedback.
+
+QUICK DOWNLOAD LINKS (Free & Legal):
+------------------------------------
+
+1. legendary_pull.mp3
+   - Visit: https://freesound.org/search/?q=epic+reveal
+   - Download any epic orchestral hit or fanfare (2-4 seconds)
+   - Rename to: legendary_pull.mp3
+
+2. daily_claim.mp3
+   - Visit: https://freesound.org/search/?q=coin+sound
+   - Download a coin/cash register sound (1-2 seconds)
+   - Rename to: daily_claim.mp3
+
+3. card_pickup.mp3
+   - Visit: https://freesound.org/search/?q=whoosh
+   - Download a soft whoosh or pickup sound (0.5-1 second)
+   - Rename to: card_pickup.mp3
+
+4. pack_purchase.mp3
+   - Visit: https://freesound.org/search/?q=cash+register
+   - Download a purchase/success sound (1-2 seconds)
+   - Rename to: pack_purchase.mp3
+
+ALTERNATIVE: Use YouTube Audio Library
+--------------------------------------
+https://studio.youtube.com/channel/YOUR_CHANNEL/music
+
+Filter by:
+- Duration: 0-30 seconds
+- Mood: Bright, Happy, Dramatic (depending on sound)
+- Genre: Sound effects
+
+ALL SOUNDS MUST BE:
+- MP3 format
+- Royalty-free / Creative Commons
+- Under 8MB
+- Placed in this directory (assets/sounds/)
+
+The bot will work without these files, but users will not hear audio feedback.

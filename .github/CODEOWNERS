@@ -1,0 +1,76 @@
+# CODEOWNERS File
+# 
+# This file defines individuals or teams that are responsible for code in this repository.
+# Teams and users are specified using GitHub usernames or team names.
+# 
+# Format:
+#   # This is a comment
+#   @user            # Individual user
+#   @org/team-name   # Team within organization
+#   file-pattern @user @org/team-name  # Files owned by specific users/teams
+
+# Global owners for all files
+# These users have ownership of the entire repository
+* @maintainer @lead-developer
+
+# GitHub Actions and CI/CD
+.github/workflows/* @devops-team @maintainer
+.github/CODEOWNERS @maintainer
+
+# Test files and configurations
+tests/* @qa-team @backend-team
+tests/smoke.py @backend-team @qa-team
+tests/conftest.py @backend-team @qa-team
+
+# Core business logic
+services/* @backend-team
+services/pack_youtube.py @backend-team @game-logic-team
+services/trade_service.py @backend-team @game-logic-team
+services/rate_limiter.py @backend-team @game-logic-team
+services/refund_service.py @backend-team @payment-team
+services/payment_gateway.py @backend-team @payment-team
+
+# Database models
+models/* @backend-team @database-team
+models/card.py @backend-team @game-logic-team
+models/artist.py @backend-team @game-logic-team
+models/purchase.py @backend-team @payment-team
+models/trade.py @backend-team @game-logic-team
+
+# Discord bot commands and cogs
+cogs/* @discord-team
+commands/* @discord-team
+
+# Configuration and environment
+config/* @backend-team @devops-team
+.env* @maintainer @devops-team
+
+# Documentation
+docs/* @tech-writers @maintainer
+README.md @maintainer @tech-writers
+
+# Scripts and automation
+scripts/* @devops-team @backend-team
+
+# Database migrations
+migrations/* @database-team @backend-team
+
+# Frontend/UI components (if any)
+ui/* @frontend-team @discord-team
+
+# Monitoring and logging
+monitor/* @devops-team @backend-team
+
+# External integrations
+stripe_payments.py @payment-team @backend-team
+stripe_webhook.py @payment-team @backend-team
+
+# Security and permissions
+middleware/permissions.py @backend-team @security-team
+services/role_service.py @backend-team @security-team
+services/audit_service.py @backend-team @security-team
+
+# Emergency overrides (only maintainers can modify)
+# These files are critical and should only be changed by senior team members
+scripts/emergency_* @maintainer
+config/emergency_* @maintainer
