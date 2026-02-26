@@ -39,57 +39,10 @@ class RateLimitStrategy(Enum):
 # RATE LIMIT CONFIGURATION
 # ==========================================
 
-@dataclass
-class RateLimitConfig:
-    """Configuration for a rate limit rule"""
-    action: str                             # Action name (e.g., "pack_create")
-    max_requests: int                       # Maximum requests allowed
-    window_seconds: int                     # Time window in seconds
-    strategy: RateLimitStrategy = RateLimitStrategy.TOKEN_BUCKET
-    penalty_multiplier: float = 1.5         # Multiplier for repeat violations
-    enable_adaptive: bool = True             # Adapt limits based on behavior
-    enable_cascading: bool = True            # Apply limits across related actions
-    
+from ..config import settings
 
 # Default rate limit configurations
-DEFAULT_LIMITS = {
-    'pack_create': RateLimitConfig(
-        action='pack_create',
-        max_requests=5,
-        window_seconds=3600,  # 5 packs per hour
-        strategy=RateLimitStrategy.TOKEN_BUCKET
-    ),
-    'pack_purchase': RateLimitConfig(
-        action='pack_purchase',
-        max_requests=10,
-        window_seconds=86400,  # 10 packs per day
-        strategy=RateLimitStrategy.SLIDING_WINDOW
-    ),
-    'payment': RateLimitConfig(
-        action='payment',
-        max_requests=5,
-        window_seconds=3600,  # 5 payments per hour
-        strategy=RateLimitStrategy.TOKEN_BUCKET
-    ),
-    'api_call': RateLimitConfig(
-        action='api_call',
-        max_requests=100,
-        window_seconds=60,  # 100 calls per minute
-        strategy=RateLimitStrategy.TOKEN_BUCKET
-    ),
-    'login_attempt': RateLimitConfig(
-        action='login_attempt',
-        max_requests=10,
-        window_seconds=900,  # 10 attempts per 15 minutes
-        strategy=RateLimitStrategy.FIXED_WINDOW
-    ),
-    'failed_login': RateLimitConfig(
-        action='failed_login',
-        max_requests=5,
-        window_seconds=900,  # 5 failures per 15 minutes
-        strategy=RateLimitStrategy.FIXED_WINDOW
-    )
-}
+DEFAULT_LIMITS = {k: RateLimitConfig(action=k, **v) for k, v in settings.RATES.items()}
 
 
 # ==========================================

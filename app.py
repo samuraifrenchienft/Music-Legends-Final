@@ -25,9 +25,7 @@ from webhooks.payments import (
     WebhookSignatureError,
     WebhookProcessingError
 )
-
-# Configure Flask app
-app = Flask(__name__)
+from config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -36,21 +34,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-class Config:
-    """Application configuration."""
-    DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
-    PORT = int(os.getenv('PORT', 5000))
-    HOST = os.getenv('HOST', '0.0.0.0')
-    
-    # Gateway secrets
-    STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
-    PAYPAL_WEBHOOK_ID = os.getenv('PAYPAL_WEBHOOK_ID')
-    
-    # Security
-    REQUIRE_SIGNATURE = os.getenv('REQUIRE_WEBHOOK_SIGNATURE', 'True').lower() == 'true'
-
-app.config.from_object(Config)
+app = Flask(__name__)
 
 def verify_signature(request, gateway: str = "stripe") -> bool:
     """
@@ -66,7 +50,7 @@ def verify_signature(request, gateway: str = "stripe") -> bool:
     Raises:
         WebhookSignatureError: If verification fails
     """
-    if not app.config.get('REQUIRE_SIGNATURE', True):
+    if not settings.REQUIRE_WEBHOOK_SIGNATURE:
         logger.warning("Signature verification disabled - skipping check")
         return True
     
@@ -95,7 +79,7 @@ def verify_stripe_signature(request) -> bool:
         if not signature_header:
             raise WebhookSignatureError("Missing Stripe signature header")
         
-        webhook_secret = app.config.get('STRIPE_WEBHOOK_SECRET')
+        webhook_secret = settings.STRIPE_WEBHOOK_SECRET
         if not webhook_secret:
             raise WebhookSignatureError("Missing Stripe webhook secret")
         
@@ -360,9 +344,9 @@ def status_check():
         
         # Check configuration
         config_status = {
-            "stripe_configured": bool(app.config.get('STRIPE_WEBHOOK_SECRET')),
-            "paypal_configured": bool(app.config.get('PAYPAL_WEBHOOK_ID')),
-            "signature_verification": app.config.get('REQUIRE_SIGNATURE', True)
+            "stripe_configured": bool(settings.STRIPE_WEBHOOK_SECRET),
+            "paypal_configured": bool(settings.PAYPAL_WEBHOOK_ID),
+            "signature_verification": settings.REQUIRE_WEBHOOK_SIGNATURE
         }
         
         # Check supported events
@@ -401,7 +385,7 @@ def test_webhook():
     
     Accepts test events without signature verification.
     """
-    if app.config.get('DEBUG', False):
+    if settings.FLASK_DEBUG:
         # Skip signature verification in debug mode
         event = request.get_json()
         
@@ -459,8 +443,8 @@ def create_app():
 
 if __name__ == '__main__':
     # Development server
-    logger.info(f"Starting webhook server on {app.config['HOST']}:{app.config['PORT']}")
-    logger.info(f"Debug mode: {app.config['DEBUG']}")
+    logger.info(f"Starting webhook server on {settings.HOST}:{settings.PORT}")
+    logger.info(f"Debug mode: {settings.FLASK_DEBUG}")
     
     # Start Discord bot in background thread
     import threading
@@ -470,13 +454,13 @@ if __name__ == '__main__':
         """Start Discord bot in background"""
         try:
             import main
-            token = os.getenv("BOT_TOKEN")
+            token = settings.DISCORD_TOKEN
             if token:
                 logger.info("Starting Discord bot in background...")
                 bot = main.Bot()
                 bot.run(token)
             else:
-                logger.error("No BOT_TOKEN found - Discord bot not started")
+                logger.error("No DISCORD_TOKEN found - Discord bot not started")
         except Exception as e:
             logger.error(f"Discord bot failed to start: {e}")
     
@@ -486,7 +470,7 @@ if __name__ == '__main__':
     
     # Start Flask app
     app.run(
-        host=app.config['HOST'],
-        port=app.config['PORT'],
-        debug=app.config['DEBUG']
+        host=settings.HOST,
+        port=settings.PORT,
+        debug=settings.FLASK_DEBUG
     )

@@ -1,33 +1,24 @@
 import os
 import sys
 import discord
-from dotenv import load_dotenv
-from discord.ext import commands
+from config import settings
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == "win32":
     import codecs
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
-# Load environment variables
-print("🔧 Loading environment variables...")
-if os.getenv("REDIS_URL") is None or os.getenv("BOT_TOKEN") is None:
-    print("📄 Loading from .env.txt file")
-    load_dotenv('.env.txt')
-else:
-    print("✅ Environment variables already loaded")
+# Environment variables are loaded by pydantic-settings in config.py
+print("🔧 Loading configuration...")
 
 # Check critical environment variables
-bot_token = os.getenv("BOT_TOKEN")
-app_id = os.getenv("DISCORD_APPLICATION_ID")
-test_server = os.getenv("TEST_SERVER_ID")
+print(f"🔍 DATABASE_URL: {'✅ Set' if settings.DATABASE_URL else '❌ MISSING'}")
+print(f"🔍 DISCORD_TOKEN: {'✅ Set' if settings.DISCORD_TOKEN else '❌ MISSING'}")
+print(f"🔍 DISCORD_APPLICATION_ID: {'✅ Set' if settings.DISCORD_APPLICATION_ID else '❌ MISSING'}")
+print(f"🔍 TEST_SERVER_ID: {'✅ Set' if settings.TEST_SERVER_ID else '⚠️ Not Set'}")
 
-print(f"🔍 BOT_TOKEN: {'✅ Set' if bot_token else '❌ MISSING'}")
-print(f"🔍 DISCORD_APPLICATION_ID: {'✅ Set' if app_id else '❌ MISSING'}")
-print(f"🔍 TEST_SERVER_ID: {'✅ Set' if test_server else '❌ MISSING'}")
-
-if not bot_token:
-    print("❌ CRITICAL: BOT_TOKEN is missing!")
+if not settings.DISCORD_TOKEN:
+    print("❌ CRITICAL: DISCORD_TOKEN is missing!")
     exit(1)
 
 # Bot setup
@@ -40,18 +31,11 @@ intents.reactions = True  # Enable reaction intent
 
 class Bot(commands.Bot):
     def __init__(self):
-        app_id = os.getenv("DISCORD_APPLICATION_ID")
-        if app_id:
-            try:
-                app_id = int(app_id)
-            except ValueError:
-                app_id = None
-
         super().__init__(
             command_prefix="!",
             help_command=None,
             intents=intents,
-            application_id=app_id
+            application_id=settings.DISCORD_APPLICATION_ID
         )
 
         # Flag to prevent on_ready from running multiple times
@@ -68,7 +52,7 @@ class Bot(commands.Bot):
         # db_manager uses SQLAlchemy with pool_size=20+overflow=10 which exhausts
         # Railway's PostgreSQL connection limit. database.py's get_db() singleton
         # already manages its own pool (3+2=5 connections) and handles all queries.
-        _using_postgres = bool(os.getenv("DATABASE_URL"))
+        _using_postgres = "postgresql" in settings.DATABASE_URL
         if not _using_postgres:
             from db_manager import db_manager
 
@@ -198,7 +182,7 @@ class Bot(commands.Bot):
         print(f"📋 Commands: {loaded_commands}")
         
         # Sync commands
-        test_server_id = os.getenv("TEST_SERVER_ID")
+        test_server_id = settings.TEST_SERVER_ID
 
         try:
             # Always sync global commands (non-dev commands)
@@ -300,7 +284,7 @@ class Bot(commands.Bot):
 
         # Send startup notice to dev channel (ONCE)
         try:
-            test_server_id = os.getenv('TEST_SERVER_ID')
+            test_server_id = settings.TEST_SERVER_ID
             if test_server_id:
                 test_server = self.get_guild(int(test_server_id))
                 if test_server:
@@ -361,7 +345,7 @@ class Bot(commands.Bot):
             print(f"⚠️ Backup error (non-critical): {e}")
         
         try:
-            if not os.getenv("DATABASE_URL"):
+            if not ("postgresql" in settings.DATABASE_URL):
                 from db_manager import db_manager
                 await db_manager.close()
             print("✅ Database closed")
@@ -380,7 +364,7 @@ if __name__ == "__main__":
     print(f"🔧 DEPLOYMENT VERSION: 3.0 - SYNC SEED + DAILY CARD FIX - 2026-02-07")
 
     try:
-        token = os.getenv("BOT_TOKEN")
+        token = settings.DISCORD_TOKEN
         if not token:
             print("❌ BOT_TOKEN is empty")
             print("⚠️ Please set valid BOT_TOKEN and restart")

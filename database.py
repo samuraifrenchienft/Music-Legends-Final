@@ -4,8 +4,11 @@ import json
 import os
 import urllib.parse
 from typing import List, Dict, Optional, Tuple
+from sqlalchemy import create_engine
 from datetime import datetime
 from pathlib import Path
+
+from config import settings
 
 
 def _parse_db_url(url: str) -> dict:
@@ -330,8 +333,9 @@ class _PgConnectionWrapper:
 class DatabaseManager:
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
-        self._database_url = os.getenv("DATABASE_URL")
-        self._db_type = "postgresql" if self._database_url else "sqlite"
+        self._database_url = settings.DATABASE_URL
+        self._db_type = "postgresql" if self._database_url and self._database_url.startswith("postgres") else "sqlite"
+        self.engine = None
 
         # Initialize connection pool for PostgreSQL
         self._pool = None
@@ -340,6 +344,7 @@ class DatabaseManager:
                 url = self._database_url
                 if url.startswith("postgres://"):
                     url = url.replace("postgres://", "postgresql://", 1)
+                self.engine = create_engine(url)
                 self._pool = ConnectionPool(url, pool_size=2, max_overflow=3)
                 print(f"✅ [DATABASE] PostgreSQL connection pool initialized (size=2, max_overflow=3)")
             except Exception as e:
@@ -415,145 +420,89 @@ class DatabaseManager:
                 conn.close()
 
     def init_database(self):
-        """Initialize all database tables"""
-        if self._database_url:
-            self._init_postgresql()
-            return
+        """Initialize database connection and PRAGMAs."""
+        if self._db_type == "sqlite":
+            with self._get_connection() as conn:
+                conn.execute("PRAGMA foreign_keys = ON")
+        
+        # All table creation is now handled by Alembic migrations.
+        # The models are defined in the `models/` directory.
+        print("✅ [DATABASE] Initialized (Alembic handles schema)")
 
-        with self._get_connection() as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            cursor = conn.cursor()
+            """)
             
-            # Users table
+            # Pending TMA battles
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
+                CREATE TABLE IF NOT EXISTS pending_tma_battles (
+                    battle_id TEXT PRIMARY KEY,
+                    player1_id INTEGER NOT NULL,
+                    player2_id INTEGER,
+                    player1_deck TEXT NOT NULL,
+                    player2_deck TEXT,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (player1_id) REFERENCES users(user_id),
+                    FOREIGN KEY (player2_id) REFERENCES users(user_id)
+                )
+            """)
+            
+            # Trade history
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trade_history (
+                    trade_id TEXT PRIMARY KEY,
+                    proposer_id INTEGER NOT NULL,
+                    receiver_id INTEGER NOT NULL,
+                    proposer_cards TEXT,
+                    receiver_cards TEXT,
+                    proposer_gold INTEGER,
+                    receiver_gold INTEGER,
+                    status TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Pack purchases
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pack_purchases (
+                    purchase_id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    pack_id TEXT NOT NULL,
+                    price INTEGER NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Season progress
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS season_progress (
+                    user_id INTEGER NOT NULL,
+                    season_id TEXT NOT NULL,
+                    xp INTEGER DEFAULT 0,
+                    tier INTEGER DEFAULT 0,
+                    premium_unlocked BOOLEAN DEFAULT FALSE,
+                    claimed_tiers TEXT,
+                    PRIMARY KEY (user_id, season_id)
+                )
+            """)
+            
+            # VIP status
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS vip_status (
                     user_id INTEGER PRIMARY KEY,
-                    username TEXT,
-                    discord_tag TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    total_battles INTEGER DEFAULT 0,
-                    wins INTEGER DEFAULT 0,
-                    losses INTEGER DEFAULT 0,
-                    packs_opened INTEGER DEFAULT 0,
-                    victory_tokens INTEGER DEFAULT 0
+                    is_vip BOOLEAN DEFAULT FALSE,
+                    tier INTEGER DEFAULT 0,
+                    expiration_date TEXT
                 )
             """)
             
-            # Cards table
+            # User-created packs
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS cards (
-                    card_id TEXT PRIMARY KEY,
-                    type TEXT NOT NULL DEFAULT 'artist', -- 'artist' or 'song'
+                CREATE TABLE IF NOT EXISTS user_created_packs (
+                    pack_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
-                    artist_name TEXT,           -- alias for display (maps to name)
-                    title TEXT,
-                    image_url TEXT,
-                    youtube_url TEXT,
-                    rarity TEXT NOT NULL,
-                    tier TEXT,                  -- mapped from rarity (community/gold/platinum/legendary)
-                    variant TEXT DEFAULT 'Classic',
-                    era TEXT,
-                    impact INTEGER,
-                    skill INTEGER,
-                    longevity INTEGER,
-                    culture INTEGER,
-                    hype INTEGER,
-                    serial_number TEXT,         -- unique instance ID (defaults to card_id)
-                    print_number INTEGER DEFAULT 1, -- print sequence
-                    quality TEXT DEFAULT 'standard', -- card quality
-                    effect_type TEXT, -- for song cards
-                    effect_value TEXT, -- for song cards
-                    pack_id TEXT,
-                    created_by_user_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (pack_id) REFERENCES creator_packs(pack_id),
-                    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
-                )
-            """)
-
-            # Lightweight migrations for existing databases
-            cursor.execute("PRAGMA table_info(cards)")
-            card_columns = {row[1] for row in cursor.fetchall()}
-            if "era" not in card_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN era TEXT")
-            if "artist_name" not in card_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN artist_name TEXT")
-            if "tier" not in card_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN tier TEXT")
-            if "serial_number" not in card_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN serial_number TEXT")
-            if "print_number" not in card_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN print_number INTEGER DEFAULT 1")
-            if "quality" not in card_columns:
-                cursor.execute("ALTER TABLE cards ADD COLUMN quality TEXT DEFAULT 'standard'")
-
-            # VIP subscription columns for user_inventory (only migrate existing tables)
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_inventory'")
-            if cursor.fetchone():
-                cursor.execute("PRAGMA table_info(user_inventory)")
-                inventory_columns = {row[1] for row in cursor.fetchall()}
-                if "vip_status" not in inventory_columns:
-                    cursor.execute("ALTER TABLE user_inventory ADD COLUMN vip_status TEXT DEFAULT 'inactive'")
-                if "vip_expires" not in inventory_columns:
-                    cursor.execute("ALTER TABLE user_inventory ADD COLUMN vip_expires TEXT")
-                if "vip_stripe_subscription_id" not in inventory_columns:
-                    cursor.execute("ALTER TABLE user_inventory ADD COLUMN vip_stripe_subscription_id TEXT")
-            
-            # Server activity tracking (for auto-drops)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS server_activity (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    server_id INTEGER NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    activity_type TEXT DEFAULT 'message'
-                )
-            """)
-            
-            # Create index for server_activity
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_server_activity_lookup 
-                ON server_activity(server_id, timestamp)
-            """)
-            
-            # User cosmetics table - track unlocked cosmetics
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_cosmetics (
-                    user_id TEXT NOT NULL,
-                    cosmetic_id TEXT NOT NULL,
-                    cosmetic_type TEXT NOT NULL,
-                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    source TEXT,
-                    PRIMARY KEY (user_id, cosmetic_id)
-                )
-            """)
-            
-            # Cosmetics catalog - available cosmetics
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS cosmetics_catalog (
-                    cosmetic_id TEXT PRIMARY KEY,
-                    cosmetic_type TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    rarity TEXT,
-                    unlock_method TEXT,
-                    price_gold INTEGER,
-                    price_tickets INTEGER,
-                    image_url TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Card cosmetic assignments - per-card customization
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS card_cosmetics (
-                    user_id TEXT NOT NULL,
-                    card_id TEXT NOT NULL,
-                    frame_style TEXT,
-                    foil_effect TEXT,
-                    badge_override TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, card_id)
+                    creator_id BIGINT NOT NULL,
+                    cards TEXT NOT NULL,
+                    FOREIGN KEY (creator_id) REFERENCES users(user_id)
                 )
             """)
             
@@ -704,7 +653,7 @@ class DatabaseManager:
             }
             for keyword, genre_name in genre_map.items():
                 cursor.execute(
-                    "UPDATE creator_packs SET genre = ? WHERE name LIKE ? AND genre IS NULL",
+                    "UPDATE creator_packs SET genre = ? WHERE pack_name LIKE ? AND genre IS NULL",
                     (genre_name, f"%{keyword}%"),
                 )
 
@@ -1212,6 +1161,20 @@ class DatabaseManager:
                     result_json     TEXT,
                     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at      TIMESTAMP
+                )
+            """)
+
+            # Marketplace listings
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_listings (
+                    listing_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    seller_id INTEGER NOT NULL,
+                    card_id TEXT NOT NULL,
+                    price INTEGER NOT NULL,
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'active', -- active, sold, cancelled
+                    FOREIGN KEY (seller_id) REFERENCES users(user_id),
+                    FOREIGN KEY (card_id) REFERENCES cards(card_id)
                 )
             """)
 
@@ -2149,6 +2112,30 @@ class DatabaseManager:
                     expires_at      TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
                 )
             """)
+
+            # -- Marketplace --
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_listings (
+                    listing_id SERIAL PRIMARY KEY,
+                    seller_id BIGINT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    price INTEGER NOT NULL,
+                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'active', -- active, sold, cancelled
+                    FOREIGN KEY (seller_id) REFERENCES users(user_id),
+                    FOREIGN KEY (card_id) REFERENCES cards(card_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS season_progress (
+                    user_id BIGINT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    xp INTEGER DEFAULT 0,
+                    tier INTEGER DEFAULT 1,
+                    premium_purchased BOOLEAN DEFAULT FALSE,
+                    claimed_tiers TEXT,
+                    PRIMARY KEY (user_id, season_id)
+                );
+            """)
             conn.commit()
 
             conn.commit()
@@ -2300,6 +2287,290 @@ class DatabaseManager:
                 user = cursor.fetchone()
                 columns = [desc[0] for desc in cursor.description]
                 return dict(zip(columns, user))
+
+    def get_marketplace_listings(self, limit: int = 50) -> List[Dict]:
+        """Get active marketplace listings."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT l.*, u.username as seller_username, c.name as card_name, c.rarity, c.image_url
+                FROM marketplace_listings l
+                JOIN users u ON l.seller_id = u.user_id
+                JOIN cards c ON l.card_id = c.card_id
+                WHERE l.status = 'active'
+                ORDER BY l.listed_at DESC
+                LIMIT {ph}
+            """, (limit,))
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def create_marketplace_listing(self, seller_id: int, card_id: str, price: int) -> Dict:
+        """Create a new marketplace listing."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+
+                # Check if user owns the card
+                cursor.execute(f"SELECT 1 FROM user_cards WHERE user_id = {ph} AND card_id = {ph}", (seller_id, card_id))
+                if not cursor.fetchone():
+                    return {"success": False, "error": "User does not own this card."}
+
+                # Create the listing
+                cursor.execute(f"""
+                    INSERT INTO marketplace_listings (seller_id, card_id, price)
+                    VALUES ({ph}, {ph}, {ph})
+                """, (seller_id, card_id, price))
+                
+                # Remove card from user's possession
+                cursor.execute(f"DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph} LIMIT 1", (seller_id, card_id))
+
+                conn.commit()
+                return {"success": True, "listing_id": cursor.lastrowid}
+            except Exception as e:
+                conn.rollback()
+                return {"success": False, "error": str(e)}
+
+    def purchase_marketplace_listing(self, buyer_id: int, listing_id: int) -> Dict:
+        """Purchase a card from the marketplace."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+
+                # Get listing details
+                cursor.execute(f"SELECT * FROM marketplace_listings WHERE listing_id = {ph} AND status = 'active'", (listing_id,))
+                listing = cursor.fetchone()
+                if not listing:
+                    return {"success": False, "error": "Listing not found or already sold."}
+                
+                listing_cols = [desc[0] for desc in cursor.description]
+                listing_dict = dict(zip(listing_cols, listing))
+
+                seller_id = listing_dict['seller_id']
+                card_id = listing_dict['card_id']
+                price = listing_dict['price']
+
+                if buyer_id == seller_id:
+                    return {"success": False, "error": "You cannot buy your own listing."}
+
+                # Check buyer's balance
+                cursor.execute(f"SELECT gold FROM user_inventory WHERE user_id = {ph}", (buyer_id,))
+                buyer_balance = cursor.fetchone()
+                if not buyer_balance or buyer_balance[0] < price:
+                    return {"success": False, "error": "Insufficient funds."}
+
+                # Perform transaction
+                # 1. Deduct price from buyer
+                cursor.execute(f"UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph}", (price, buyer_id))
+                # 2. Add price to seller
+                cursor.execute(f"UPDATE user_inventory SET gold = gold + {ph} WHERE user_id = {ph}", (price, seller_id))
+                # 3. Transfer card to buyer
+                cursor.execute(f"INSERT INTO user_cards (user_id, card_id) VALUES ({ph}, {ph})", (buyer_id, card_id))
+                # 4. Mark listing as sold
+                cursor.execute(f"UPDATE marketplace_listings SET status = 'sold' WHERE listing_id = {ph}", (listing_id,))
+
+                conn.commit()
+                return {"success": True, "message": f"Successfully purchased card {card_id} for {price} gold."}
+            except Exception as e:
+                conn.rollback()
+                return {"success": False, "error": str(e)}
+
+    def create_trade(self, initiator_id: int, partner_id: int, offered_cards: List[str], requested_cards: List[str], offered_gold: int, requested_gold: int) -> Dict:
+        """Create a new trade."""
+        import uuid
+        trade_id = str(uuid.uuid4())
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+
+                # TODO: Verify ownership of offered cards and sufficient gold
+
+                cursor.execute(f"""
+                    INSERT INTO trades (trade_id, initiator_user_id, receiver_user_id, initiator_cards, receiver_cards, gold_from_initiator, gold_from_receiver)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                """, (trade_id, initiator_id, partner_id, json.dumps(offered_cards), json.dumps(requested_cards), offered_gold, requested_gold))
+
+                conn.commit()
+                return {"success": True, "trade_id": trade_id}
+            except Exception as e:
+                conn.rollback()
+                return {"success": False, "error": str(e)}
+
+    def get_user_trades(self, user_id: int) -> List[Dict]:
+        """Get all trades for a user."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT * FROM trades
+                WHERE initiator_user_id = {ph} OR receiver_user_id = {ph}
+                ORDER BY rowid DESC
+            """, (user_id, user_id))
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def accept_trade(self, trade_id: str, user_id: int) -> Dict:
+        """Accept a trade."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+
+                # Get trade details
+                cursor.execute(f"SELECT * FROM trades WHERE trade_id = {ph} AND status = 'pending'", (trade_id,))
+                trade = cursor.fetchone()
+                if not trade:
+                    return {"success": False, "error": "Trade not found or not pending."}
+                
+                trade_cols = [desc[0] for desc in cursor.description]
+                trade_dict = dict(zip(trade_cols, trade))
+
+                if user_id != trade_dict['receiver_user_id']:
+                    return {"success": False, "error": "You are not the receiver of this trade."}
+
+                initiator_id = trade_dict['initiator_user_id']
+                receiver_id = trade_dict['receiver_user_id']
+                initiator_cards = json.loads(trade_dict['initiator_cards'])
+                receiver_cards = json.loads(trade_dict['receiver_cards'])
+                gold_from_initiator = trade_dict['gold_from_initiator']
+                gold_from_receiver = trade_dict['gold_from_receiver']
+
+                # TODO: Verify card ownership and gold balances
+
+                # Perform transaction
+                # 1. Gold transfer
+                cursor.execute(f"UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph}", (gold_from_initiator, initiator_id))
+                cursor.execute(f"UPDATE user_inventory SET gold = gold + {ph} WHERE user_id = {ph}", (gold_from_initiator, receiver_id))
+                cursor.execute(f"UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph}", (gold_from_receiver, receiver_id))
+                cursor.execute(f"UPDATE user_inventory SET gold = gold + {ph} WHERE user_id = {ph}", (gold_from_receiver, initiator_id))
+
+                # 2. Card transfer
+                for card_id in initiator_cards:
+                    cursor.execute(f"DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph} LIMIT 1", (initiator_id, card_id))
+                    cursor.execute(f"INSERT INTO user_cards (user_id, card_id) VALUES ({ph}, {ph})", (receiver_id, card_id))
+                
+                for card_id in receiver_cards:
+                    cursor.execute(f"DELETE FROM user_cards WHERE user_id = {ph} AND card_id = {ph} LIMIT 1", (receiver_id, card_id))
+                    cursor.execute(f"INSERT INTO user_cards (user_id, card_id) VALUES ({ph}, {ph})", (initiator_id, card_id))
+
+                # Update trade status
+                cursor.execute(f"UPDATE trades SET status = 'completed' WHERE trade_id = {ph}", (trade_id,))
+
+                conn.commit()
+                return {"success": True, "message": "Trade accepted."}
+            except Exception as e:
+                conn.rollback()
+                return {"success": False, "error": str(e)}
+
+    def cancel_trade(self, trade_id: str, user_id: int) -> Dict:
+        """Cancel a trade."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(f"UPDATE trades SET status = 'cancelled' WHERE trade_id = {ph} AND (initiator_user_id = {ph} OR receiver_user_id = {ph})", (trade_id, user_id, user_id))
+                conn.commit()
+                return {"success": True, "message": "Trade cancelled."}
+            except Exception as e:
+                conn.rollback()
+                return {"success": False, "error": str(e)}
+
+    def get_dust_balance(self, user_id: int) -> int:
+        """Get user's dust balance."""
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT dust FROM user_inventory WHERE user_id = {ph}", (user_id,))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+
+    def dust_cards(self, user_id: int, card_ids: list[str]) -> tuple[bool, str]:
+        """Convert cards into dust."""
+        from services.dust_economy import DUST_REWARDS
+        
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            total_dust_gained = 0
+            dusted_cards_summary = {}
+
+            for card_id in card_ids:
+                # Check if the user owns the card and get its rarity
+                cursor.execute(f"SELECT c.rarity, uc.quantity FROM cards c JOIN user_cards uc ON c.card_id = uc.card_id WHERE uc.user_id = {ph} AND uc.card_id = {ph}", (user_id, card_id))
+                result = cursor.fetchone()
+
+                if not result:
+                    return False, f"You do not own card {card_id}."
+
+                rarity, quantity = result
+                if quantity <= 0:
+                    return False, f"You do not have any copies of card {card_id} to dust."
+
+                # Calculate dust gained for one card
+                dust_gained = DUST_REWARDS.get(rarity.lower(), 0)
+                total_dust_gained += dust_gained
+
+                # Decrement card quantity
+                cursor.execute(f"UPDATE user_cards SET quantity = quantity - 1 WHERE user_id = {ph} AND card_id = {ph}", (user_id, card_id))
+
+                # Update summary
+                if rarity in dusted_cards_summary:
+                    dusted_cards_summary[rarity] += 1
+                else:
+                    dusted_cards_summary[rarity] = 1
+
+            # Update user's dust balance
+            cursor.execute(f"UPDATE user_inventory SET dust = dust + {ph} WHERE user_id = {ph}", (total_dust_gained, user_id))
+            conn.commit()
+
+            summary_str = ", ".join([f"{count} {rarity}" for rarity, count in dusted_cards_summary.items()])
+            return True, f"Dusted {len(card_ids)} cards for a total of {total_dust_gained} dust. Dusted cards: {summary_str}"
+
+    def craft_card(self, user_id: int, card_id: str) -> tuple[bool, str]:
+        """Craft a card using dust."""
+        from services.dust_economy import CRAFT_COSTS
+
+        ph = self._get_placeholder()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get card rarity and user's dust balance
+            cursor.execute(f"SELECT rarity FROM cards WHERE card_id = {ph}", (card_id,))
+            result = cursor.fetchone()
+            if not result:
+                return False, f"Card {card_id} not found in master list."
+            rarity = result[0]
+
+            cursor.execute(f"SELECT dust FROM user_inventory WHERE user_id = {ph}", (user_id,))
+            result = cursor.fetchone()
+            dust_balance = result[0] if result else 0
+
+            # Check if user has enough dust
+            craft_cost = CRAFT_COSTS.get(rarity.lower(), 0)
+            if dust_balance < craft_cost:
+                return False, f"Insufficient dust to craft this card. You need {craft_cost} dust, but you only have {dust_balance}."
+
+            # Subtract dust and add card to inventory
+            cursor.execute(f"UPDATE user_inventory SET dust = dust - {ph} WHERE user_id = {ph}", (craft_cost, user_id))
+            
+            # Check if user already has the card
+            cursor.execute(f"SELECT quantity FROM user_cards WHERE user_id = {ph} AND card_id = {ph}", (user_id, card_id))
+            result = cursor.fetchone()
+            if result:
+                # Increment quantity
+                cursor.execute(f"UPDATE user_cards SET quantity = quantity + 1 WHERE user_id = {ph} AND card_id = {ph}", (user_id, card_id))
+            else:
+                # Insert new card
+                cursor.execute(f"INSERT INTO user_cards (user_id, card_id, quantity, acquired_from) VALUES ({ph}, {ph}, 1, 'crafted')", (user_id, card_id))
+
+            conn.commit()
+
+            return True, f"Successfully crafted card {card_id} for {craft_cost} dust."
+
     
     def add_card_to_master(self, card_data: Dict) -> bool:
         """Add a card to the master card list with flexible field mapping"""

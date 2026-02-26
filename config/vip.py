@@ -365,147 +365,58 @@ class VIPExclusiveAccess:
 # ============================================
 
 class VIPManager:
-    """Manage VIP subscriptions"""
-    
-    def __init__(self, subscription_start: datetime = None, subscription_end: datetime = None):
-        self.subscription_start = subscription_start or datetime.now()
-        self.subscription_end = subscription_end or (self.subscription_start + timedelta(days=30))
-    
-    def days_remaining(self) -> int:
-        """Days until subscription expires"""
-        remaining = self.subscription_end - datetime.now()
-        return max(0, remaining.days)
-    
-    def is_active(self) -> bool:
-        """Check if VIP subscription is active"""
-        return datetime.now() < self.subscription_end
-    
-    def get_gold_multiplier(self) -> float:
-        """Get gold multiplier for battles"""
-        return VIPBattleBonuses.BONUSES["battle_gold_multiplier"]["vip"]
-    
-    def get_xp_multiplier(self) -> float:
-        """Get XP multiplier"""
-        return VIPDailyBonuses.DAILY_REWARDS["xp_boost"]["multiplier"]
-    
-    def get_wager_protection(self) -> float:
-        """Get wager protection multiplier (0.5 = lose only 50%)"""
-        return VIPBattleBonuses.BONUSES["wager_protection"]["multiplier"]
-    
-    def get_marketplace_fee(self) -> float:
-        """Get marketplace fee (0.0 for VIP)"""
-        return VIPMarketplaceBenefits.BENEFITS["marketplace_fee"]["vip"]
-    
-    def get_trading_fee(self) -> int:
-        """Get trading fee (0 for VIP)"""
-        return VIPMarketplaceBenefits.BENEFITS["trading_fee"]["vip"]
-    
-    def get_daily_trade_limit(self) -> int:
-        """Get daily trade limit"""
-        return VIPMarketplaceBenefits.BENEFITS["daily_trade_limit"]["vip"]
-    
-    def get_marketplace_slots(self) -> int:
-        """Get marketplace listing slots"""
-        return VIPMarketplaceBenefits.BENEFITS["marketplace_listings"]["vip"]
-    
-    def get_favorite_card_slots(self) -> int:
-        """Get favorite card slots"""
-        return VIPQualityOfLife.FEATURES["favorite_cards"]["vip"]
-    
-    def calculate_savings(self, days_active: int = 30) -> Dict:
-        """Calculate gold/money saved with VIP"""
+    """Central class to manage VIP status and apply benefits."""
+
+    def __init__(self, db_manager):
+        self.db = db_manager
+
+    def is_vip(self, user_id: int) -> bool:
+        """Check if a user has an active VIP subscription."""
+        vip_status = self.db.get_vip_status(user_id)
+        if not vip_status or not vip_status['is_vip']:
+            return False
         
-        # Marketplace fee savings
-        # Assume 10 trades/month @ avg 500 gold each
-        marketplace_fee_saved = 10 * 500 * 0.10  # 500 gold saved
+        # Check for expiration
+        if vip_status['expiration_date']:
+            if datetime.now() > datetime.fromisoformat(vip_status['expiration_date']):
+                # VIP has expired, update DB
+                self.db.set_vip_status(user_id, is_vip=False)
+                return False
         
-        # Trading fee savings
-        # Assume 20 trades/month @ 50 gold each
-        trading_fee_saved = 20 * 50  # 1,000 gold saved
-        
-        # Battle gold bonus
-        # Assume 5 battles/day * 30 days * 50 base gold * 0.5 bonus
-        battle_bonus = 5 * days_active * 50 * 0.5  # 3,750 gold extra
-        
-        # Wager protection
-        # Assume lose 10 battles/month @ avg 150 wager * 0.5 protection
-        wager_saved = 10 * 150 * 0.5  # 750 gold saved
-        
-        total_gold_value = (
-            marketplace_fee_saved +
-            trading_fee_saved +
-            battle_bonus +
-            wager_saved
-        )
-        
-        # Convert to USD (500 gold ≈ $2.99 pack)
-        gold_usd_value = (total_gold_value / 500) * 2.99
-        
-        # Add direct value items
-        daily_tickets_value = days_active * 0.10  # $0.10/ticket
-        monthly_pack_value = 4.99
-        
-        total_usd_value = gold_usd_value + daily_tickets_value + monthly_pack_value
-        
-        return {
-            "gold_saved": total_gold_value,
-            "gold_usd_value": gold_usd_value,
-            "tickets_earned": days_active,
-            "tickets_usd_value": daily_tickets_value,
-            "monthly_pack_value": monthly_pack_value,
-            "total_usd_value": total_usd_value,
-            "subscription_cost": VIPSubscription.MONTHLY_PRICE_USD,
-            "net_value": total_usd_value - VIPSubscription.MONTHLY_PRICE_USD,
-            "value_ratio": total_usd_value / VIPSubscription.MONTHLY_PRICE_USD,
-        }
-    
-    def format_benefits_display(self) -> str:
-        """Format VIP benefits for display"""
-        output = "👑 **VIP MEMBERSHIP BENEFITS** 👑\n\n"
-        output += f"**Price:** ${VIPSubscription.MONTHLY_PRICE_USD}/month\n\n"
-        
-        output += "**💰 DAILY BONUSES:**\n"
-        output += f"• {VIPDailyBonuses.DAILY_REWARDS['gold_bonus']['description']}\n"
-        output += f"• {VIPDailyBonuses.DAILY_REWARDS['ticket_bonus']['description']}\n"
-        output += f"• {VIPDailyBonuses.DAILY_REWARDS['monthly_pack']['description']}\n"
-        output += f"• {VIPDailyBonuses.DAILY_REWARDS['xp_boost']['description']}\n\n"
-        
-        output += "**⚔️ BATTLE BONUSES:**\n"
-        output += f"• {VIPBattleBonuses.BONUSES['battle_gold_multiplier']['description']}\n"
-        output += f"• {VIPBattleBonuses.BONUSES['wager_protection']['description']}\n"
-        output += f"• {VIPBattleBonuses.BONUSES['win_streak_bonus']['description']}\n\n"
-        
-        output += "**🏪 MARKETPLACE:**\n"
-        output += f"• {VIPMarketplaceBenefits.BENEFITS['marketplace_fee']['description']}\n"
-        output += f"• {VIPMarketplaceBenefits.BENEFITS['daily_trade_limit']['description']}\n"
-        output += f"• {VIPMarketplaceBenefits.BENEFITS['priority_listing']['description']}\n\n"
-        
-        output += "**✨ COSMETICS:**\n"
-        output += f"• {VIPCosmetics.COSMETICS['username_color']['description']}\n"
-        output += f"• {VIPCosmetics.COSMETICS['monthly_card_back']['description']}\n"
-        output += f"• {VIPCosmetics.COSMETICS['vip_emotes']['description']}\n\n"
-        
-        output += "**🎯 EXCLUSIVE ACCESS:**\n"
-        output += f"• {VIPExclusiveAccess.EXCLUSIVE['vip_tournaments']['description']}\n"
-        output += f"• {VIPExclusiveAccess.EXCLUSIVE['early_pack_access']['description']}\n"
-        output += f"• {VIPExclusiveAccess.EXCLUSIVE['beta_access']['description']}\n\n"
-        
-        # Value calculation
-        value = VIPDailyBonuses.calculate_monthly_value()
-        output += f"**💎 ESTIMATED VALUE:** ${value:.2f}/month\n"
-        output += f"**💳 PRICE:** ${VIPSubscription.MONTHLY_PRICE_USD}/month\n"
-        output += f"**📈 VALUE RATIO:** {value / VIPSubscription.MONTHLY_PRICE_USD:.1f}x your money\n"
-        
-        return output
+        return True
+
+    def apply_battle_bonus(self, base_gold: int, user_id: int) -> int:
+        """Apply VIP battle gold bonus."""
+        if self.is_vip(user_id):
+            multiplier = VIPBattleBonuses.BONUSES["battle_gold_multiplier"]["vip"]
+            return int(base_gold * multiplier)
+        return base_gold
+
+    def calculate_trading_fee(self, gold_value: int, user_id: int) -> int:
+        """Calculate trading fee, applying VIP discount."""
+        if self.is_vip(user_id):
+            return VIPMarketplaceBenefits.BENEFITS["trading_fee"]["vip"]
+        return VIPMarketplaceBenefits.BENEFITS["trading_fee"]["base"]
 
 
 # ============================================
 # HELPER FUNCTIONS
 # ============================================
 
-def get_vip_manager() -> VIPManager:
-    """Get a VIPManager instance"""
-    return VIPManager()
+# Singleton instance
+_vip_manager = None
+
+def get_vip_manager(db_manager=None):
+    """Get the singleton VIPManager instance."""
+    global _vip_manager
+    if _vip_manager is None:
+        if db_manager is None:
+            # This is a simplified way to avoid circular deps,
+            # in a real app, you'd use a more robust dependency injection
+            from database import get_db
+            db_manager = get_db()
+        _vip_manager = VIPManager(db_manager)
+    return _vip_manager
 
 
 def is_user_vip(user_id: int, db_path: str = "music_legends.db") -> bool:

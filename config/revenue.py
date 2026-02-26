@@ -7,84 +7,57 @@ Battle Pass, VIP Subscription, and Hybrid monetization
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
+# Import the single source of truth configurations
+from . import battle_pass
+from . import vip
+
 # ============================================
 # BATTLE PASS CONFIGURATION
 # ============================================
 
 class BattlePassConfig:
     """
-    Battle Pass = Seasonal subscription model
-    
-    - Season lasts 60 days
-    - Free track: Basic rewards
-    - Premium track ($9.99): Better rewards
-    - 100 tiers for maximum engagement and whale revenue
+    Battle Pass = Seasonal subscription model.
+    This class now imports values from battle_pass.py as the single source of truth.
+    The reward dictionaries are simplified for revenue estimation purposes only.
     """
     
-    PRICE_USD = 9.99
-    PRICE_USD_CENTS = 999
-    SEASON_LENGTH_DAYS = 60
-    TOTAL_TIERS = 100
+    PRICE_USD = battle_pass.BattlePass.PREMIUM_PRICE_USD
+    PRICE_USD_CENTS = battle_pass.BattlePass.PREMIUM_PRICE_CENTS
+    SEASON_LENGTH_DAYS = battle_pass.BattlePass.SEASON_DURATION_DAYS
+    TOTAL_TIERS = battle_pass.BattlePass.TOTAL_TIERS
     
-    # Tier skip pricing
+    # Tier skip pricing (remains here as it's primarily a revenue concept)
     TIER_SKIP_PRICE_USD = 1.00
     TIER_SKIP_PRICE_CENTS = 100
     TIER_SKIP_BUNDLE_10 = 8.99  # 10 tiers for $8.99 (10% discount)
     TIER_SKIP_BUNDLE_25 = 19.99  # 25 tiers for $19.99 (20% discount)
     
-    # XP Requirements
+    # XP Requirements (simplified for estimation)
     XP_PER_TIER = 100  # 100 XP = 1 tier level
-    TOTAL_XP_FOR_MAX = 10000  # 100 tiers × 100 XP
+    TOTAL_XP_FOR_MAX = TOTAL_TIERS * XP_PER_TIER
     
-    # Free Track Rewards (every 5-10 tiers)
+    # Free Track Rewards (Simplified for revenue estimation)
+    # NOTE: The authoritative reward list is in battle_pass.py
     FREE_TRACK_REWARDS = {
         1: {"type": "gold", "amount": 100},
         5: {"type": "pack", "pack_type": "community", "amount": 1},
         10: {"type": "gold", "amount": 200},
-        15: {"type": "card", "rarity": "rare", "amount": 1},
-        20: {"type": "pack", "pack_type": "community", "amount": 1},
         25: {"type": "gold", "amount": 500},
-        30: {"type": "card", "rarity": "epic", "amount": 1},
-        35: {"type": "gold", "amount": 300},
-        40: {"type": "pack", "pack_type": "community", "amount": 2},
-        45: {"type": "gold", "amount": 400},
         50: {"type": "card", "rarity": "epic", "amount": 1},
-        55: {"type": "gold", "amount": 500},
-        60: {"type": "pack", "pack_type": "community", "amount": 2},
-        65: {"type": "gold", "amount": 600},
-        70: {"type": "card", "rarity": "epic", "amount": 1},
         75: {"type": "gold", "amount": 750},
-        80: {"type": "pack", "pack_type": "community", "amount": 3},
-        85: {"type": "gold", "amount": 800},
-        90: {"type": "card", "rarity": "legendary", "amount": 1},
-        95: {"type": "gold", "amount": 1000},
         100: {"type": "gold", "amount": 2000},
     }
     
-    # Premium Track Rewards (every tier has something)
+    # Premium Track Rewards (Simplified for revenue estimation)
+    # NOTE: The authoritative reward list is in battle_pass.py
     PREMIUM_TRACK_REWARDS = {
-        1: {"type": "gold", "amount": 500, "bonus": "exclusive_card_back_s1"},
-        5: {"type": "pack", "pack_type": "gold", "amount": 1},
-        10: {"type": "gold", "amount": 1000, "bonus": "premium_badge"},
-        15: {"type": "card", "rarity": "legendary", "amount": 1},
-        20: {"type": "pack", "pack_type": "gold", "amount": 2},
-        25: {"type": "gold", "amount": 2000, "bonus": "exclusive_emote"},
-        30: {"type": "card", "rarity": "mythic", "amount": 1, "note": "season_exclusive"},
-        35: {"type": "pack", "pack_type": "gold", "amount": 3},
-        40: {"type": "gold", "amount": 3000},
-        45: {"type": "card", "rarity": "legendary", "amount": 1},
-        50: {"type": "gold", "amount": 5000, "bonus": "exclusive_frame"},
-        55: {"type": "pack", "pack_type": "gold", "amount": 3},
-        60: {"type": "card", "rarity": "legendary", "amount": 1},
-        65: {"type": "gold", "amount": 4000},
-        70: {"type": "pack", "pack_type": "gold", "amount": 4},
-        75: {"type": "gold", "amount": 5000, "bonus": "exclusive_title"},
-        80: {"type": "card", "rarity": "mythic", "amount": 1, "note": "season_exclusive"},
-        85: {"type": "pack", "pack_type": "gold", "amount": 5},
-        90: {"type": "gold", "amount": 7500},
-        95: {"type": "card", "rarity": "ultra_rare", "amount": 1},
-        100: {"type": "card", "rarity": "legendary", "amount": 1, 
-              "bonus": "season_exclusive_legendary", "gold": 10000},
+        1: {"type": "gold", "amount": 500},
+        10: {"type": "gold", "amount": 1000},
+        25: {"type": "gold", "amount": 2000},
+        50: {"type": "gold", "amount": 5000},
+        75: {"type": "gold", "amount": 5000},
+        100: {"type": "card", "rarity": "legendary", "amount": 1, "gold": 10000},
     }
     
     # Season-exclusive cards are tradeable but NEVER return
@@ -98,27 +71,16 @@ class BattlePassConfig:
 
 class VIPConfig:
     """
-    Monthly VIP membership - $4.99/month
-    Lower price point for easier conversion
+    Monthly VIP membership.
+    This class now imports values from vip.py as the single source of truth.
     """
     
-    PRICE_USD = 4.99
-    PRICE_USD_CENTS = 499
+    PRICE_USD = vip.VIPSubscription.MONTHLY_PRICE_USD
+    PRICE_USD_CENTS = vip.VIPSubscription.MONTHLY_PRICE_CENTS
     BILLING_CYCLE_DAYS = 30
     
-    # VIP Benefits
-    BENEFITS = {
-        "daily_bonus_gold": 100,           # +100 gold/day (total 200 with regular daily)
-        "daily_bonus_tickets": 1,          # +1 ticket/day
-        "free_gold_pack_monthly": 1,       # 1 free Gold Pack per month
-        "battle_reward_multiplier": 1.5,   # +50% gold from battles
-        "trading_fee_reduction": 0.5,      # 50% off trading fees (5% instead of 10%)
-        "marketplace_fee_reduction": 0.5,  # 50% off marketplace fees
-        "exclusive_cosmetics": True,       # VIP-only card backs
-        "priority_support": True,          # Faster bot responses
-        "leaderboard_highlight": True,     # Gold username in leaderboards
-        "early_access_packs": True,        # See new packs 24h early
-    }
+    # VIP Benefits are now defined authoritatively in vip.py
+    # This section is intentionally left blank.
     
     # What VIP does NOT include (to preserve Battle Pass value)
     NOT_INCLUDED = [
@@ -325,62 +287,6 @@ ESTIMATED_MONTHLY_REVENUE = {
 }
 
 
-# ============================================
-# SEASON MANAGEMENT
-# ============================================
-
-class SeasonConfig:
-    """Configuration for seasonal content"""
-    
-    CURRENT_SEASON = 1
-    SEASON_NAME = "Launch Season"
-    SEASON_THEME = "Origins"
-    
-    # Season dates (update each season)
-    SEASON_START = datetime(2025, 1, 27)  # Update this
-    SEASON_END = SEASON_START + timedelta(days=BattlePassConfig.SEASON_LENGTH_DAYS)
-    
-    # Season-exclusive content
-    EXCLUSIVE_CARDS = [
-        {
-            "name": "Founder's Legend",
-            "rarity": "mythic",
-            "tier": 30,
-            "track": "premium",
-            "tradeable": True,
-            "returns": False,
-        },
-        {
-            "name": "Season 1 Champion",
-            "rarity": "mythic", 
-            "tier": 80,
-            "track": "premium",
-            "tradeable": True,
-            "returns": False,
-        },
-        {
-            "name": "Origin Master",
-            "rarity": "legendary",
-            "tier": 100,
-            "track": "premium",
-            "tradeable": True,
-            "returns": False,
-        },
-    ]
-    
-    @staticmethod
-    def days_remaining() -> int:
-        """Get days remaining in current season"""
-        now = datetime.now()
-        if now > SeasonConfig.SEASON_END:
-            return 0
-        return (SeasonConfig.SEASON_END - now).days
-    
-    @staticmethod
-    def is_season_active() -> bool:
-        """Check if season is currently active"""
-        now = datetime.now()
-        return SeasonConfig.SEASON_START <= now <= SeasonConfig.SEASON_END
 
 
 # ============================================
@@ -415,21 +321,14 @@ def get_xp_for_next_tier(current_xp: int) -> int:
 
 def apply_vip_bonus(base_gold: int, is_vip: bool) -> int:
     """Apply VIP bonus to gold rewards"""
-    if is_vip:
-        return int(base_gold * VIPConfig.BENEFITS["battle_reward_multiplier"])
-    return base_gold
+    vip_manager = vip.get_vip_manager()
+    return vip_manager.apply_battle_bonus(base_gold, is_vip)
 
 
 def get_trading_fee(gold_value: int, is_vip: bool) -> int:
     """Calculate trading fee with VIP discount"""
-    base_fee_percent = 0.10  # 10%
-    
-    if is_vip:
-        fee_percent = base_fee_percent * VIPConfig.BENEFITS["trading_fee_reduction"]
-    else:
-        fee_percent = base_fee_percent
-    
-    return int(gold_value * fee_percent)
+    vip_manager = vip.get_vip_manager()
+    return vip_manager.calculate_trading_fee(gold_value, is_vip)
 
 
 def get_ticket_bundle_value(bundle_name: str) -> Dict:

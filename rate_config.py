@@ -1,13 +1,9 @@
 # rate_config.py
 from rate_limiter import SimpleRateLimiter
+from .config import settings
 
-# Rate limiting configuration
-RATES = {
-    "drop":  {"limit": 1,  "window": 1800},   # 30 min
-    "grab":  {"limit": 5,  "window": 10},     # 10 sec
-    "pack":  {"limit": 10, "window": 60},     # 1 min
-    "trade": {"limit": 20, "window": 60}      # 1 min
-}
+# Rate limiting configuration is now in config.py
+RATES = settings.RATES
 
 class RateLimitManager:
     """Manages multiple rate limiters for different actions"""

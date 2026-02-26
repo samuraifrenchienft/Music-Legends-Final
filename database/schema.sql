@@ -1,202 +1,210 @@
--- SQLite schema for Founder Packs purchases
-CREATE TABLE purchases (
-    id CHAR(36) PRIMARY KEY,
-
-    user_id BIGINT NOT NULL,
-    pack_type VARCHAR(50) NOT NULL,
-
-    idempotency_key VARCHAR(100) NOT NULL UNIQUE,
-
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-
-    amount_cents INT,
-    currency VARCHAR(10) DEFAULT 'USD',
-
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP 
-        ON UPDATE CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    discord_tag TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    total_battles INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    packs_opened INTEGER DEFAULT 0,
+    victory_tokens INTEGER DEFAULT 0
 );
 
--- Purchase-Cards relationship table
-CREATE TABLE purchase_cards (
-    purchase_id CHAR(36) REFERENCES purchases(id),
-    card_id CHAR(36) REFERENCES cards(id),
-
-    PRIMARY KEY (purchase_id, card_id)
+CREATE TABLE IF NOT EXISTS cards (
+    card_id TEXT PRIMARY KEY,
+    type TEXT NOT NULL DEFAULT 'artist',
+    name TEXT NOT NULL,
+    artist_name TEXT,
+    title TEXT,
+    image_url TEXT,
+    youtube_url TEXT,
+    rarity TEXT NOT NULL,
+    tier TEXT,
+    variant TEXT DEFAULT 'Classic',
+    era TEXT,
+    impact INTEGER,
+    skill INTEGER,
+    longevity INTEGER,
+    culture INTEGER,
+    hype INTEGER,
+    serial_number TEXT,
+    print_number INTEGER DEFAULT 1,
+    quality TEXT DEFAULT 'standard',
+    effect_type TEXT,
+    effect_value TEXT,
+    pack_id TEXT,
+    created_by_user_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (pack_id) REFERENCES creator_packs(pack_id),
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
 );
 
--- Drops table
-CREATE TABLE drops (
-    id CHAR(36) PRIMARY KEY,
-
-    owner_id BIGINT,                    -- NULL for unclaimed drops
-    card_ids TEXT,                      -- JSON array of card IDs
-    expires_at DATETIME NOT NULL,
-    resolved BOOLEAN DEFAULT FALSE,
-
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS server_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id INTEGER NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    activity_type TEXT DEFAULT 'message'
 );
 
--- Trades table
-CREATE TABLE trades (
-    id CHAR(36) PRIMARY KEY,
-
-    user_a BIGINT NOT NULL,
-    user_b BIGINT NOT NULL,
-
-    cards_a TEXT DEFAULT "[]",         -- JSON array of card IDs from user A
-    cards_b TEXT DEFAULT "[]",         -- JSON array of card IDs from user B
-
-    gold_a INTEGER DEFAULT 0,          -- Gold offered by user A
-    gold_b INTEGER DEFAULT 0,          -- Gold offered by user B
-
-    status VARCHAR(20) DEFAULT "pending", -- pending, complete, cancelled
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    expires_at DATETIME NOT NULL
+CREATE TABLE IF NOT EXISTS user_cosmetics (
+    user_id TEXT NOT NULL,
+    cosmetic_id TEXT NOT NULL,
+    cosmetic_type TEXT NOT NULL,
+    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    source TEXT,
+    PRIMARY KEY (user_id, cosmetic_id)
 );
 
--- Audit logs table
-CREATE TABLE audit_logs (
-    id CHAR(36) PRIMARY KEY,
-
-    event VARCHAR(40) NOT NULL,
-
-    user_id BIGINT,
-    target_id VARCHAR(64),
-
-    payload TEXT,                       -- JSON string for SQLite
-
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS cosmetics_catalog (
+    cosmetic_id TEXT PRIMARY KEY,
+    cosmetic_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    rarity TEXT,
+    unlock_method TEXT,
+    price_gold INTEGER,
+    price_tickets INTEGER,
+    image_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for performance
-CREATE INDEX idx_purchases_user ON purchases(user_id);
-CREATE INDEX idx_purchases_status ON purchases(status);
-CREATE INDEX idx_purchases_pack_type ON purchases(pack_type);
-CREATE INDEX idx_purchase_cards_purchase ON purchase_cards(purchase_id);
-CREATE INDEX idx_purchase_cards_card ON purchase_cards(card_id);
+CREATE TABLE IF NOT EXISTS card_cosmetics (
+    user_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    frame_style TEXT,
+    foil_effect TEXT,
+    card_back TEXT,
+    PRIMARY KEY (user_id, card_id)
+);
 
--- Drops indexes
-CREATE INDEX idx_drops_owner ON drops(owner_id);
-CREATE INDEX idx_drops_expires ON drops(expires_at);
-CREATE INDEX idx_drops_resolved ON drops(resolved);
-CREATE INDEX idx_drops_unclaimed ON drops(owner_id) WHERE owner_id IS NULL;
+CREATE TABLE IF NOT EXISTS user_inventory (
+    user_id INTEGER NOT NULL,
+    card_id TEXT NOT NULL,
+    quantity INTEGER DEFAULT 1,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_locked BOOLEAN DEFAULT FALSE,
+    is_favorite BOOLEAN DEFAULT FALSE,
+    PRIMARY KEY (user_id, card_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (card_id) REFERENCES cards(card_id)
+);
 
--- Trades indexes
-CREATE INDEX idx_trades_user_a ON trades(user_a);
-CREATE INDEX idx_trades_user_b ON trades(user_b);
-CREATE INDEX idx_trades_status ON trades(status);
-CREATE INDEX idx_trades_expires ON trades(expires_at);
-CREATE INDEX idx_trades_pending ON trades(status) WHERE status = "pending";
+CREATE TABLE IF NOT EXISTS user_currency (
+    user_id INTEGER PRIMARY KEY,
+    gold INTEGER DEFAULT 0,
+    tickets INTEGER DEFAULT 0,
+    dust INTEGER DEFAULT 0,
+    last_daily_claim TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
 
--- Audit logs indexes
-CREATE INDEX idx_audit_event ON audit_logs(event);
-CREATE INDEX idx_audit_user ON audit_logs(user_id);
-CREATE INDEX idx_audit_created ON audit_logs(created_at);
-CREATE INDEX idx_audit_target ON audit_logs(target_id);
+CREATE TABLE IF NOT EXISTS creator_packs (
+    pack_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    creator_id INTEGER NOT NULL,
+    description TEXT,
+    price INTEGER NOT NULL,
+    card_count INTEGER NOT NULL,
+    cover_image_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_public BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (creator_id) REFERENCES users(user_id)
+);
 
--- Sample queries for SQLite
--- Get user's purchase history
--- SELECT * FROM purchases WHERE user_id = ? ORDER BY created_at DESC;
+CREATE TABLE IF NOT EXISTS creator_pack_cards (
+    pack_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    PRIMARY KEY (pack_id, card_id),
+    FOREIGN KEY (pack_id) REFERENCES creator_packs(pack_id),
+    FOREIGN KEY (card_id) REFERENCES cards(card_id)
+);
 
--- Get pending purchases
--- SELECT * FROM purchases WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS transaction_audit_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    user_id INTEGER,
+    transaction_id TEXT,
+    details TEXT,
+    success BOOLEAN,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Check for duplicate payment
--- SELECT * FROM purchases WHERE idempotency_key = ?;
+CREATE TABLE IF NOT EXISTS battles (
+    battle_id TEXT PRIMARY KEY,
+    player1_id INTEGER NOT NULL,
+    player2_id INTEGER,
+    player1_deck TEXT,
+    player2_deck TEXT,
+    status TEXT NOT NULL,
+    winner_id INTEGER,
+    wager INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
 
--- Get cards from a specific purchase
--- SELECT c.* FROM cards c
--- JOIN purchase_cards pc ON c.id = pc.card_id
--- WHERE pc.purchase_id = ?;
+CREATE TABLE IF NOT EXISTS battle_decks (
+    deck_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    deck_name TEXT NOT NULL,
+    card_ids TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
 
--- Get purchase history with cards
--- SELECT p.*, c.card_name, c.rarity FROM purchases p
--- JOIN purchase_cards pc ON p.id = pc.purchase_id
--- JOIN cards c ON pc.card_id = c.id
--- WHERE p.user_id = ? ORDER BY p.created_at DESC;
+CREATE TABLE IF NOT EXISTS pending_tma_battles (
+    battle_id TEXT PRIMARY KEY,
+    player_id INTEGER NOT NULL,
+    deck_card_ids TEXT NOT NULL,
+    wager INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Drop queries
--- Find unclaimed drops
--- SELECT * FROM drops WHERE owner_id IS NULL AND resolved = FALSE AND expires_at > NOW();
+CREATE TABLE IF NOT EXISTS marketplace_listings (
+    listing_id TEXT PRIMARY KEY,
+    seller_id INTEGER NOT NULL,
+    card_id TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (seller_id) REFERENCES users(user_id),
+    FOREIGN KEY (card_id) REFERENCES cards(card_id)
+);
 
--- Claim a drop
--- UPDATE drops SET owner_id = ?, resolved = TRUE WHERE id = ? AND owner_id IS NULL;
+CREATE TABLE IF NOT EXISTS trade_history (
+    trade_id TEXT PRIMARY KEY,
+    user_-id INTEGER NOT NULL,
+    user_b_id INTEGER NOT NULL,
+    user_a_cards TEXT,
+    user_b_cards TEXT,
+    user_a_gold INTEGER,
+    user_b_gold INTEGER,
+    status TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
 
--- Get user's claimed drops
--- SELECT * FROM drops WHERE owner_id = ? AND resolved = TRUE;
+CREATE TABLE IF NOT EXISTS season_progress (
+    user_id INTEGER NOT NULL,
+    season_id TEXT NOT NULL,
+    tier INTEGER DEFAULT 0,
+    is_premium BOOLEAN DEFAULT FALSE,
+    PRIMARY KEY (user_id, season_id)
+);
 
--- Clean up expired drops
--- DELETE FROM drops WHERE expires_at <= NOW() AND resolved = FALSE;
+CREATE TABLE IF NOT EXISTS vip_status (
+    user_id INTEGER PRIMARY KEY,
+    is_vip BOOLEAN DEFAULT FALSE,
+    expiration_date TEXT,
+    stripe_subscription_id TEXT
+);
 
--- Trade queries
--- Get pending trades for user
--- SELECT * FROM trades WHERE status = 'pending' AND (user_a = ? OR user_b = ?);
-
--- Get trade by ID
--- SELECT * FROM trades WHERE id = ?;
-
--- Cancel expired trades
--- UPDATE trades SET status = 'cancelled' WHERE status = 'pending' AND expires_at <= NOW();
-
--- Create new trade
--- INSERT INTO trades (id, user_a, user_b, cards_a, cards_b, gold_a, gold_b, expires_at)
--- VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
--- Complete trade
--- UPDATE trades SET status = 'complete' WHERE id = ?;
-
--- Audit queries
--- Record audit log
--- INSERT INTO audit_logs (id, event, user_id, target_id, payload) VALUES (?, ?, ?, ?, ?);
-
--- Get user activity
--- SELECT * FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50;
-
--- Get event logs
--- SELECT * FROM audit_logs WHERE event = ? ORDER BY created_at DESC LIMIT 100;
-
--- Get recent logs
--- SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100;
-
--- Search audit logs
--- SELECT * FROM audit_logs WHERE event LIKE ? AND created_at >= ? ORDER BY created_at DESC;
-
--- Insert new purchase
--- INSERT INTO purchases (id, user_id, pack_type, idempotency_key, amount_cents, currency)
--- VALUES (?, ?, ?, ?, ?, ?);
-
--- Update purchase status
--- UPDATE purchases SET status = 'delivered' WHERE idempotency_key = ?;
-
--- Add cards to purchase
--- INSERT INTO purchase_cards (purchase_id, card_id) VALUES (?, ?);
-
--- Create new drop
--- INSERT INTO drops (id, card_ids, expires_at) VALUES (?, ?, ?);
-
--- ========================================
--- ROLLBACK SCRIPTS
--- ========================================
-
--- SQLite Rollback
-DROP TABLE IF EXISTS purchase_cards;
-DROP TABLE IF EXISTS purchases;
-DROP TABLE IF EXISTS drops;
-DROP TABLE IF EXISTS trades;
-DROP TABLE IF EXISTS audit_logs;
-
--- PostgreSQL Rollback
--- DROP TABLE IF EXISTS purchase_cards;
--- DROP TABLE IF EXISTS purchases;
--- DROP TABLE IF EXISTS drops;
--- DROP TABLE IF EXISTS trades;
--- DROP TABLE IF EXISTS audit_logs;
--- DROP FUNCTION IF EXISTS set_updated_at();
-
--- MySQL Rollback
--- DROP TABLE IF EXISTS purchase_cards;
--- DROP TABLE IF EXISTS purchases;
--- DROP TABLE IF EXISTS drops;
--- DROP TABLE IF EXISTS trades;
--- DROP TABLE IF EXISTS audit_logs;
+CREATE TABLE IF NOT EXISTS user_created_packs (
+    pack_id TEXT PRIMARY KEY,
+    creator_id INTEGER NOT NULL,
+    pack_name TEXT NOT NULL,
+    card_ids TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creator_id) REFERENCES users(user_id)
+);

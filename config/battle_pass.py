@@ -9,6 +9,40 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 # ============================================
+# SEASON CONFIGURATION
+# ============================================
+
+class SeasonConfig:
+    """Current season configuration"""
+    
+    CURRENT_SEASON = 1
+    
+    # Hardcoded season start/end dates
+    # TODO: Load season start date from database
+    SEASON_START = datetime(2025, 1, 27)
+    SEASON_END = SEASON_START + timedelta(days=60) # Use BattlePass.SEASON_DURATION_DAYS once defined
+    
+    # Exclusive cards for this season
+    EXCLUSIVE_CARDS = [
+        {"name": "Rhythm Rising Champion", "rarity": "mythic"},
+        {"name": "Rhythm Rising Elite", "rarity": "mythic"},
+        {"name": "Rhythm Rising Master", "rarity": "mythic"},
+        {"name": "Rhythm Rising Legend", "rarity": "mythic"},
+        {"name": "Rhythm Rising Ultimate", "rarity": "ultra_mythic"},
+    ]
+    
+    def is_active(self) -> bool:
+        """Check if season is currently active"""
+        now = datetime.now()
+        return self.SEASON_START <= now <= self.SEASON_END
+    
+    def days_remaining(self) -> int:
+        """Days left in the season"""
+        remaining = self.SEASON_END - datetime.now()
+        return max(0, remaining.days)
+
+
+# ============================================
 # BATTLE PASS CONFIGURATION
 # ============================================
 
