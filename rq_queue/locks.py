@@ -3,13 +3,13 @@ import redis
 import time
 from contextlib import contextmanager
 import uuid
-import os
+from config import settings
 
 class RedisLock:
     def __init__(self, key, ttl=10):
         self.key = f"lock:{key}"
         self.ttl = ttl
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        redis_url = settings.REDIS_URL
         self.redis = redis.from_url(redis_url, decode_responses=True)
         self.identifier = str(uuid.uuid4())
 

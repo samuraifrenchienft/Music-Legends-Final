@@ -3,7 +3,7 @@
 Server-Based Revenue Sharing System
 10% base + NFT boosts (max 30%)
 """
-import os
+from .config import settings
 import sqlite3
 from typing import Dict, Optional
 from datetime import datetime
@@ -23,7 +23,7 @@ class ServerRevenueManager:
 
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
-        self._database_url = os.getenv("DATABASE_URL")
+        self._database_url = settings.DATABASE_URL
         self.init_revenue_tables()
 
     def _get_connection(self):

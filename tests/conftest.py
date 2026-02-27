@@ -89,7 +89,8 @@ def _make_sqlite_db(tmp_path_factory):
     os.environ.pop("DATABASE_URL", None)
     _db_mod._db_instance = None
     db_path = str(tmp_path_factory.mktemp("db") / "test.db")
-    mgr = DatabaseManager(db_path=db_path)
+    mgr = DatabaseManager(test_database_url="sqlite:///:memory:")
+    mgr.init_database()
     _db_mod._db_instance = mgr
     return mgr
 
@@ -140,58 +141,39 @@ def db_backend(request, tmp_path_factory):
 @pytest.fixture
 def seed_user(db_backend):
     """Insert a test user + inventory; return user_id."""
+    from database import SessionLocal
+    from models import User
+
     mgr, _ = db_backend
-    uid = 100_000_001
-    with mgr._get_connection() as conn:
-        c = conn.cursor()
-        ph = mgr._get_placeholder()
-        if mgr._db_type == "postgresql":
-            c.execute(f"INSERT INTO users (user_id, username, discord_tag) VALUES ({ph},{ph},{ph}) ON CONFLICT DO NOTHING",
-                      (uid, "TestUser", "TestUser#0001"))
-            c.execute(f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph},{ph}) ON CONFLICT DO NOTHING",
-                      (uid, 5000))
-        else:
-            c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
-                      (uid, "TestUser", "TestUser#0001"))
-            c.execute("INSERT OR IGNORE INTO user_inventory (user_id, gold) VALUES (?,?)",
-                      (uid, 5000))
-        conn.commit()
+    uid = str(100_000_001)  # Ensure user_id is a string
+    with SessionLocal() as session:
+        user = User(user_id=uid, username="TestUser", discord_tag="TestUser#0001")
+        session.add(user)
+        session.commit()
+        session.refresh(user)
     return uid
 
 
 @pytest.fixture
 def seed_card(db_backend):
     """Insert one test card with all stat columns; return card dict."""
+    from database import SessionLocal
+    from models import Card
+
     mgr, _ = db_backend
     cid = f"card_{uuid.uuid4().hex[:8]}"
-    card = {
+    card_data = {
         "card_id": cid, "name": "Test Artist", "artist_name": "Test Artist",
         "title": "Test Song", "rarity": "epic", "tier": "platinum",
         "image_url": "", "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         "impact": 70, "skill": 80, "longevity": 60, "culture": 75, "hype": 65,
     }
-    with mgr._get_connection() as conn:
-        c = conn.cursor()
-        ph = mgr._get_placeholder()
-        if mgr._db_type == "postgresql":
-            c.execute(f"""
-                INSERT INTO cards (card_id, name, artist_name, title, rarity, tier,
-                    image_url, youtube_url, impact, skill, longevity, culture, hype)
-                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})
-                ON CONFLICT (card_id) DO NOTHING
-            """, (cid, card["name"], card["artist_name"], card["title"],
-                  card["rarity"], card["tier"], card["image_url"], card["youtube_url"],
-                  card["impact"], card["skill"], card["longevity"], card["culture"], card["hype"]))
-        else:
-            c.execute("""
-                INSERT OR IGNORE INTO cards (card_id, name, artist_name, title, rarity, tier,
-                    image_url, youtube_url, impact, skill, longevity, culture, hype)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (cid, card["name"], card["artist_name"], card["title"],
-                  card["rarity"], card["tier"], card["image_url"], card["youtube_url"],
-                  card["impact"], card["skill"], card["longevity"], card["culture"], card["hype"]))
-        conn.commit()
-    return card
+    with SessionLocal() as session:
+        card = Card(**card_data)
+        session.add(card)
+        session.commit()
+        session.refresh(card)
+    return card_data
 
 
 @pytest.fixture

@@ -4,10 +4,11 @@ NFT Verification System
 Verifies Music Legends and Samurai Frenchie NFT ownership for revenue boosts
 """
 import aiohttp
-import os
 from typing import Dict, List, Optional
 from datetime import datetime
 import sqlite3
+
+from ..config import settings
 
 class NFTVerifier:
     """Verifies NFT ownership for revenue boost eligibility"""
@@ -16,13 +17,13 @@ class NFTVerifier:
     ACCEPTED_COLLECTIONS = {
         'music_legends': {
             'name': 'Music Legends NFT',
-            'contract_address': os.getenv('MUSIC_LEGENDS_NFT_CONTRACT', '0x...'),
+            'contract_address': settings.MUSIC_LEGENDS_NFT_CONTRACT,
             'chain': 'ethereum',
             'boost_value': 0.10  # +10%
         },
         'samurai_frenchie': {
             'name': 'Samurai Frenchie NFT',
-            'contract_address': os.getenv('SAMURAI_FRENCHIE_NFT_CONTRACT', '0x...'),
+            'contract_address': settings.SAMURAI_FRENCHIE_NFT_CONTRACT,
             'chain': 'ethereum',
             'boost_value': 0.10  # +10%
         }
@@ -30,12 +31,11 @@ class NFTVerifier:
     
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
-        self.alchemy_api_key = os.getenv('ALCHEMY_API_KEY')
-        self.moralis_api_key = os.getenv('MORALIS_API_KEY')
+        self.alchemy_api_key = settings.ALCHEMY_API_KEY
+        self.moralis_api_key = settings.MORALIS_API_KEY
 
     def _get_connection(self):
-        import os
-        database_url = os.environ.get('DATABASE_URL')
+        database_url = settings.DATABASE_URL
         if database_url:
             import psycopg2
             from database import _PgConnectionWrapper

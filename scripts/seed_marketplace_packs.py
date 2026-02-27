@@ -16,10 +16,11 @@ import uuid
 import sys
 import os
 from typing import List, Dict
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv('.env.txt')
+# Add project root to Python path
+sys.path.insert(0, str(os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))))
+
+from config import settings
 
 # Import project modules
 from database import DatabaseManager
@@ -210,7 +211,7 @@ def main():
         sys.exit(1)
     
     # Check YouTube API key
-    if not os.getenv('YOUTUBE_API_KEY'):
+    if not settings.YOUTUBE_API_KEY:
         print("❌ Error: YOUTUBE_API_KEY not found in environment")
         print("   Make sure .env.txt is configured correctly")
         sys.exit(1)

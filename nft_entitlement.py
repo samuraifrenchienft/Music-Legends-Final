@@ -9,9 +9,10 @@ import hashlib
 from typing import Dict, Optional, List
 from datetime import datetime, timedelta
 import aiohttp
-import os
 from eth_account.messages import encode_defunct
 from eth_account import Account
+
+from ..config import settings
 
 class NFTEntitlementManager:
     """
@@ -23,12 +24,12 @@ class NFTEntitlementManager:
     ACCEPTED_COLLECTIONS = {
         'music_legends': {
             'name': 'Music Legends NFT',
-            'contract_address': os.getenv('MUSIC_LEGENDS_NFT_CONTRACT', '0x0000000000000000000000000000000000000000'),
+            'contract_address': settings.MUSIC_LEGENDS_NFT_CONTRACT,
             'chain': 'ethereum'
         },
         'samurai_frenchie': {
             'name': 'Samurai Frenchie NFT',
-            'contract_address': os.getenv('SAMURAI_FRENCHIE_NFT_CONTRACT', '0x0000000000000000000000000000000000000000'),
+            'contract_address': settings.SAMURAI_FRENCHIE_NFT_CONTRACT,
             'chain': 'ethereum'
         }
     }
@@ -48,12 +49,11 @@ class NFTEntitlementManager:
     
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
-        self.alchemy_api_key = os.getenv('ALCHEMY_API_KEY')
+        self.alchemy_api_key = settings.ALCHEMY_API_KEY
         self.init_entitlement_tables()
 
     def _get_connection(self):
-        import os
-        database_url = os.environ.get('DATABASE_URL')
+        database_url = settings.DATABASE_URL
         if database_url:
             import psycopg2
             from database import _PgConnectionWrapper

@@ -4,6 +4,8 @@ from sqlalchemy.exc import SQLAlchemyError
 import os
 import asyncio
 
+from .config import settings
+
 class DatabaseManager:
     """
     Central async DB manager: one engine, one session factory.
@@ -19,7 +21,7 @@ class DatabaseManager:
             return
 
         # Check for DATABASE_URL from Railway or environment
-        database_url = os.getenv("DATABASE_URL")
+        database_url = settings.DATABASE_URL
         
         if database_url:
             # PostgreSQL connection detected
@@ -39,7 +41,7 @@ class DatabaseManager:
             print(f"📡 Connection: {database_url.split('@')[-1] if '@' in database_url else 'configured'}")
         else:
             # Fallback to SQLite
-            if os.getenv("RAILWAY_ENVIRONMENT"):
+            if settings.RAILWAY_ENVIRONMENT:
                 # Use working directory instead of /data
                 database_url = "sqlite+aiosqlite:///music_legends.db"
                 print(f"🗄️ Database initialized: SQLite (Railway working directory)")
@@ -98,7 +100,7 @@ class DatabaseManager:
     async def create_marketplace_table(self):
         """Create marketplace table if it doesn't exist"""
         import sqlite3
-        database_url = os.getenv("DATABASE_URL")
+        database_url = settings.DATABASE_URL
 
         try:
             if database_url and ("postgresql://" in database_url or "postgres://" in database_url):

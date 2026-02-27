@@ -1,5 +1,4 @@
 # message_queue.py
-import os
 import redis
 import json
 import asyncio
@@ -9,6 +8,8 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 import logging
+
+from .config import settings
 
 @dataclass
 class QueueMessage:
@@ -29,7 +30,7 @@ class QueueMessage:
 class RedisMessageQueue:
     def __init__(self, redis_url: str = None):
         if redis_url is None:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            redis_url = settings.REDIS_URL
         self.redis = redis.from_url(redis_url, decode_responses=True)
         self.queues = {
             'drop-queue': self._handle_drop,
@@ -293,6 +294,6 @@ def initialize_message_queue(redis_url: str = None):
     """Initialize the message queue"""
     global message_queue
     if redis_url is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        redis_url = settings.REDIS_URL
     message_queue = RedisMessageQueue(redis_url)
     return message_queue

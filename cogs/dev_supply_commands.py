@@ -1,16 +1,16 @@
 """Dev pack supply commands — view inventory and grant packs to users."""
 
-import os
 import discord
 from discord import Interaction, app_commands
 from discord.ext import commands
 from database import get_db
-from config.cards import RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_compute_team_power
+from cards_config import RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_team_power
+
+from ..config import settings
 
 
 def _is_dev(user_id: int) -> bool:
-    dev_ids = os.getenv("DEV_USER_IDS", "").split(",")
-    return str(user_id) in [uid.strip() for uid in dev_ids if uid.strip()]
+    return user_id in settings.DEV_USER_IDS
 
 
 def _is_admin(interaction: Interaction) -> bool:

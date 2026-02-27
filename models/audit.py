@@ -1,23 +1,20 @@
 # models/audit.py
 from sqlalchemy import Column, String, BigInteger, DateTime
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
 import json
-
-Base = declarative_base()
+from models import Base, UUIDType, JSONType
 
 class AuditLog(Base):
     """Minimal Audit Log Model"""
     
     __tablename__ = "audit_logs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType, primary_key=True, default=uuid.uuid4)
     event = Column(String(40), nullable=False)
     user_id = Column(BigInteger)
     target_id = Column(String(64))
-    payload = Column(JSONB)
+    payload = Column(JSONType)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     @classmethod
@@ -130,70 +127,3 @@ class AuditLog(Base):
             'payload': self.payload,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
-
-# SQLite version (without UUID and JSONB)
-class AuditLogSQLite(Base):
-    """SQLite-compatible Audit Log Model"""
-    
-    __tablename__ = "audit_logs"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    event = Column(String(40), nullable=False)
-    user_id = Column(BigInteger)
-    target_id = Column(String(64))
-    payload = Column(String(2000))  # JSON string for SQLite
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    @classmethod
-    def record(cls, session, event, user_id=None, target_id=None, **data):
-        """Record an audit log entry (SQLite version)"""
-        import json
-        audit = cls(
-            event=event,
-            user_id=user_id,
-            target_id=target_id,
-            payload=json.dumps(data) if data else None
-        )
-        session.add(audit)
-        session.commit()
-        return audit
-    
-    def get_payload(self):
-        """Get payload as dictionary (SQLite version)"""
-        try:
-            return json.loads(self.payload) if self.payload else {}
-        except:
-            return {}
-    
-    def set_payload(self, data):
-        """Set payload from dictionary (SQLite version)"""
-        self.payload = json.dumps(data) if data else None
-
-# Test function
-def test_audit_model():
-    """Test the audit model functionality"""
-    print("Testing Audit Model...")
-    
-    # Test creating an audit log
-    audit = AuditLog(
-        event="test_event",
-        user_id=12345,
-        target_id="test_target",
-        payload={"key": "value", "number": 42}
-    )
-    
-    print(f"Created audit log: {audit.id}")
-    print(f"Event: {audit.event}")
-    print(f"User ID: {audit.user_id}")
-    print(f"Target ID: {audit.target_id}")
-    print(f"Payload: {audit.payload}")
-    print(f"Created at: {audit.created_at}")
-    
-    # Test to_dict
-    audit_dict = audit.to_dict()
-    print(f"Audit dict: {audit_dict}")
-    
-    print("Audit Model test complete!")
-
-if __name__ == "__main__":
-    test_audit_model()

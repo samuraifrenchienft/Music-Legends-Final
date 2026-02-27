@@ -1,15 +1,16 @@
 # infrastructure.py
-import os
 import asyncio
 import logging
 from message_queue import initialize_message_queue
 from rate_limiter import initialize_rate_limiter
 from scheduler.cron import cron_service
 
+from .config import settings
+
 class InfrastructureManager:
     def __init__(self, redis_url: str = None):
         if redis_url is None:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            redis_url = settings.REDIS_URL
         self.redis_url = redis_url
         self.message_queue = None
         self.rate_limiter = None
@@ -69,7 +70,7 @@ class InfrastructureManager:
         }
 
 # Global infrastructure manager
-infrastructure = InfrastructureManager(os.getenv("REDIS_URL", "redis://localhost:6379"))
+infrastructure = InfrastructureManager(settings.REDIS_URL)
 
 # Import logging
 import logging

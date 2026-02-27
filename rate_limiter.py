@@ -1,5 +1,4 @@
 # rate_limiter.py
-import os
 import redis
 import time
 import asyncio
@@ -7,6 +6,8 @@ import logging
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+
+from .config import settings
 
 @dataclass
 class RateLimitRule:
@@ -19,7 +20,7 @@ class RateLimitRule:
 class RateLimiter:
     def __init__(self, redis_url: str = None):
         if redis_url is None:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            redis_url = settings.REDIS_URL
         self.redis = redis.from_url(redis_url, decode_responses=True)
         
         # Define rate limit rules
@@ -246,13 +247,13 @@ class RateLimitMiddleware:
         return embed
 
 # Global rate limiter instance
-rate_limiter = RateLimiter(os.getenv("REDIS_URL", "redis://localhost:6379"))
+rate_limiter = RateLimiter(settings.REDIS_URL)
 
 def initialize_rate_limiter(redis_url: str = None):
     """Initialize the rate limiter"""
     global rate_limiter
     if redis_url is None:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        redis_url = settings.REDIS_URL
     rate_limiter = RateLimiter(redis_url)
     return rate_limiter
 

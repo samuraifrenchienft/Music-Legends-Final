@@ -1,9 +1,73 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Float, ForeignKey
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.types import TypeDecorator, CHAR
+from sqlalchemy.dialects import postgresql
 from datetime import datetime
+import uuid
+import json
+
+# Custom TypeDecorator for UUID to handle SQLite incompatibility
+class UUIDType(TypeDecorator):
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(postgresql.UUID())
+        else:
+            return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == 'postgresql':
+            return str(value) # PostgreSQL UUID type handles UUID objects
+        else:
+            return str(value) # SQLite stores as CHAR
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        return uuid.UUID(value)
+
+# Custom TypeDecorator for JSONB to handle SQLite incompatibility
+class JSONType(TypeDecorator):
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(postgresql.JSONB())
+        else:
+            return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == 'postgresql':
+            return value # PostgreSQL JSONB type handles dicts
+        else:
+            return json.dumps(value) # SQLite stores as TEXT
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == 'postgresql':
+            return value
+        else:
+            return json.loads(value) # SQLite loads as dict
+# All models must be imported here to be registered with Base.metadata
+# For now, we manually list them out.
+# This ensures Base.metadata.create_all() discovers all tables.
+
+
 
 Base = declarative_base()
+
+from .trade import Trade # Import Trade model
+from .purchase_sqlalchemy import Purchase # Import Purchase model
+from .drop import Drop # Import Drop model
+from .audit import AuditLog # Import AuditLog model
 
 class User(Base):
     __tablename__ = "users"
@@ -22,7 +86,7 @@ class User(Base):
     
     # Relationships
     card_instances = relationship("CardInstance", back_populates="owner")
-    created_packs = relationship("Pack", back_populates="creator")
+    created_packs = relationship("CreatorPacks", back_populates="creator")
     transactions_as_buyer = relationship("Transaction", foreign_keys="Transaction.buyer_id", back_populates="buyer")
     transactions_as_seller = relationship("Transaction", foreign_keys="Transaction.seller_id", back_populates="seller")
 
@@ -81,7 +145,7 @@ class Pack(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
-    creator = relationship("User", back_populates="created_packs")
+
     hero_instance = relationship("CardInstance", foreign_keys=[main_hero_instance_id])
     contents = relationship("PackContent", back_populates="pack")
     marketplace_item = relationship("MarketplaceItem", back_populates="pack")
@@ -137,7 +201,7 @@ class MarketplaceListings(Base):
     __tablename__ = "marketplace_listings"
 
     listing_id = Column(Integer, primary_key=True, autoincrement=True)
-    seller_id = Column(Integer, nullable=False)
+    seller_id = Column(String, nullable=False)
     card_id = Column(String, nullable=False)
     price = Column(Integer, nullable=False)
     listed_at = Column(DateTime, default=datetime.utcnow)
@@ -146,7 +210,7 @@ class MarketplaceListings(Base):
 class SeasonProgress(Base):
     __tablename__ = "season_progress"
 
-    user_id = Column(Integer, primary_key=True)
+    user_id = Column(String, primary_key=True)
     season_id = Column(String, primary_key=True)
     xp = Column(Integer, default=0)
     current_tier = Column(Integer, default=0)
@@ -155,7 +219,7 @@ class SeasonProgress(Base):
 class VipStatus(Base):
     __tablename__ = "vip_status"
 
-    user_id = Column(Integer, primary_key=True)
+    user_id = Column(String, primary_key=True)
     is_vip = Column(Boolean, default=False)
     expires_at = Column(DateTime)
     subscription_id = Column(String)
@@ -196,22 +260,113 @@ class TradeHistory(Base):
     __tablename__ = "trade_history"
 
     trade_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id_1 = Column(Integer, nullable=False)
-    user_id_2 = Column(Integer, nullable=False)
+    user_id_1 = Column(String, nullable=False)
+    user_id_2 = Column(String, nullable=False)
     card_id_1 = Column(String, nullable=False)
     card_id_2 = Column(String, nullable=False)
     status = Column(String, default="completed")
     completed_at = Column(DateTime, default=datetime.utcnow)
 
+class Card(Base):
+    __tablename__ = 'cards'
+
+    card_id = Column(String, primary_key=True)
+    type = Column(String, nullable=False, default='artist')
+    name = Column(String, nullable=False)
+    artist_name = Column(String)
+    title = Column(String)
+    image_url = Column(String)
+    youtube_url = Column(String)
+    rarity = Column(String, nullable=False)
+    tier = Column(String)
+    variant = Column(String, default='Classic')
+    era = Column(String)
+    impact = Column(Integer)
+    skill = Column(Integer)
+    longevity = Column(Integer)
+    culture = Column(Integer)
+    hype = Column(Integer)
+    serial_number = Column(String)
+    print_number = Column(Integer, default=1)
+    quality = Column(String, default='standard')
+    effect_type = Column(String)
+    effect_value = Column(String)
+    pack_id = Column(String, ForeignKey('creator_packs.pack_id'))
+    created_by_user_id = Column(String, ForeignKey('users.user_id'))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "card_id": self.card_id,
+            "type": self.type,
+            "name": self.name,
+            "artist_name": self.artist_name,
+            "title": self.title,
+            "image_url": self.image_url,
+            "youtube_url": self.youtube_url,
+            "rarity": self.rarity,
+            "tier": self.tier,
+            "variant": self.variant,
+            "era": self.era,
+            "impact": self.impact,
+            "skill": self.skill,
+            "longevity": self.longevity,
+            "culture": self.culture,
+            "hype": self.hype,
+            "serial_number": self.serial_number,
+            "print_number": self.print_number,
+            "quality": self.quality,
+            "effect_type": self.effect_type,
+            "effect_value": self.effect_value,
+            "pack_id": self.pack_id,
+            "created_by_user_id": self.created_by_user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    creator_pack = relationship("CreatorPacks", back_populates="cards")
+    created_by_user = relationship("User")
+
 class CreatorPacks(Base):
     __tablename__ = "creator_packs"
 
     pack_id = Column(String, primary_key=True)
-    creator_id = Column(Integer, nullable=False)
-    pack_name = Column(String, nullable=False)
-    card_ids = Column(Text, nullable=False)  # JSON list of card IDs
-    price = Column(Integer, default=100)
+    name = Column(String, nullable=False)
+    creator_id = Column(String, ForeignKey('users.user_id'), nullable=False)
+    description = Column(Text)
+    price = Column(Integer, default=0)
+    card_count = Column(Integer, default=0)
+    cards_data = Column(JSONType) # Added cards_data
+    pack_tier = Column(String) # Added pack_tier
+    genre = Column(String) # Added genre
+    cover_image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_public = Column(Boolean, default=False)
+
+    creator = relationship("User")
+    cards = relationship("Card", back_populates="creator_pack")
+    pack_cards = relationship("CreatorPackCards", back_populates="pack")
+
+
+class CreatorPackCards(Base):
+    __tablename__ = 'creator_pack_cards'
+
+    pack_id = Column(String, ForeignKey('creator_packs.pack_id'), primary_key=True)
+    card_id = Column(String, ForeignKey('cards.card_id'), primary_key=True)
+
+    pack = relationship("CreatorPacks", back_populates="pack_cards")
+    card = relationship("Card")
+
+class CreatorPackLimits(Base):
+    __tablename__ = 'creator_pack_limits'
+    creator_id = Column(Integer, primary_key=True)
+
+
+
+class DevPackSupply(Base):
+    __tablename__ = "dev_pack_supply"
+
+    pack_id = Column(String, primary_key=True)
+    quantity = Column(Integer, default=0)
 
 class PackDefinitions(Base):
     __tablename__ = "pack_definitions"
@@ -230,33 +385,84 @@ class BattleLog(Base):
     __tablename__ = "battle_log"
 
     battle_id = Column(Integer, primary_key=True, autoincrement=True)
-    player1_id = Column(Integer, nullable=False)
-    player2_id = Column(Integer, nullable=False)
-    winner_id = Column(Integer)
+    player1_id = Column(String, nullable=False)
+    player2_id = Column(String, nullable=False)
+    winner_id = Column(String)
     battle_data = Column(Text)  # JSON blob of the battle replay
     battle_timestamp = Column(DateTime, default=datetime.utcnow)
 
 class UserBalances(Base):
     __tablename__ = "user_balances"
 
-    user_id = Column(Integer, primary_key=True)
+    user_id = Column(String, primary_key=True)
     gold = Column(Integer, default=0)
-    dust = Column(Integer, default=0)
     tickets = Column(Integer, default=0)
+    dust = Column(Integer, default=0)
+    gems = Column(Integer, default=0)
+    xp = Column(Integer, default=0)
+    level = Column(Integer, default=1)
+    last_daily_claim = Column(DateTime, nullable=True)
+    daily_streak = Column(Integer, default=0)
+
+class PackPurchase(Base):
+    __tablename__ = "pack_purchases"
+    purchase_id = Column(UUIDType, primary_key=True, default=uuid.uuid4)
+    buyer_id = Column(String, ForeignKey("users.user_id"), nullable=False)
+    pack_id = Column(String, ForeignKey("creator_packs.pack_id"), nullable=False)
+    purchased_at = Column(DateTime, default=datetime.utcnow)
+    cards_received = Column(JSONType)
+
+class UserCard(Base):
+    __tablename__ = "user_cards"
+    user_id = Column(String, ForeignKey("users.user_id"), primary_key=True)
+    card_id = Column(String, ForeignKey("cards.card_id"), primary_key=True)
+    quantity = Column(Integer, default=1)
+    acquired_from = Column(String, nullable=True) # e.g., 'drop', 'market', 'trade'
+    acquired_at = Column(DateTime, default=datetime.utcnow)
+    is_favorite = Column(Boolean, default=False)
 
 class DailyClaims(Base):
     __tablename__ = "daily_claims"
 
-    user_id = Column(Integer, primary_key=True)
+    user_id = Column(String, primary_key=True)
     last_claim_date = Column(DateTime, nullable=False)
+
+class UserBattleStats(Base):
+    __tablename__ = "user_battle_stats"
+    user_id = Column(String, ForeignKey("users.user_id"), primary_key=True)
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    draws = Column(Integer, default=0)
 
 class TransactionAuditLog(Base):
     __tablename__ = "transaction_audit_log"
 
     log_id = Column(Integer, primary_key=True, autoincrement=True)
     event_type = Column(String, nullable=False)
-    user_id = Column(Integer)
+    user_id = Column(String)
     transaction_id = Column(String)
     details = Column(Text)  # JSON blob
     success = Column(Boolean)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class TmaLinkCode(Base):
+    __tablename__ = "tma_link_codes"
+
+    code = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.user_id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+class PendingTmaBattle(Base):
+    __tablename__ = "pending_tma_battles"
+
+    battle_id = Column(String, primary_key=True)
+    challenger_id = Column(String, ForeignKey("users.user_id"), nullable=False)
+    opponent_id = Column(String, ForeignKey("users.user_id"))
+    challenger_pack = Column(Text, nullable=False) # JSON array of card IDs
+    opponent_pack = Column(Text) # JSON array of card IDs
+    wager_tier = Column(String, default="casual")
+    status = Column(String, default="waiting") # waiting, accepted, declined, completed
+    result_json = Column(Text) # JSON blob of battle results
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime)
+

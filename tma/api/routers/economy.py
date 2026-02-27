@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from tma.api.auth import get_tg_user
 from database import get_db
-from config.cards import compute_card_power
+from cards_config import compute_card_power
 
 router = APIRouter(prefix="/api", tags=["economy"])
 

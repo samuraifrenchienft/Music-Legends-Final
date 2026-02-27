@@ -7,16 +7,14 @@ Fallback source for high-quality artist images and album art
 import os
 import requests
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv('.env.txt')
+from .config import settings
 
 class AudioDBIntegration:
     """TheAudioDB API client for artist images and metadata"""
     
     def __init__(self):
-        self.api_key = os.getenv('AUDIODB_API_KEY', '1')  # Default to public v1 key
+        self.api_key = settings.AUDIODB_API_KEY
         self.base_url_v1 = f"https://www.theaudiodb.com/api/v1/json/{self.api_key}"
         # v2 requires Patreon key in path
         self.base_url_v2 = f"https://www.theaudiodb.com/api/v2/json/{self.api_key}"

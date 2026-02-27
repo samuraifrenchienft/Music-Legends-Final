@@ -7,7 +7,6 @@ Secure developer authorization and access control system
 - Rate limiting on failed attempts
 """
 
-import os
 import discord
 from discord.ext import commands
 from discord import app_commands, Interaction
@@ -15,6 +14,9 @@ from typing import Optional, Callable
 from datetime import datetime, timedelta
 from functools import wraps
 import json
+from pathlib import Path
+
+from ..config import settings
 
 
 # ==========================================
@@ -26,7 +28,7 @@ class SecurityLogger:
     
     def __init__(self, log_file: str = "logs/security_audit.log"):
         self.log_file = log_file
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
         print(f"🔐 [SECURITY] Security logger initialized: {log_file}")
     
     def log_event(self, event_type: str, user_id: int, details: dict = None, severity: str = "INFO"):
@@ -141,20 +143,14 @@ class DevAuthorization:
         if user_id in self.failed_attempts:
             del self.failed_attempts[user_id]
     
-    def get_dev_user_ids(self) -> list:
-        """Get list of authorized dev user IDs from environment"""
-        dev_ids_str = os.getenv('DEV_USER_IDS', '')
-        if not dev_ids_str:
-            print("⚠️  [AUTH] DEV_USER_IDS environment variable not set")
-            return []
-        
-        try:
-            dev_ids = [uid.strip() for uid in dev_ids_str.split(',') if uid.strip()]
+    def get_dev_user_ids(self) -> list[int]:
+        """Get list of authorized dev user IDs from config"""
+        dev_ids = settings.DEV_USER_IDS
+        if not dev_ids:
+            print("⚠️  [AUTH] DEV_USER_IDS environment variable not set or empty")
+        else:
             print(f"✅ [AUTH] Loaded {len(dev_ids)} authorized dev IDs")
-            return dev_ids
-        except Exception as e:
-            print(f"❌ [AUTH] Error parsing DEV_USER_IDS: {e}")
-            return []
+        return dev_ids
     
     async def is_authorized_dev(self, user_id: int, guild: discord.Guild = None) -> bool:
         """
@@ -189,7 +185,7 @@ class DevAuthorization:
         try:
             # Method 1: Check DEV_USER_IDS environment variable
             dev_ids = self.get_dev_user_ids()
-            if str(user_id) in dev_ids:
+            if user_id in dev_ids:
                 print(f"✅ [AUTH] User {user_id} authorized (DEV_USER_IDS)")
                 self.reset_failed_attempts(user_id)
                 security_logger.log_event(

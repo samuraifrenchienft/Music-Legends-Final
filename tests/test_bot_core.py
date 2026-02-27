@@ -26,9 +26,12 @@ def db(tmp_path_factory):
     """DatabaseManager backed by a temp SQLite file, isolated from the singleton."""
     import database as _db_module
     from database import DatabaseManager
+    from models import Base
 
     db_path = str(tmp_path_factory.mktemp("db") / "test.db")
-    mgr = DatabaseManager(db_path=db_path)
+    mgr = DatabaseManager(test_database_url="sqlite:///:memory:")
+    Base.metadata.drop_all(mgr.engine)
+    mgr.init_database()
 
     # Override the module-level singleton so any code that calls get_db()
     # also gets our temp instance during tests.
@@ -39,67 +42,77 @@ def db(tmp_path_factory):
 @pytest.fixture
 def seed_user(db):
     """Insert a test user + inventory row; return user_id."""
-    uid = 100_000_001
-    with db._get_connection() as conn:
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
-                  (uid, "TestUser", "TestUser#0001"))
-        c.execute("INSERT OR IGNORE INTO user_inventory (user_id, gold) VALUES (?,?)",
-                  (uid, 5000))
-        conn.commit()
+    from models import User, UserBalances
+
+    uid = str(uuid.uuid4())
+    with db.SessionLocal() as session:
+        user = User(user_id=uid, username="TestUser", discord_tag="TestUser#0001")
+        session.add(user)
+        user_balances = UserBalances(user_id=uid, gold=5000)
+        session.add(user_balances)
+        session.commit()
+        session.refresh(user)
     return uid
 
 
 @pytest.fixture
 def seed_card(db):
     """Insert one test card into cards table with all stat columns; return card dict."""
+    from models import Card
+
     cid = f"card_{uuid.uuid4().hex[:8]}"
-    card = {
+    card_data = {
         "card_id": cid, "name": "Test Artist", "artist_name": "Test Artist",
         "title": "Test Song", "rarity": "epic", "tier": "platinum",
-        "image_url": "", "youtube_url": "",
+        "image_url": "", "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         "impact": 70, "skill": 80, "longevity": 60, "culture": 75, "hype": 65,
     }
-    with db._get_connection() as conn:
-        c = conn.cursor()
-        c.execute("""
-            INSERT OR IGNORE INTO cards
-            (card_id, name, artist_name, title, rarity, tier, image_url, youtube_url,
-             impact, skill, longevity, culture, hype)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (cid, card["name"], card["artist_name"], card["title"],
-              card["rarity"], card["tier"], card["image_url"], card["youtube_url"],
-              card["impact"], card["skill"], card["longevity"], card["culture"], card["hype"]))
-        conn.commit()
-    return card
+    with db.SessionLocal() as session:
+        card = Card(**card_data)
+        session.add(card)
+        session.commit()
+        session.refresh(card)
+    return card_data
 
 
 @pytest.fixture
-def seed_creator_pack(db, seed_card):
+def seed_creator_pack(db, seed_card, seed_user):
     """Insert a LIVE creator_pack containing seed_card; return pack_id."""
+    from models import CreatorPacks
+
     pack_id = f"pack_{uuid.uuid4().hex[:8]}"
-    cards_data = [seed_card]
-    with db._get_connection() as conn:
-        c = conn.cursor()
-        c.execute("""
-            INSERT OR IGNORE INTO creator_packs
-            (pack_id, name, pack_tier, status, cards_data, pack_size)
-            VALUES (?,?,?,?,?,?)
-        """, (pack_id, "Test Pack", "community", "LIVE", json.dumps(cards_data), 1))
-        conn.commit()
+    cards_data = json.dumps([seed_card]) # Ensure cards_data is a JSON string
+    with db.SessionLocal() as session:
+        creator_pack = CreatorPacks(
+            pack_id=pack_id,
+            name="Test Pack",
+            creator_id=seed_user, # Assuming seed_user returns a user_id
+            description="A test creator pack",
+            price=100,
+            card_count=1,
+            cards_data=cards_data, # Add cards_data here
+            pack_tier="community", # Add pack_tier
+            genre="Test Genre", # Add genre
+            cover_image_url="http://example.com/cover.jpg",
+            is_public=True
+        )
+        session.add(creator_pack)
+        session.commit()
+        session.refresh(creator_pack)
     return pack_id
 
 
 @pytest.fixture
 def seed_dev_supply(db, seed_creator_pack):
     """Add 5 copies of seed_creator_pack to dev_pack_supply."""
-    with db._get_connection() as conn:
-        c = conn.cursor()
-        c.execute("""
-            INSERT OR IGNORE INTO dev_pack_supply (pack_id, quantity)
-            VALUES (?,?)
-        """, (seed_creator_pack, 5))
-        conn.commit()
+    from models import DevPackSupply
+
+    mgr = db
+    with db.SessionLocal() as session:
+        dev_pack_supply = DevPackSupply(pack_id=seed_creator_pack, quantity=5)
+        session.add(dev_pack_supply)
+        session.commit()
+        session.refresh(dev_pack_supply)
     return seed_creator_pack
 
 
@@ -460,14 +473,9 @@ class TestResolveImage:
 
 class TestPackCommandFallback:
 
-    def test_no_purchases_returns_empty_list(self, db):
+    def test_no_purchases_returns_empty_list(self, db, seed_user):
         """Fresh user with no pack_purchases must return empty list."""
-        uid = 100_000_010
-        with db._get_connection() as conn:
-            c = conn.cursor()
-            c.execute("INSERT OR IGNORE INTO users (user_id, username, discord_tag) VALUES (?,?,?)",
-                      (uid, "FreshUser", "FreshUser#0001"))
-            conn.commit()
+        uid = seed_user
         result = db.get_user_purchased_packs(uid)
         assert result == [], f"Expected empty list, got: {result}"
 

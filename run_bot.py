@@ -40,13 +40,10 @@ def main():
         from services.system_monitor import log_bot_restart
         log_bot_restart('startup')
         
-        # Load environment variables from .env.txt
-        from dotenv import load_dotenv
-        load_dotenv('.env.txt')
-        print("[DOCKER] Environment variables loaded")
+        from config import settings
 
         # Initialize Sentry error tracking (optional — only if SENTRY_DSN is set)
-        sentry_dsn = os.getenv("SENTRY_DSN")
+        sentry_dsn = settings.SENTRY_DSN
         if sentry_dsn:
             import sentry_sdk
             sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=0.1)
@@ -54,9 +51,7 @@ def main():
         
         # Check environment
         logger.info("Starting Music Legends Bot...")
-        bot_token = os.getenv("BOT_TOKEN")
-        print(f"[DOCKER] BOT_TOKEN present: {bool(bot_token)}")
-        print(f"[DOCKER] BOT_TOKEN starts with: {bot_token[:10] if bot_token else 'None'}...")
+        bot_token = settings.BOT_TOKEN
         
         if not bot_token:
             logger.error("BOT_TOKEN is required but not set in .env.txt")

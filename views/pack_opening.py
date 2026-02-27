@@ -17,7 +17,7 @@ from ui.brand import (
     LOGO_URL, BANNER_URL, VIDEO_URL,
     stat_bar, power_tier, rarity_badge, rarity_emoji,
 )
-from config.cards import compute_card_power
+from cards_config import compute_card_power
 
 
 class SkipView(discord.ui.View):

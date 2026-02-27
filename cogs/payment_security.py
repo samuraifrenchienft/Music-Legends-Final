@@ -20,6 +20,8 @@ import discord
 from discord import Interaction, app_commands
 from cogs.dev_authorization import security_logger
 
+from ..config import settings
+
 
 # ==========================================
 # STRIPE WEBHOOK SECURITY
@@ -29,8 +31,8 @@ class StripeWebhookVerifier:
     """Secure Stripe webhook verification and processing"""
     
     def __init__(self):
-        self.webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
-        self.stripe_key = os.getenv('STRIPE_SECRET_KEY')
+        self.webhook_secret = settings.STRIPE_WEBHOOK_SECRET
+        self.stripe_key = settings.STRIPE_SECRET_KEY
         
         if not self.webhook_secret:
             print("⚠️  [STRIPE] WARNING: STRIPE_WEBHOOK_SECRET not configured")

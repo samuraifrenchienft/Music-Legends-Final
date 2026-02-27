@@ -1,10 +1,10 @@
 # config/monitor.py
-import os
+from ..config import settings
 
 MONITOR = {
     # Webhooks
-    "WEBHOOK_OPS": os.getenv("WEBHOOK_OPS"),
-    "WEBHOOK_ECON": os.getenv("WEBHOOK_ECON", os.getenv("DEV_WEBHOOK_URL")),  # Falls back to DEV_WEBHOOK_URL
+    "WEBHOOK_OPS": settings.WEBHOOK_OPS,
+    "WEBHOOK_ECON": settings.WEBHOOK_ECON or settings.DEV_WEBHOOK_URL,  # Falls back to DEV_WEBHOOK_URL
 
     # Thresholds
     "CHECK_INTERVAL": 60,

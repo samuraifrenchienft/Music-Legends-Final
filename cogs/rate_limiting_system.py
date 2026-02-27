@@ -375,8 +375,8 @@ class AdvancedRateLimiter:
 # Initialize with Redis client if available
 try:
     redis_client = redis.Redis(
-        host=os.getenv('REDIS_HOST', 'localhost'),
-        port=int(os.getenv('REDIS_PORT', 6379)),
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
         db=0,
         decode_responses=True
     )

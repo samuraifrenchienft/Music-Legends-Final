@@ -1,10 +1,10 @@
 # queue/redis.py
 import redis
 from rq import Queue
-import os
+from ..config import settings
 
 # Redis connection
-redis_conn = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+redis_conn = redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 # Define all queues
 QUEUES = {

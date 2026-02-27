@@ -2,20 +2,21 @@
 import logging
 from rq import get_current_job
 import redis
-import os
+from config import settings
 from rq_queue.locks import user_lock, trade_lock, card_lock
-from database import DatabaseManager
+from typing import Optional
+from database import get_db, DatabaseManager # Keep DatabaseManager for now if still used directly somewhere else
 from card_economy import CardEconomyManager
 from drop_system import DropSystem
 from uuid import uuid4
 from rq_queue.redis_connection import QUEUES
 
-# Initialize services
-db = DatabaseManager()
-economy = CardEconomyManager(db)
+# Initialize services within functions to prevent premature database connections
 
-def task_open_pack(user_id, pack_type, genre=None, job_id=None):
+def task_open_pack(user_id, pack_type, genre=None, job_id=None, test_database_url: Optional[str] = None):
     """Open pack with idempotent locking"""
+    db = get_db(test_database_url=test_database_url)
+    economy = CardEconomyManager(db)
     job_id = job_id or str(uuid4())
     
     with user_lock(user_id):
@@ -206,7 +207,7 @@ def _is_duplicate_job(action: str, *args) -> bool:
     
     # Check in Redis if this job was recently processed
     key = f"job_cache:{job_signature}"
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_url = settings.REDIS_URL
     redis_conn = redis.from_url(redis_url, decode_responses=True)
     recent_job = redis_conn.get(key)
     

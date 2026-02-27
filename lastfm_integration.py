@@ -4,20 +4,17 @@ Last.fm API Integration for Music Legends
 Primary source for artist info, track search, and popularity data
 """
 
-import os
 import requests
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv('.env.txt')
+from .config import settings
 
 class LastFmIntegration:
     """Last.fm API client for artist and track data"""
     
     def __init__(self):
-        self.api_key = os.getenv('LASTFM_API_KEY', '')
-        self.shared_secret = os.getenv('LASTFM_SHARED_SECRET', '')
+        self.api_key = settings.LASTFM_API_KEY
+        self.shared_secret = settings.LASTFM_SHARED_SECRET
         self.base_url = "http://ws.audioscrobbler.com/2.0/"
         
         if not self.api_key:

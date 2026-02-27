@@ -1,10 +1,10 @@
 # monitor/health_checks.py
 import asyncio
-import os
 import redis
 import sqlite3
 import psutil
 from datetime import datetime
+from ..config import settings
 from config.monitor import MONITOR, HEALTH_CHECKS
 from monitor.alerts import (
     send_ops, send_econ, queue_backlog, job_failures, 
@@ -44,7 +44,7 @@ class HealthChecker:
     async def check_database_connection(self):
         """Check database connection (supports both SQLite and PostgreSQL)"""
         try:
-            db_url = os.getenv("DATABASE_URL", "sqlite:///music_legends.db")
+            db_url = settings.DATABASE_URL
 
             if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
                 # PostgreSQL check

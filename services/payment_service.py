@@ -6,7 +6,7 @@ Integrates with canonical card system and pack definitions.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from models.card import Card

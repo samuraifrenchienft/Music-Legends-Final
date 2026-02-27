@@ -1,17 +1,19 @@
 # models/audit_minimal.py
 # Minimal audit logging model for Music Legends
 
-import os
 import uuid
 import json
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any
+
+from ..config import settings
 
 
 def _get_audit_connection():
     """Get database connection - PostgreSQL if DATABASE_URL set, else SQLite."""
-    database_url = os.getenv("DATABASE_URL")
+    database_url = settings.DATABASE_URL
     if database_url and ("postgresql://" in database_url or "postgres://" in database_url):
         import psycopg2
         from database import _PgConnectionWrapper
@@ -222,10 +224,9 @@ def test_audit_minimal():
     print("=====================================")
     
     # Initialize database
-    import os
-    if not os.path.exists('music_legends.db'):
+    if not Path(settings.DATABASE_URL.replace("sqlite:///", "")).exists():
         # Create audit table
-        conn = sqlite3.connect('music_legends.db')
+        conn = sqlite3.connect(settings.DATABASE_URL.replace("sqlite:///", ""))
         cursor = conn.cursor()
         
         # Read and execute schema

@@ -7,9 +7,13 @@ from database import DatabaseManager
 
 @pytest.fixture
 def db(tmp_path):
-    d = DatabaseManager(db_path=str(tmp_path / "test.db"))
-    d.init_database()
-    return d
+    from models import Base # Import Base here for the fixture
+    d = DatabaseManager(test_database_url=f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(d.engine)  # Create tables for testing
+    print("DEBUG: Tables created in test_tma_db.py fixture")
+    yield d
+    Base.metadata.drop_all(d.engine) # Drop tables after tests
+    print("DEBUG: Tables dropped in test_tma_db.py fixture")
 
 
 def test_get_or_create_telegram_user_new(db):

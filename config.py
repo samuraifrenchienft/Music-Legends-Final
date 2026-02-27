@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import Dict, Any, List, Optional
+from pydantic import validator
 
 class Settings(BaseSettings):
     """Manages application configuration using Pydantic."""
@@ -57,6 +58,48 @@ class Settings(BaseSettings):
     BATTLE_PASS_PREMIUM_PRICE_USD: float = 19.99
     BATTLE_PASS_SEASON_DURATION_DAYS: int = 30
     BATTLE_PASS_TOTAL_TIERS: int = 50
+
+    # External API Keys
+    AUDIODB_API_KEY: str = '1'
+    YOUTUBE_API_KEY: str | None = None
+
+    # Development
+    DEV_USER_IDS: str = ""
+    DEV_CHANNEL_ID: int | None = None
+
+    @validator('DEV_USER_IDS', pre=True)
+    def _parse_dev_user_ids(cls, v: Any) -> list[int]:
+        if isinstance(v, list):
+            # If it's already a list, ensure all elements are integers
+            return [int(item) for item in v]
+        if isinstance(v, (int, float)):
+            # If it's a single number, convert to a list with that number
+            return [int(v)]
+        if isinstance(v, str):
+            # Split by comma, strip whitespace, filter out empty strings, and convert to int
+            return [int(item.strip()) for item in v.split(',') if item.strip()]
+        return v
+
+    # Monitoring
+    WEBHOOK_OPS: Optional[str] = None
+    WEBHOOK_ECON: Optional[str] = None
+    DEV_WEBHOOK_URL: Optional[str] = None
+
+    # Railway
+    RAILWAY_ENVIRONMENT: Optional[str] = None
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379"
+
+    # LastFM
+    LASTFM_API_KEY: Optional[str] = None
+    LASTFM_SHARED_SECRET: Optional[str] = None
+
+    # NFT Entitlement
+    MUSIC_LEGENDS_NFT_CONTRACT: str = "0x0000000000000000000000000000000000000000"
+    SAMURAI_FRENCHIE_NFT_CONTRACT: str = "0x0000000000000000000000000000000000000000"
+    ALCHEMY_API_KEY: str = ""
+    MORALIS_API_KEY: str = ""
 
     class Config:
         """Pydantic configuration."""

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from tma.api.auth import get_tg_user
 from database import get_db
-from config.cards import compute_card_power, compute_team_power
+from cards_config import compute_card_power, compute_team_power
 from battle_engine import BattleEngine
 from discord_cards import ArtistCard
 

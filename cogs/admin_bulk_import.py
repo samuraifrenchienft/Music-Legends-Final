@@ -11,10 +11,11 @@ from discord import Interaction, app_commands
 from database import DatabaseManager, get_db
 import json
 import uuid
-import os
 from typing import List, Dict, Optional
 import asyncio
 from cogs.dev_helpers import check_and_respond
+
+from ..config import settings
 
 class AdminBulkImportCog(commands.Cog):
     """Dev-only commands for bulk pack creation (TEST_SERVER only)"""
@@ -24,7 +25,7 @@ class AdminBulkImportCog(commands.Cog):
         self.db = get_db()
 
         # Get TEST_SERVER_ID from environment - commands only available in this guild
-        test_server_id = os.getenv('TEST_SERVER_ID')
+        test_server_id = settings.TEST_SERVER_ID
         if test_server_id:
             try:
                 self.test_guild_id = int(test_server_id)

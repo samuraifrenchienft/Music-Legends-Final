@@ -4,9 +4,20 @@ import unittest.mock as mock
 from rq_queue.redis_connection import QUEUES
 from rq_queue.tasks import task_open_pack
 import uuid
+import pytest
+from database import DatabaseManager
+from models import Base
 
-async def test_pack_spam():
+@pytest.fixture
+def db():
+    d = DatabaseManager(test_database_url="sqlite:///:memory:")
+    Base.metadata.create_all(d.engine)
+    yield d
+    Base.metadata.drop_all(d.engine)
+
+async def test_pack_spam(db, mocker):
     """Test pack opening spam protection"""
+    mocker.patch('database.get_db', return_value=db)
     user_id = 12345
     
     # Simulate multiple pack openings
@@ -22,7 +33,8 @@ async def test_pack_spam():
             user_id,
             "black",  # Use correct pack type
             None,
-            job_id=job_id
+            job_id=job_id,
+            test_database_url=db.engine.url # Pass the test database URL
         )
     
     print(f"Enqueued {len(job_ids)} pack openings:")

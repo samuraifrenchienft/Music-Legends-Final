@@ -5,10 +5,11 @@ Commands available to server administrators in all servers
 """
 
 import discord
-import os
 from discord.ext import commands
 from discord import Interaction, app_commands
 from database import DatabaseManager, get_db
+
+from ..config import settings
 
 
 class AdminCommandsCog(commands.Cog):
@@ -65,8 +66,7 @@ class AdminCommandsCog(commands.Cog):
     async def dev_grant_all_cards(self, interaction: Interaction):
         """Dev-only command to grant all cards from cards table"""
         # Check if user is a dev
-        dev_ids = os.getenv("DEV_USER_IDS", "").split(",")
-        if str(interaction.user.id) not in dev_ids:
+        if interaction.user.id not in settings.DEV_USER_IDS:
             await interaction.response.send_message("❌ This command is only available to developers.", ephemeral=True)
             return
 

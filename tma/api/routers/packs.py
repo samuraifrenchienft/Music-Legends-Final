@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from tma.api.auth import get_tg_user
 from database import get_db
-from config.cards import compute_card_power, RARITY_EMOJI
+from cards_config import compute_card_power, RARITY_EMOJI
 
 router = APIRouter(prefix="/api/packs", tags=["packs"])
 

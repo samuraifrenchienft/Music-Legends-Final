@@ -2,11 +2,11 @@
 
 # Canonical rarity emoji map — use this everywhere instead of defining inline
 RARITY_EMOJI = {
-    "common": "\u26aa",      # ⚪
-    "rare": "\U0001f535",     # 🔵
-    "epic": "\U0001f7e3",     # 🟣
-    "legendary": "\u2b50",    # ⭐
-    "mythic": "\U0001f534",   # 🔴
+    "common": "⚪",      # ⚪
+    "rare": "🔵",     # 🔵
+    "epic": "🟣",     # 🟣
+    "legendary": "⭐",    # ⭐
+    "mythic": "🔴",   # 🔴
 }
 
 # Battle power bonuses by rarity
@@ -20,9 +20,9 @@ RARITY_BONUS = {
 
 # Tier emoji map
 TIER_EMOJI = {
-    "community": "\U0001f4e6",  # 📦
-    "gold": "\U0001f947",       # 🥇
-    "platinum": "\U0001f48e",   # 💎
+    "community": "📦",  # 📦
+    "gold": "🥇",       # 🥇
+    "platinum": "💎",   # 💎
 }
 
 

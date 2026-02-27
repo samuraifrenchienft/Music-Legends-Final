@@ -3,13 +3,14 @@ card_economy.py - Economy management for Music Legends
 Handles gold, tickets, daily claims, rewards
 """
 
-import os
 import sqlite3
 import uuid
 import time as _time
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 import discord
+
+from config import settings
 
 class PlayerEconomy:
     """
@@ -468,7 +469,7 @@ class CardEconomyManager:
 
     def __init__(self, db_path: str = "music_legends.db"):
         self.db_path = db_path
-        self._database_url = os.getenv("DATABASE_URL")
+        self._database_url = settings.DATABASE_URL
         self.transactions = []
         self._drop_cooldowns: Dict[int, float] = {}   # server_id -> last drop timestamp
         self._active_drops: Dict[int, dict] = {}       # channel_id -> drop data

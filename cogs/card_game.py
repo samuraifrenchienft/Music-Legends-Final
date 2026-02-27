@@ -1,5 +1,4 @@
 import discord
-import os
 import sqlite3
 import json
 from discord.ext import commands
@@ -12,6 +11,8 @@ from stripe_payments import stripe_manager
 import random
 import uuid
 from typing import List, Dict
+
+from ..config import settings
 
 # Import required modules
 from discord_cards import ArtistCard, Pack, CardCollection
@@ -29,8 +30,7 @@ class CardGameCog(Cog):
         # Economy manager will be created per user
         self.card_manager = CardDataManager(self.db)
         # Dev user IDs from environment
-        dev_ids = os.getenv("DEV_USER_IDS", "")
-        self.dev_users = [int(id.strip()) for id in dev_ids.split(",") if id.strip().isdigit()]
+        self.dev_users = settings.DEV_USER_IDS
         
         # Initialize database with sample cards
         self.card_manager.initialize_database_cards()
@@ -282,7 +282,7 @@ class CardGameCog(Cog):
         
         try:
             # Check if YouTube API key is configured
-            youtube_api_key = os.getenv("YOUTUBE_API_KEY")
+            youtube_api_key = settings.YOUTUBE_API_KEY
             if not youtube_api_key:
                 await interaction.followup.send(
                     "❌ YouTube API is not configured. Please contact an administrator.\n"

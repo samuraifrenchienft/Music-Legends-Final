@@ -17,6 +17,10 @@ from typing import Optional, Dict, List
 import json
 import logging
 
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,8 +37,8 @@ class BackupService:
         (self.backup_dir / "critical").mkdir(exist_ok=True)
         (self.backup_dir / "shutdown").mkdir(exist_ok=True)
         
-        self.database_url = os.getenv("DATABASE_URL")
-        self.is_railway = os.getenv("RAILWAY_ENVIRONMENT") is not None
+        self.database_url = settings.DATABASE_URL
+        self.is_railway = settings.RAILWAY_ENVIRONMENT is not None
         # On Railway use pg_dump if available; SQLite file won't exist there
         self.is_postgresql = bool(self.database_url and (
             "postgresql://" in self.database_url or
@@ -42,7 +46,7 @@ class BackupService:
             "postgresql+asyncpg://" in self.database_url
         ))
 
-        self.postgres_backup_url = os.getenv("POSTGRES_BACKUP_URL")
+        self.postgres_backup_url = settings.POSTGRES_BACKUP_URL
         self.last_backup_time = None
         self.backup_metadata_file = self.backup_dir / "backup_metadata.json"
 

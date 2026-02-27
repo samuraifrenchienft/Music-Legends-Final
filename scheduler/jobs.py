@@ -4,7 +4,7 @@ from scheduler.cron import cron_service
 from scheduler.services import rewards, drops, trades, seasons, data
 from services.backup_service import backup_service
 from pathlib import Path
-import os
+from ..config import settings
 
 # Import safe decorator
 from scheduler.cron import AsyncCronService
@@ -145,7 +145,7 @@ async def job_verify_backup():
 
             # Alert admin channel if configured
             try:
-                ADMIN_CHANNEL_ID = os.getenv("ADMIN_CHANNEL_ID") or os.getenv("LOGS_CHANNEL")
+                ADMIN_CHANNEL_ID = settings.ADMIN_CHANNEL_ID or settings.LOGS_CHANNEL
                 if ADMIN_CHANNEL_ID:
                     from main import bot  # Import bot to send alert
                     channel = bot.get_channel(int(ADMIN_CHANNEL_ID))

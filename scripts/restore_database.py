@@ -4,11 +4,33 @@ Database Restore Script for Music Legends Bot
 Uses PostgreSQL client tools for restoring from backup
 """
 
-import os
+
 import sys
 import argparse
 import subprocess
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from config import settings
+from urllib.parse import urlparse
+
+def _parse_db_url(url: str) -> dict:
+    """Parse database URL into components."""
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://")
+    p = urlparse(url)
+    return {
+        "db_user": p.username,
+        "db_password": p.password,
+        "db_host": p.hostname,
+        "db_port": p.port,
+        "db_name": p.path.lstrip("/"),
+    }
+
 
 def run_command(cmd, check=True):
     """Run a shell command and handle errors"""
@@ -77,15 +99,17 @@ def restore_database(backup_file, db_name, db_host, db_port, db_user, db_passwor
 def main():
     parser = argparse.ArgumentParser(description='Restore Music Legends database from backup')
     parser.add_argument('backup_file', help='Path to backup file (.sql or .sql.gz)')
-    parser.add_argument('--db-name', default=os.getenv('DB_NAME', 'music_legends'), 
+    db_parts = _parse_db_url(settings.DATABASE_URL)
+
+    parser.add_argument('--db-name', default=db_parts.get('db_name', 'music_legends'), 
                        help='Database name')
-    parser.add_argument('--db-host', default=os.getenv('DB_HOST', 'localhost'), 
+    parser.add_argument('--db-host', default=db_parts.get('db_host', 'localhost'), 
                        help='Database host')
-    parser.add_argument('--db-port', default=os.getenv('DB_PORT', '5432'), 
+    parser.add_argument('--db-port', default=db_parts.get('db_port', '5432'), 
                        help='Database port')
-    parser.add_argument('--db-user', default=os.getenv('DB_USER', 'postgres'), 
+    parser.add_argument('--db-user', default=db_parts.get('db_user', 'postgres'), 
                        help='Database user')
-    parser.add_argument('--db-password', default=os.getenv('DB_PASSWORD'), 
+    parser.add_argument('--db-password', default=db_parts.get('db_password'), 
                        help='Database password')
     
     args = parser.parse_args()

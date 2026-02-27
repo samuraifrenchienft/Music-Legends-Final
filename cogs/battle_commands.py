@@ -17,7 +17,7 @@ from battle_engine import BattleManager, BattleEngine, BattleWagerConfig
 from discord_cards import ArtistCard
 from database import get_db
 from config.economy import BATTLE_WAGERS, calculate_battle_rewards
-from config.cards import RARITY_EMOJI as CARD_RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_team_power
+from cards_config import RARITY_EMOJI as CARD_RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_team_power
 from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, LOGO_URL
 
 

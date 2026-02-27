@@ -145,19 +145,7 @@ def create_pack_checkout(user_id: int, pack: str, success_url: str = None, cance
         logger.error(f"Checkout session creation failed: {e}")
         raise
 
-def create_subscription_checkout(user_id: int, plan: str) -> str:
-    """
-    Create a Stripe checkout session for subscription (future feature).
-    
-    Args:
-        user_id: Discord user ID
-        plan: Subscription plan identifier
-        
-    Returns:
-        Checkout session URL
-    """
-    # Placeholder for future subscription functionality
-    raise NotImplementedError("Subscription checkout not yet implemented")
+
 
 def get_checkout_session(session_id: str) -> Dict[str, Any]:
     """

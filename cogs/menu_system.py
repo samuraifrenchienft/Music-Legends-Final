@@ -23,6 +23,8 @@ from cogs.pack_creation_helpers import show_song_selection_lastfm, finalize_pack
 from services.image_cache import safe_image
 from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL, rarity_emoji, rarity_badge
 
+from ..config import settings
+
 
 # ============================================
 # HELPER FUNCTIONS
@@ -30,8 +32,7 @@ from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL
 
 def is_dev(user_id: int) -> bool:
     """Check if user is a dev"""
-    dev_ids = os.getenv('DEV_USER_IDS', '').split(',')
-    return str(user_id) in dev_ids
+    return user_id in settings.DEV_USER_IDS
 
 
 # ============================================

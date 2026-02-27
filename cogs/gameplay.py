@@ -6,7 +6,9 @@ import random
 from card_economy import CardEconomyManager
 from database import DatabaseManager, get_db
 from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL, power_tier
-from config.cards import compute_card_power
+from cards_config import compute_card_power
+
+from config import settings
 
 
 
@@ -384,9 +386,7 @@ class GameplayCommands(commands.Cog):
     ])
     async def drop_command(self, interaction: Interaction, tier: str = "community"):
         """Dev-only: drop a random LIVE pack into this channel."""
-        import os
-        dev_ids = os.getenv("DEV_USER_IDS", "").split(",")
-        if str(interaction.user.id) not in [uid.strip() for uid in dev_ids if uid.strip()]:
+        if interaction.user.id not in settings.DEV_USER_IDS:
             await interaction.response.send_message("❌ Dev only.", ephemeral=True)
             return
 

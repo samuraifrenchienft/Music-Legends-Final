@@ -20,6 +20,8 @@ from services.image_cache import safe_image
 from youtube_integration import youtube_integration
 from cogs.dev_helpers import check_test_server, check_and_respond
 
+from ..config import settings
+
 
 class AnnouncementModal(Modal, title="Send Update Announcement"):
     """Modal for sending announcements to all servers"""
@@ -142,8 +144,7 @@ class DevWebhookCommandsCog(commands.Cog):
         
         try:
             # Check if YouTube API key is configured
-            youtube_api_key = os.getenv("YOUTUBE_API_KEY")
-            if not youtube_api_key:
+            if not settings.YOUTUBE_API_KEY:
                 await interaction.followup.send(
                     "❌ YouTube API is not configured. Please contact an administrator.\n"
                     "**For admins**: Set `YOUTUBE_API_KEY` in environment variables.",

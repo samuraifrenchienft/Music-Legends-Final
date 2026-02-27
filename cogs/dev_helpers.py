@@ -4,8 +4,9 @@ Dev Helpers - Shared functions for dev-only commands
 Provides consistent TEST_SERVER_ID checking across all dev commands
 """
 
-import os
 from discord import Interaction
+
+from ..config import settings
 
 
 def check_test_server(interaction: Interaction) -> bool:
@@ -13,7 +14,7 @@ def check_test_server(interaction: Interaction) -> bool:
     Check if command is being used in test server and dev channel (TEST_SERVER_ID, DEV_CHANNEL_ID)
     Used with @app_commands.check decorator
     """
-    test_server_id = os.getenv('TEST_SERVER_ID')
+    test_server_id = settings.TEST_SERVER_ID
     if not test_server_id:
         return False
     
@@ -25,7 +26,7 @@ def check_test_server(interaction: Interaction) -> bool:
         return False
     
     # Check dev channel if configured
-    dev_channel_id = os.getenv('DEV_CHANNEL_ID')
+    dev_channel_id = settings.DEV_CHANNEL_ID
     if dev_channel_id:
         try:
             dev_channel_int = int(dev_channel_id)
@@ -42,7 +43,7 @@ async def check_and_respond(interaction: Interaction) -> bool:
     Use this inside command functions (not as decorator)
     Returns True if in dev server/channel, False otherwise
     """
-    test_server_id = os.getenv('TEST_SERVER_ID')
+    test_server_id = settings.TEST_SERVER_ID
     if not test_server_id:
         try:
             await interaction.response.send_message(
@@ -76,7 +77,7 @@ async def check_and_respond(interaction: Interaction) -> bool:
         return False
     
     # Check dev channel if configured
-    dev_channel_id = os.getenv('DEV_CHANNEL_ID')
+    dev_channel_id = settings.DEV_CHANNEL_ID
     if dev_channel_id:
         try:
             dev_channel_int = int(dev_channel_id)
