@@ -31,8 +31,8 @@ def client(db_override):
 
 
 @pytest.fixture
-def raw_client():
-    """Client with no auth overrides — tests real header validation."""
+def raw_client(db_override):
+    """Client with real auth enforcement (no dependency_overrides)."""
     from tma.api.main import app
     return TestClient(app, raise_server_exceptions=False)
 
@@ -47,8 +47,23 @@ def test_get_me_returns_user(client):
 
 
 def test_get_me_401_without_auth(raw_client):
+    """No Authorization header → 401."""
     resp = raw_client.get("/api/me")
-    assert resp.status_code == 401  # TMA auth: missing/invalid header
+    assert resp.status_code == 401
+
+
+def test_get_me_skip_hmac(db_override):
+    """TMA_SKIP_HMAC=true lets any 'tma ...' auth through (dev mode)."""
+    import os
+    os.environ["TMA_SKIP_HMAC"] = "true"
+    try:
+        from tma.api.main import app
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/me", headers={"Authorization": "tma dev"})
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert "user_id" in resp.json()
+    finally:
+        os.environ.pop("TMA_SKIP_HMAC", None)
 
 
 def test_link_generate(client):
