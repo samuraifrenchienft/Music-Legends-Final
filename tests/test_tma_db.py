@@ -24,7 +24,7 @@ def test_get_or_create_telegram_user_new(db):
     assert result["telegram_id"] == 123456
     assert result["username"] == "testuser"
     assert result["is_new"] is True
-    assert result["user_id"] == "tg_123456"
+    assert result["user_id"] == str(9_000_000_000 + 123456)
 
 
 def test_get_or_create_telegram_user_existing(db):

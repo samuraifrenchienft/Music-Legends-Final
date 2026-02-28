@@ -949,13 +949,16 @@ class Database:
     _DUST_VALUE = {"common": 10, "rare": 25, "epic": 50, "legendary": 100, "mythic": 250}
     _CRAFT_COST = {"common": 40, "rare": 100, "epic": 200, "legendary": 400, "mythic": 1000}
 
+    # Offset added to Telegram IDs so they never collide with Discord snowflakes
+    _TG_OFFSET = 9_000_000_000
+
     def get_or_create_telegram_user(
         self, telegram_id: int, telegram_username: str = "", first_name: str = ""
     ) -> dict:
         """Return (or create) the internal user for a Telegram user.
-        user_id is stored as 'tg_{telegram_id}' for unlinked TMA accounts.
-        Returns dict: user_id, username, is_new."""
-        user_id = f"tg_{telegram_id}"
+        user_id = str(9_000_000_000 + telegram_id) — pure digits, fits BIGINT.
+        Returns dict: user_id, username, telegram_id, is_new."""
+        user_id = str(self._TG_OFFSET + telegram_id)
         username = telegram_username or first_name or f"user_{telegram_id}"
         session = self.get_session()
         try:
@@ -988,7 +991,7 @@ class Database:
         """Look up an internal user by their Telegram ID."""
         session = self.get_session()
         try:
-            user = session.query(User).filter_by(user_id=f"tg_{telegram_id}").first()
+            user = session.query(User).filter_by(user_id=str(self._TG_OFFSET + telegram_id)).first()
             if not user:
                 return None
             return {"user_id": user.user_id, "username": user.username}
