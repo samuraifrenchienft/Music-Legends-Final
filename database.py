@@ -102,9 +102,40 @@ class Database:
         self._create_tables_if_not_exists()
 
     def _create_tables_if_not_exists(self):
-        """Create database tables if they do not exist."""
-        # This will create tables for all models inherited from Base
+        """Create tables that don't exist, then add any missing columns to existing tables."""
+        from sqlalchemy import inspect, text as sa_text
         Base.metadata.create_all(self._engine)
+        # Auto-migrate: add columns present in models but missing from the DB
+        inspector = inspect(self._engine)
+        with self._engine.connect() as conn:
+            for table in Base.metadata.sorted_tables:
+                if not inspector.has_table(table.name):
+                    continue
+                existing = {col["name"] for col in inspector.get_columns(table.name)}
+                for col in table.columns:
+                    if col.name in existing:
+                        continue
+                    # Build ADD COLUMN statement
+                    col_type = col.type.compile(dialect=self._engine.dialect)
+                    nullable = "" if col.nullable else " NOT NULL"
+                    default = ""
+                    if col.default is not None and col.default.is_scalar:
+                        val = col.default.arg
+                        if isinstance(val, bool):
+                            default = " DEFAULT TRUE" if val else " DEFAULT FALSE"
+                        elif isinstance(val, (int, float)):
+                            default = f" DEFAULT {val}"
+                        elif isinstance(val, str):
+                            default = f" DEFAULT '{val}'"
+                    try:
+                        conn.execute(sa_text(
+                            f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {col_type}{default}'
+                        ))
+                        conn.commit()
+                        logger.info(f"[MIGRATE] Added column {table.name}.{col.name}")
+                    except Exception as e:
+                        conn.rollback()
+                        logger.warning(f"[MIGRATE] Skipped {table.name}.{col.name}: {e}")
 
     def get_session(self) -> Session:
         """Returns a new SQLAlchemy session."""
