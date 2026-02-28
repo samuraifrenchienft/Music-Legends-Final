@@ -7,8 +7,8 @@ class Settings(BaseSettings):
 
     # Core settings loaded from environment variables
     DATABASE_URL: str = "sqlite:///./music_legends.db"
-    DISCORD_TOKEN: str
-    DISCORD_APPLICATION_ID: int
+    DISCORD_TOKEN: Optional[str] = None
+    DISCORD_APPLICATION_ID: Optional[int] = None
     TEST_SERVER_ID: Optional[int] = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
