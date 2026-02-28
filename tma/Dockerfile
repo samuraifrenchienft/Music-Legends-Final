@@ -13,7 +13,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y libpq-dev gcc postgresql-client && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir pydantic-settings>=2.0.0 httpx>=0.24.0
 
 # Copy full repo so database.py, battle_engine.py, config/ etc. are available
 COPY . .
