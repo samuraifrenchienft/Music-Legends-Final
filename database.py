@@ -101,6 +101,59 @@ class Database:
         self._Session = sessionmaker(bind=self._engine)
         self._create_tables_if_not_exists()
 
+    def _migrate_user_id_to_varchar(self, conn, sa_text):
+        """One-time migration: convert users.user_id from BIGINT → VARCHAR on Railway.
+        Handles FK constraints automatically."""
+        try:
+            row = conn.execute(sa_text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='user_id' AND table_schema='public'"
+            )).fetchone()
+            if not row or row[0] != 'bigint':
+                return  # Already VARCHAR or not PostgreSQL
+            logger.info("[MIGRATE] users.user_id is BIGINT — migrating to VARCHAR...")
+
+            # Find FK constraints referencing users.user_id
+            fk_rows = conn.execute(sa_text("""
+                SELECT kcu.constraint_name, kcu.table_name AS fk_table, kcu.column_name AS fk_col
+                FROM information_schema.key_column_usage kcu
+                JOIN information_schema.referential_constraints rc
+                     ON kcu.constraint_name = rc.constraint_name
+                JOIN information_schema.key_column_usage kcu2
+                     ON rc.unique_constraint_name = kcu2.constraint_name
+                WHERE kcu2.table_name = 'users' AND kcu2.column_name = 'user_id'
+            """)).fetchall()
+
+            # Drop FK constraints
+            for fk_name, fk_table, fk_col in fk_rows:
+                conn.execute(sa_text(f'ALTER TABLE "{fk_table}" DROP CONSTRAINT IF EXISTS "{fk_name}"'))
+                logger.info(f"[MIGRATE] Dropped FK {fk_name} on {fk_table}.{fk_col}")
+
+            # Alter FK columns in referencing tables to VARCHAR
+            for fk_name, fk_table, fk_col in fk_rows:
+                conn.execute(sa_text(
+                    f'ALTER TABLE "{fk_table}" ALTER COLUMN "{fk_col}" TYPE VARCHAR USING "{fk_col}"::text'
+                ))
+                logger.info(f"[MIGRATE] Altered {fk_table}.{fk_col} → VARCHAR")
+
+            # Alter users.user_id itself
+            conn.execute(sa_text('ALTER TABLE users ALTER COLUMN user_id TYPE VARCHAR USING user_id::text'))
+            logger.info("[MIGRATE] Altered users.user_id → VARCHAR")
+
+            # Re-add FK constraints
+            for fk_name, fk_table, fk_col in fk_rows:
+                conn.execute(sa_text(
+                    f'ALTER TABLE "{fk_table}" ADD CONSTRAINT "{fk_name}" '
+                    f'FOREIGN KEY ("{fk_col}") REFERENCES users(user_id)'
+                ))
+                logger.info(f"[MIGRATE] Re-added FK {fk_name}")
+
+            conn.commit()
+            logger.info("[MIGRATE] users.user_id → VARCHAR migration complete")
+        except Exception as e:
+            conn.rollback()
+            logger.warning(f"[MIGRATE] user_id type migration failed (may already be VARCHAR): {e}")
+
     def _create_tables_if_not_exists(self):
         """Create tables that don't exist, then add any missing columns to existing tables."""
         from sqlalchemy import inspect, text as sa_text
@@ -108,6 +161,10 @@ class Database:
         # Auto-migrate: add columns present in models but missing from the DB
         inspector = inspect(self._engine)
         with self._engine.connect() as conn:
+            # PostgreSQL only: fix users.user_id type from BIGINT → VARCHAR
+            if self._engine.dialect.name == 'postgresql':
+                self._migrate_user_id_to_varchar(conn, sa_text)
+
             for table in Base.metadata.sorted_tables:
                 if not inspector.has_table(table.name):
                     continue
@@ -964,7 +1021,8 @@ class Database:
         try:
             user = session.query(User).filter_by(user_id=user_id).first()
             if user:
-                return {"user_id": user.user_id, "username": user.username,
+                # Use pre-computed user_id string (not user.user_id which may be int if DB column is BIGINT)
+                return {"user_id": user_id, "username": user.username,
                         "telegram_id": telegram_id, "is_new": False}
             # Create user + balance row
             user = User(user_id=user_id, username=username, discord_tag=f"telegram:{telegram_id}")
@@ -978,7 +1036,7 @@ class Database:
         except IntegrityError:
             session.rollback()
             user = session.query(User).filter_by(user_id=user_id).first()
-            return {"user_id": user.user_id, "username": user.username,
+            return {"user_id": user_id, "username": user.username if user else username,
                     "telegram_id": telegram_id, "is_new": False}
         except Exception as e:
             session.rollback()
@@ -989,12 +1047,13 @@ class Database:
 
     def get_telegram_user_by_id(self, telegram_id: int) -> Optional[dict]:
         """Look up an internal user by their Telegram ID."""
+        user_id = str(self._TG_OFFSET + telegram_id)
         session = self.get_session()
         try:
-            user = session.query(User).filter_by(user_id=str(self._TG_OFFSET + telegram_id)).first()
+            user = session.query(User).filter_by(user_id=user_id).first()
             if not user:
                 return None
-            return {"user_id": user.user_id, "username": user.username}
+            return {"user_id": user_id, "username": user.username}
         finally:
             session.close()
 
@@ -1536,8 +1595,10 @@ class Database:
 
     @staticmethod
     def _tg_int(user_id: str) -> int:
-        """Extract numeric telegram ID from user_id string 'tg_123456'."""
+        """Convert user_id string to integer stored in Trade (numeric offset format)."""
         try:
+            # New format: "9000123456" (offset-based) — just parse as int
+            # Legacy format: "tg_123456" — strip prefix (backward compat for old DB rows)
             return int(user_id[3:]) if user_id.startswith("tg_") else int(user_id)
         except (ValueError, TypeError):
             return 0
@@ -1563,7 +1624,7 @@ class Database:
                     return {"success": False, "error": f"You don't own card {card_id}"}
 
             # Resolve partner user_id (create placeholder if needed)
-            partner_user_id = f"tg_{partner_id}"
+            partner_user_id = str(self._TG_OFFSET + partner_id)
             if not session.query(User).filter_by(user_id=partner_user_id).first():
                 session.add(User(user_id=partner_user_id, username=f"user_{partner_id}"))
                 session.add(UserBalances(user_id=partner_user_id))
@@ -1571,7 +1632,7 @@ class Database:
 
             trade = Trade(
                 user_a=self._tg_int(initiator_id),
-                user_b=partner_id,
+                user_b=self._TG_OFFSET + partner_id,
                 cards_a=offered_cards,
                 cards_b=requested_cards,
                 gold_a=offered_gold,
@@ -1608,7 +1669,7 @@ class Database:
                 session.commit()
                 return {"success": False, "error": "Trade has expired"}
 
-            initiator_id = f"tg_{trade.user_a}"
+            initiator_id = str(trade.user_a)
             # Swap cards A → B
             for card_id in (trade.cards_a or []):
                 uc = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
