@@ -18,13 +18,13 @@ from sqlalchemy import (
     String,
     text,
 )
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.sql import exists
 
 from models import (
+    Base,
     User, UserBalances, PackPurchase, CreatorPacks, Card, UserCard,
     DevPackSupply, CardInstance, CreatorPackLimits, TradeHistory,
     UserBattleStats, CosmeticCatalog, UserCosmetic, CardCosmetic, BattleLog,
@@ -36,9 +36,6 @@ from models.trade import Trade
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Base for SQLAlchemy declarative models
-Base = declarative_base()
-
 
 class Database:
     _instance = None
@@ -47,12 +44,31 @@ class Database:
     _database_url: str = None
     _db_type: str = None
 
-    def __new__(cls, database_url: Optional[str] = None):
+    def __new__(cls, database_url: Optional[str] = None, test_database_url: Optional[str] = None):
+        # Test instances bypass the singleton — each call gets a fresh object
+        if test_database_url is not None:
+            instance = super(Database, cls).__new__(cls)
+            instance._engine = None
+            instance._Session = None
+            instance._database_url = None
+            instance._db_type = None
+            instance._initialize(test_database_url)
+            return instance
+
         if cls._instance is None:
             cls._instance = super(Database, cls).__new__(cls)
             if database_url:
                 cls._instance._initialize(database_url)
         return cls._instance
+
+    @property
+    def engine(self):
+        """Public access to the SQLAlchemy engine (used by tests)."""
+        return self._engine
+
+    def init_database(self):
+        """Alias for _create_tables_if_not_exists (used by test fixtures)."""
+        self._create_tables_if_not_exists()
 
     def _initialize(self, database_url: str):
         if self._engine is not None:
@@ -62,11 +78,22 @@ class Database:
         if database_url.startswith("sqlite"):
             self._db_type = "sqlite"
             db_path = database_url.replace("sqlite:///", "")
-            # Ensure the directory exists for SQLite
-            os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            self._engine = create_engine(
-                database_url, connect_args={"check_same_thread": False}
-            )
+            if db_path in (":memory:", ""):
+                # In-memory SQLite: use StaticPool so all sessions share the same connection
+                from sqlalchemy.pool import StaticPool
+                self._engine = create_engine(
+                    database_url,
+                    connect_args={"check_same_thread": False},
+                    poolclass=StaticPool,
+                )
+            else:
+                # File-based SQLite: ensure directory exists
+                dir_path = os.path.dirname(db_path)
+                if dir_path:
+                    os.makedirs(dir_path, exist_ok=True)
+                self._engine = create_engine(
+                    database_url, connect_args={"check_same_thread": False}
+                )
         else:
             self._db_type = "postgresql"
             self._engine = create_engine(database_url)
@@ -903,7 +930,8 @@ class Database:
         try:
             user = session.query(User).filter_by(user_id=user_id).first()
             if user:
-                return {"user_id": user.user_id, "username": user.username, "is_new": False}
+                return {"user_id": user.user_id, "username": user.username,
+                        "telegram_id": telegram_id, "is_new": False}
             # Create user + balance row
             user = User(user_id=user_id, username=username, discord_tag=f"telegram:{telegram_id}")
             session.add(user)
@@ -911,11 +939,13 @@ class Database:
             balances = UserBalances(user_id=user_id)
             session.add(balances)
             session.commit()
-            return {"user_id": user_id, "username": username, "is_new": True}
+            return {"user_id": user_id, "username": username,
+                    "telegram_id": telegram_id, "is_new": True}
         except IntegrityError:
             session.rollback()
             user = session.query(User).filter_by(user_id=user_id).first()
-            return {"user_id": user.user_id, "username": user.username, "is_new": False}
+            return {"user_id": user.user_id, "username": user.username,
+                    "telegram_id": telegram_id, "is_new": False}
         except Exception as e:
             session.rollback()
             logger.error(f"[TMA] get_or_create_telegram_user error: {e}")
@@ -951,6 +981,33 @@ class Database:
             session.rollback()
             logger.error(f"[TMA] generate_tma_link_code error: {e}")
             raise
+        finally:
+            session.close()
+
+    def consume_tma_link_code(self, code: str, discord_id: int) -> dict:
+        """Consume a TMA link code and associate the discord_id with the user.
+        Returns {"success": bool, "user_id": str | None}."""
+        session = self.get_session()
+        try:
+            row = session.query(TmaLinkCode).filter_by(code=code).first()
+            if not row:
+                return {"success": False, "user_id": None, "error": "Invalid code"}
+            if row.expires_at and datetime.utcnow() > row.expires_at:
+                session.delete(row)
+                session.commit()
+                return {"success": False, "user_id": None, "error": "Code expired"}
+            user_id = row.user_id
+            # Store discord link on the user row
+            user = session.query(User).filter_by(user_id=user_id).first()
+            if user:
+                user.discord_tag = f"discord:{discord_id}"
+            session.delete(row)
+            session.commit()
+            return {"success": True, "user_id": user_id, "discord_id": discord_id}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] consume_tma_link_code error: {e}")
+            return {"success": False, "user_id": None, "error": str(e)}
         finally:
             session.close()
 
