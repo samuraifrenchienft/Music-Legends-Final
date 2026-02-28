@@ -9,6 +9,7 @@ from database import get_db
 from cards_config import compute_card_power, compute_team_power
 from battle_engine import BattleEngine
 from discord_cards import ArtistCard
+from models import PendingTmaBattle
 
 router = APIRouter(prefix="/api/battle", tags=["battle"])
 
@@ -108,18 +109,29 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
         raise HTTPException(403, "You don't own that pack")
 
     battle_id = _make_battle_id()
-    expires = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+    expires = datetime.utcnow() + timedelta(hours=24)
 
-    with db._get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO pending_tma_battles "
-            "(battle_id, challenger_id, opponent_id, challenger_pack, wager_tier, status, expires_at) "
-            "VALUES (?, ?, ?, ?, ?, 'waiting', ?)",
-            (battle_id, challenger["user_id"], body.opponent_telegram_id,
-             body.pack_id, body.wager_tier, expires)
+    # Ensure opponent placeholder user exists
+    opponent_user = db.get_or_create_telegram_user(body.opponent_telegram_id)
+
+    session = db.get_session()
+    try:
+        battle_row = PendingTmaBattle(
+            battle_id=battle_id,
+            challenger_id=challenger["user_id"],
+            opponent_id=opponent_user["user_id"],
+            challenger_pack=body.pack_id,
+            wager_tier=body.wager_tier,
+            status="waiting",
+            expires_at=expires,
         )
-        conn.commit()
+        session.add(battle_row)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(500, f"Failed to create battle: {e}")
+    finally:
+        session.close()
 
     import os
     tma_url = os.environ.get("TMA_URL", "https://t.me/MusicLegendsBot/app")
@@ -148,22 +160,25 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
     db = get_db()
     opponent = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
 
-    with db._get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT battle_id, challenger_id, challenger_pack, wager_tier, status, expires_at "
-            "FROM pending_tma_battles WHERE battle_id = ?",
-            (battle_id,)
-        )
-        row = cursor.fetchone()
-        if not row:
+    session = db.get_session()
+    try:
+        battle_row = session.query(PendingTmaBattle).filter_by(battle_id=battle_id).first()
+        if not battle_row:
             raise HTTPException(404, "Battle not found")
-        cols = [d[0] for d in cursor.description]
-        battle = dict(zip(cols, row))
+        battle = {
+            "battle_id":      battle_row.battle_id,
+            "challenger_id":  battle_row.challenger_id,
+            "challenger_pack": battle_row.challenger_pack,
+            "wager_tier":     battle_row.wager_tier,
+            "status":         battle_row.status,
+            "expires_at":     battle_row.expires_at,
+        }
+    finally:
+        session.close()
 
     if battle["status"] != "waiting":
         raise HTTPException(400, f"Battle is already {battle['status']}")
-    if datetime.utcnow().isoformat() > (battle.get("expires_at") or "9999"):
+    if battle["expires_at"] and datetime.utcnow() > battle["expires_at"]:
         raise HTTPException(400, "Battle link has expired")
 
     packs = db.get_user_purchased_packs(opponent["user_id"])
@@ -180,15 +195,19 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
     result = _run_battle(db, battle["challenger_id"], opponent["user_id"],
                          c_pack, o_pack, battle["wager_tier"])
 
-    with db._get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE pending_tma_battles "
-            "SET status='complete', opponent_id=?, opponent_pack=?, result_json=? "
-            "WHERE battle_id=?",
-            (opponent["user_id"], body.pack_id, json.dumps(result), battle_id)
-        )
-        conn.commit()
+    session = db.get_session()
+    try:
+        battle_row = session.query(PendingTmaBattle).filter_by(battle_id=battle_id).first()
+        if battle_row:
+            battle_row.status = "complete"
+            battle_row.opponent_id = opponent["user_id"]
+            battle_row.opponent_pack = body.pack_id
+            battle_row.result_json = json.dumps(result)
+            session.commit()
+    except Exception as e:
+        session.rollback()
+    finally:
+        session.close()
 
     # Notify challenger (best-effort)
     try:
@@ -209,18 +228,15 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
 def get_battle(battle_id: str, tg: dict = Depends(get_tg_user)):
     """Poll for battle status/result."""
     db = get_db()
-    with db._get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT status, result_json FROM pending_tma_battles WHERE battle_id = ?",
-            (battle_id,)
-        )
-        row = cursor.fetchone()
-    if not row:
-        raise HTTPException(404, "Battle not found")
-    status, result_json = row
-    return {
-        "battle_id": battle_id,
-        "status":    status,
-        "result":    json.loads(result_json) if result_json else None,
-    }
+    session = db.get_session()
+    try:
+        row = session.query(PendingTmaBattle).filter_by(battle_id=battle_id).first()
+        if not row:
+            raise HTTPException(404, "Battle not found")
+        return {
+            "battle_id": battle_id,
+            "status":    row.status,
+            "result":    json.loads(row.result_json) if row.result_json else None,
+        }
+    finally:
+        session.close()

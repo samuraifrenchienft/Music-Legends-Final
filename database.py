@@ -24,7 +24,14 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.sql import exists
 
-from models import User, UserBalances, PackPurchase, CreatorPacks, Card, UserCard, DevPackSupply, CardInstance, CreatorPackLimits, TradeHistory, UserBattleStats, CosmeticCatalog, UserCosmetic, CardCosmetic, BattleLog
+from models import (
+    User, UserBalances, PackPurchase, CreatorPacks, Card, UserCard,
+    DevPackSupply, CardInstance, CreatorPackLimits, TradeHistory,
+    UserBattleStats, CosmeticCatalog, UserCosmetic, CardCosmetic, BattleLog,
+    TmaLinkCode, DailyClaims, MarketplaceListings, VipStatus, PendingTmaBattle,
+    CreatorPackCards,
+)
+from models.trade import Trade
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -875,6 +882,805 @@ class Database:
         return results
 
 
+
+    # =========================================================
+    # TMA (Telegram Mini App) methods
+    # =========================================================
+
+    # Dust values per rarity (disenchant → craft)
+    _DUST_VALUE = {"common": 10, "rare": 25, "epic": 50, "legendary": 100, "mythic": 250}
+    _CRAFT_COST = {"common": 40, "rare": 100, "epic": 200, "legendary": 400, "mythic": 1000}
+
+    def get_or_create_telegram_user(
+        self, telegram_id: int, telegram_username: str = "", first_name: str = ""
+    ) -> dict:
+        """Return (or create) the internal user for a Telegram user.
+        user_id is stored as 'tg_{telegram_id}' for unlinked TMA accounts.
+        Returns dict: user_id, username, is_new."""
+        user_id = f"tg_{telegram_id}"
+        username = telegram_username or first_name or f"user_{telegram_id}"
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(user_id=user_id).first()
+            if user:
+                return {"user_id": user.user_id, "username": user.username, "is_new": False}
+            # Create user + balance row
+            user = User(user_id=user_id, username=username, discord_tag=f"telegram:{telegram_id}")
+            session.add(user)
+            session.flush()
+            balances = UserBalances(user_id=user_id)
+            session.add(balances)
+            session.commit()
+            return {"user_id": user_id, "username": username, "is_new": True}
+        except IntegrityError:
+            session.rollback()
+            user = session.query(User).filter_by(user_id=user_id).first()
+            return {"user_id": user.user_id, "username": user.username, "is_new": False}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] get_or_create_telegram_user error: {e}")
+            raise
+        finally:
+            session.close()
+
+    def get_telegram_user_by_id(self, telegram_id: int) -> Optional[dict]:
+        """Look up an internal user by their Telegram ID."""
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(user_id=f"tg_{telegram_id}").first()
+            if not user:
+                return None
+            return {"user_id": user.user_id, "username": user.username}
+        finally:
+            session.close()
+
+    def generate_tma_link_code(self, user_id: str) -> str:
+        """Generate a 6-char uppercase code for Telegram↔Discord linking (10 min TTL)."""
+        import random, string
+        from datetime import timedelta
+        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        expires = datetime.utcnow() + timedelta(minutes=10)
+        session = self.get_session()
+        try:
+            # Delete any existing unexpired code for this user
+            session.query(TmaLinkCode).filter_by(user_id=user_id).delete()
+            session.add(TmaLinkCode(code=code, user_id=user_id, expires_at=expires))
+            session.commit()
+            return code
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] generate_tma_link_code error: {e}")
+            raise
+        finally:
+            session.close()
+
+    def get_user_collection(self, user_id: str) -> List[dict]:
+        """Return all cards owned by a user as enrichable dicts."""
+        session = self.get_session()
+        try:
+            rows = (
+                session.query(UserCard, Card)
+                .join(Card, UserCard.card_id == Card.card_id)
+                .filter(UserCard.user_id == user_id)
+                .all()
+            )
+            return [
+                {
+                    "card_id":     c.card_id,
+                    "name":        c.name,
+                    "artist_name": c.artist_name,
+                    "title":       c.title,
+                    "image_url":   c.image_url,
+                    "youtube_url": c.youtube_url,
+                    "rarity":      c.rarity,
+                    "tier":        c.tier,
+                    "variant":     c.variant,
+                    "era":         c.era,
+                    "impact":      c.impact or 50,
+                    "skill":       c.skill or 50,
+                    "longevity":   c.longevity or 50,
+                    "culture":     c.culture or 50,
+                    "hype":        c.hype or 50,
+                    "quantity":    uc.quantity,
+                    "is_favorite": uc.is_favorite,
+                    "acquired_at": uc.acquired_at.isoformat() if uc.acquired_at else None,
+                }
+                for uc, c in rows
+            ]
+        except Exception as e:
+            logger.error(f"[TMA] get_user_collection error: {e}")
+            return []
+        finally:
+            session.close()
+
+    def _pack_to_dict(self, pack: CreatorPacks, session) -> dict:
+        """Convert a CreatorPacks ORM object into a dict including its card list."""
+        # Get cards via CreatorPackCards join
+        rows = (
+            session.query(Card)
+            .join(CreatorPackCards, Card.card_id == CreatorPackCards.card_id)
+            .filter(CreatorPackCards.pack_id == pack.pack_id)
+            .all()
+        )
+        cards = [
+            {
+                "card_id":     c.card_id,
+                "name":        c.name,
+                "artist_name": c.artist_name,
+                "title":       c.title,
+                "image_url":   c.image_url,
+                "youtube_url": c.youtube_url,
+                "rarity":      c.rarity,
+                "tier":        c.tier,
+                "impact":      c.impact or 50,
+                "skill":       c.skill or 50,
+                "longevity":   c.longevity or 50,
+                "culture":     c.culture or 50,
+                "hype":        c.hype or 50,
+            }
+            for c in rows
+        ]
+        return {
+            "pack_id":         pack.pack_id,
+            "name":            pack.name,
+            "description":     pack.description,
+            "cover_image_url": pack.cover_image_url,
+            "pack_tier":       pack.pack_tier,
+            "genre":           pack.genre,
+            "cards":           cards,
+            "card_count":      len(cards),
+        }
+
+    def get_user_purchased_packs(self, user_id: str) -> List[dict]:
+        """Return unopened packs the user has purchased."""
+        session = self.get_session()
+        try:
+            purchases = (
+                session.query(PackPurchase, CreatorPacks)
+                .join(CreatorPacks, PackPurchase.pack_id == CreatorPacks.pack_id)
+                .filter(PackPurchase.buyer_id == user_id, PackPurchase.cards_received.is_(None))
+                .all()
+            )
+            result = []
+            for purchase, pack in purchases:
+                d = self._pack_to_dict(pack, session)
+                d["purchase_id"] = str(purchase.purchase_id)
+                result.append(d)
+            return result
+        except Exception as e:
+            logger.error(f"[TMA] get_user_purchased_packs error: {e}")
+            return []
+        finally:
+            session.close()
+
+    def get_live_packs(self, limit: int = 20) -> List[dict]:
+        """Return publicly listed packs available in the store."""
+        session = self.get_session()
+        try:
+            packs = (
+                session.query(CreatorPacks)
+                .filter_by(is_public=True)
+                .limit(limit)
+                .all()
+            )
+            return [self._pack_to_dict(p, session) for p in packs]
+        except Exception as e:
+            logger.error(f"[TMA] get_live_packs error: {e}")
+            return []
+        finally:
+            session.close()
+
+    def open_pack_for_drop(self, pack_id: str, user_id: str) -> dict:
+        """Open a purchased pack: award its cards and mark the purchase as opened."""
+        session = self.get_session()
+        try:
+            purchase = (
+                session.query(PackPurchase)
+                .filter_by(pack_id=pack_id, buyer_id=user_id)
+                .filter(PackPurchase.cards_received.is_(None))
+                .first()
+            )
+            if not purchase:
+                return {"success": False, "error": "Pack not found or already opened"}
+
+            pack = session.query(CreatorPacks).filter_by(pack_id=pack_id).first()
+            if not pack:
+                return {"success": False, "error": "Pack definition not found"}
+
+            # Get cards in this pack
+            card_rows = (
+                session.query(Card)
+                .join(CreatorPackCards, Card.card_id == CreatorPackCards.card_id)
+                .filter(CreatorPackCards.pack_id == pack_id)
+                .all()
+            )
+            cards_out = []
+            for c in card_rows:
+                # Add to user collection
+                existing = session.query(UserCard).filter_by(
+                    user_id=user_id, card_id=c.card_id
+                ).first()
+                if existing:
+                    existing.quantity += 1
+                else:
+                    session.add(UserCard(
+                        user_id=user_id, card_id=c.card_id,
+                        quantity=1, acquired_from="pack_open",
+                        acquired_at=datetime.utcnow(),
+                    ))
+                cards_out.append({
+                    "card_id":   c.card_id,
+                    "name":      c.name,
+                    "title":     c.title,
+                    "image_url": c.image_url,
+                    "rarity":    c.rarity,
+                    "tier":      c.tier,
+                    "impact":    c.impact or 50,
+                    "skill":     c.skill or 50,
+                    "longevity": c.longevity or 50,
+                    "culture":   c.culture or 50,
+                    "hype":      c.hype or 50,
+                })
+
+            # Mark pack as opened
+            purchase.cards_received = [c["card_id"] for c in cards_out]
+            session.commit()
+            return {"success": True, "cards": cards_out}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] open_pack_for_drop error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    def get_user_economy(self, user_id: str) -> dict:
+        """Return user's economy stats (gold, tickets, dust, xp, level, streak)."""
+        session = self.get_session()
+        try:
+            b = session.query(UserBalances).filter_by(user_id=user_id).first()
+            if not b:
+                return {"gold": 0, "tickets": 0, "dust": 0, "xp": 0,
+                        "level": 1, "last_daily_claim": None, "daily_streak": 0}
+            return {
+                "gold":             b.gold or 0,
+                "tickets":          b.tickets or 0,
+                "dust":             b.dust or 0,
+                "xp":               b.xp or 0,
+                "level":            b.level or 1,
+                "last_daily_claim": b.last_daily_claim.isoformat() if b.last_daily_claim else None,
+                "daily_streak":     b.daily_streak or 0,
+            }
+        finally:
+            session.close()
+
+    def update_user_economy(
+        self, user_id: str,
+        gold_change: int = 0,
+        xp_change: int = 0,
+        tickets_change: int = 0,
+    ) -> bool:
+        """Apply delta changes to a user's economy. Creates balance row if missing."""
+        session = self.get_session()
+        try:
+            b = session.query(UserBalances).filter_by(user_id=user_id).first()
+            if not b:
+                b = UserBalances(user_id=user_id)
+                session.add(b)
+                session.flush()
+            if gold_change:
+                b.gold = max(0, (b.gold or 0) + gold_change)
+            if xp_change:
+                b.xp = (b.xp or 0) + xp_change
+                b.level = max(1, ((b.xp or 0) // 1000) + 1)
+            if tickets_change:
+                b.tickets = max(0, (b.tickets or 0) + tickets_change)
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] update_user_economy error: {e}")
+            return False
+        finally:
+            session.close()
+
+    def claim_daily_reward(self, user_id: str) -> dict:
+        """Claim the daily reward. Returns success/failure with gold and cards."""
+        import random
+        from datetime import timedelta
+        _DAILY_GOLD = {0: 100, 3: 150, 7: 300, 14: 600, 30: 1100}
+
+        session = self.get_session()
+        try:
+            now = datetime.utcnow()
+            claim = session.query(DailyClaims).filter_by(user_id=user_id).first()
+            if claim:
+                hours_since = (now - claim.last_claim_date).total_seconds() / 3600
+                if hours_since < 24:
+                    next_claim = claim.last_claim_date + timedelta(hours=24)
+                    return {
+                        "success": False,
+                        "message": "Already claimed today",
+                        "next_claim_at": next_claim.isoformat(),
+                    }
+            # Calculate streak
+            b = session.query(UserBalances).filter_by(user_id=user_id).first()
+            if not b:
+                b = UserBalances(user_id=user_id)
+                session.add(b)
+                session.flush()
+
+            streak = b.daily_streak or 0
+            if claim and (now - claim.last_claim_date).total_seconds() / 3600 < 48:
+                streak += 1
+            else:
+                streak = 1
+
+            # Gold reward based on streak
+            gold = next((v for k, v in sorted(_DAILY_GOLD.items(), reverse=True) if streak >= k), 100)
+
+            # Random common/rare cards (1-3)
+            all_cards = session.query(Card).filter(
+                Card.rarity.in_(["common", "Common", "rare", "Rare"])
+            ).limit(50).all()
+            awarded_cards = []
+            if all_cards:
+                sample = random.sample(all_cards, min(random.randint(1, 3), len(all_cards)))
+                for c in sample:
+                    existing = session.query(UserCard).filter_by(
+                        user_id=user_id, card_id=c.card_id
+                    ).first()
+                    if existing:
+                        existing.quantity += 1
+                    else:
+                        session.add(UserCard(
+                            user_id=user_id, card_id=c.card_id,
+                            quantity=1, acquired_from="daily",
+                            acquired_at=now,
+                        ))
+                    awarded_cards.append({
+                        "card_id":   c.card_id,
+                        "name":      c.name,
+                        "title":     c.title,
+                        "image_url": c.image_url,
+                        "rarity":    c.rarity,
+                    })
+
+            # Update balance and claim record
+            b.gold = (b.gold or 0) + gold
+            b.daily_streak = streak
+            b.last_daily_claim = now
+
+            if claim:
+                claim.last_claim_date = now
+            else:
+                session.add(DailyClaims(user_id=user_id, last_claim_date=now))
+
+            session.commit()
+            return {
+                "success": True,
+                "gold": gold,
+                "cards": awarded_cards,
+                "streak": streak,
+                "message": f"Claimed {gold} gold + {len(awarded_cards)} cards! (Streak: {streak})",
+            }
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] claim_daily_reward error: {e}")
+            return {"success": False, "message": str(e)}
+        finally:
+            session.close()
+
+    def get_user_stats(self, user_id: str) -> dict:
+        """Return battle stats for a user."""
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(user_id=user_id).first()
+            stats = session.query(UserBattleStats).filter_by(user_id=user_id).first()
+            total = (user.total_battles if user else 0) or 0
+            wins  = (stats.wins if stats else 0) or (user.wins if user else 0) or 0
+            losses = (stats.losses if stats else 0) or (user.losses if user else 0) or 0
+            return {"total_battles": total, "wins": wins, "losses": losses}
+        finally:
+            session.close()
+
+    def get_leaderboard(self, metric: str = "wins", limit: int = 10) -> List[dict]:
+        """Return top players by wins, gold, or total_battles."""
+        session = self.get_session()
+        try:
+            if metric == "gold":
+                rows = (
+                    session.query(UserBalances, User.username)
+                    .join(User, UserBalances.user_id == User.user_id)
+                    .order_by(desc(UserBalances.gold))
+                    .limit(limit)
+                    .all()
+                )
+                return [
+                    {"user_id": b.user_id, "username": u, "gold": b.gold or 0}
+                    for b, u in rows
+                ]
+            elif metric == "total_battles":
+                rows = (
+                    session.query(User)
+                    .order_by(desc(User.total_battles))
+                    .limit(limit)
+                    .all()
+                )
+                return [
+                    {"user_id": u.user_id, "username": u.username, "total_battles": u.total_battles or 0}
+                    for u in rows
+                ]
+            else:  # wins
+                rows = (
+                    session.query(UserBattleStats, User.username)
+                    .join(User, UserBattleStats.user_id == User.user_id)
+                    .order_by(desc(UserBattleStats.wins))
+                    .limit(limit)
+                    .all()
+                )
+                return [
+                    {
+                        "user_id": s.user_id,
+                        "username": u,
+                        "wins": s.wins or 0,
+                        "losses": s.losses or 0,
+                        "win_rate": round(
+                            (s.wins or 0) / max(1, (s.wins or 0) + (s.losses or 0)), 2
+                        ),
+                    }
+                    for s, u in rows
+                ]
+        except Exception as e:
+            logger.error(f"[TMA] get_leaderboard error: {e}")
+            return []
+        finally:
+            session.close()
+
+    # --- Marketplace ---
+
+    def get_marketplace_listings(self) -> List[dict]:
+        """Return all active marketplace listings enriched with card info."""
+        session = self.get_session()
+        try:
+            rows = (
+                session.query(MarketplaceListings, Card)
+                .join(Card, MarketplaceListings.card_id == Card.card_id)
+                .filter(MarketplaceListings.is_active == True)
+                .order_by(desc(MarketplaceListings.listed_at))
+                .all()
+            )
+            return [
+                {
+                    "listing_id": ml.listing_id,
+                    "seller_id":  ml.seller_id,
+                    "card_id":    ml.card_id,
+                    "price":      ml.price,
+                    "listed_at":  ml.listed_at.isoformat() if ml.listed_at else None,
+                    "card_name":  c.name,
+                    "rarity":     c.rarity,
+                    "image_url":  c.image_url,
+                }
+                for ml, c in rows
+            ]
+        except Exception as e:
+            logger.error(f"[TMA] get_marketplace_listings error: {e}")
+            return []
+        finally:
+            session.close()
+
+    def create_marketplace_listing(self, user_id: str, card_id: str, price: int) -> dict:
+        """List a card for sale. Card must be in user's collection."""
+        session = self.get_session()
+        try:
+            uc = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+            if not uc or uc.quantity < 1:
+                return {"success": False, "error": "Card not in collection"}
+            if price < 1:
+                return {"success": False, "error": "Price must be at least 1 gold"}
+
+            listing = MarketplaceListings(
+                seller_id=user_id, card_id=card_id, price=price, is_active=True,
+            )
+            session.add(listing)
+            # Remove one copy from collection
+            if uc.quantity > 1:
+                uc.quantity -= 1
+            else:
+                session.delete(uc)
+            session.commit()
+            return {"success": True, "listing_id": listing.listing_id}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] create_marketplace_listing error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    def purchase_marketplace_listing(self, buyer_id: str, listing_id: int) -> dict:
+        """Buy a card from the marketplace. Transfers gold + card atomically."""
+        session = self.get_session()
+        try:
+            listing = session.query(MarketplaceListings).filter_by(
+                listing_id=listing_id, is_active=True
+            ).first()
+            if not listing:
+                return {"success": False, "error": "Listing not found or already sold"}
+            if listing.seller_id == buyer_id:
+                return {"success": False, "error": "Cannot buy your own listing"}
+
+            buyer_bal = session.query(UserBalances).filter_by(user_id=buyer_id).first()
+            if not buyer_bal or (buyer_bal.gold or 0) < listing.price:
+                return {"success": False, "error": "Insufficient gold"}
+
+            # Transfer gold
+            buyer_bal.gold = (buyer_bal.gold or 0) - listing.price
+            seller_bal = session.query(UserBalances).filter_by(user_id=listing.seller_id).first()
+            if seller_bal:
+                seller_bal.gold = (seller_bal.gold or 0) + listing.price
+
+            # Transfer card to buyer
+            existing = session.query(UserCard).filter_by(
+                user_id=buyer_id, card_id=listing.card_id
+            ).first()
+            if existing:
+                existing.quantity += 1
+            else:
+                session.add(UserCard(
+                    user_id=buyer_id, card_id=listing.card_id,
+                    quantity=1, acquired_from="marketplace",
+                    acquired_at=datetime.utcnow(),
+                ))
+
+            listing.is_active = False
+            session.commit()
+            return {"success": True, "card_id": listing.card_id, "price": listing.price}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] purchase_marketplace_listing error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    # --- P2P Trades ---
+
+    @staticmethod
+    def _tg_int(user_id: str) -> int:
+        """Extract numeric telegram ID from user_id string 'tg_123456'."""
+        try:
+            return int(user_id[3:]) if user_id.startswith("tg_") else int(user_id)
+        except (ValueError, TypeError):
+            return 0
+
+    def create_trade(
+        self,
+        initiator_id: str,
+        partner_id: int,
+        offered_cards: List[str],
+        requested_cards: List[str],
+        offered_gold: int = 0,
+        requested_gold: int = 0,
+    ) -> dict:
+        """Create a pending P2P trade."""
+        session = self.get_session()
+        try:
+            # Verify initiator owns offered cards
+            for card_id in offered_cards:
+                uc = session.query(UserCard).filter_by(
+                    user_id=initiator_id, card_id=card_id
+                ).first()
+                if not uc:
+                    return {"success": False, "error": f"You don't own card {card_id}"}
+
+            # Resolve partner user_id (create placeholder if needed)
+            partner_user_id = f"tg_{partner_id}"
+            if not session.query(User).filter_by(user_id=partner_user_id).first():
+                session.add(User(user_id=partner_user_id, username=f"user_{partner_id}"))
+                session.add(UserBalances(user_id=partner_user_id))
+                session.flush()
+
+            trade = Trade(
+                user_a=self._tg_int(initiator_id),
+                user_b=partner_id,
+                cards_a=offered_cards,
+                cards_b=requested_cards,
+                gold_a=offered_gold,
+                gold_b=requested_gold,
+                status="pending",
+                expires_at=datetime.utcnow() + __import__("datetime").timedelta(minutes=10),
+            )
+            session.add(trade)
+            session.commit()
+            return {"success": True, "trade_id": str(trade.id)}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] create_trade error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    def accept_trade(self, trade_id: str, user_id: str) -> dict:
+        """Accept a trade: swap cards and gold atomically."""
+        import uuid as _uuid
+        session = self.get_session()
+        try:
+            trade = session.query(Trade).filter_by(
+                id=_uuid.UUID(trade_id), status="pending"
+            ).first()
+            if not trade:
+                return {"success": False, "error": "Trade not found or already closed"}
+
+            partner_tg_id = self._tg_int(user_id)
+            if trade.user_b != partner_tg_id:
+                return {"success": False, "error": "Not the intended recipient"}
+            if trade.is_expired():
+                trade.status = "expired"
+                session.commit()
+                return {"success": False, "error": "Trade has expired"}
+
+            initiator_id = f"tg_{trade.user_a}"
+            # Swap cards A → B
+            for card_id in (trade.cards_a or []):
+                uc = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
+                if not uc:
+                    return {"success": False, "error": f"Initiator no longer owns {card_id}"}
+                uc.quantity -= 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+                ex = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+                if ex:
+                    ex.quantity += 1
+                else:
+                    session.add(UserCard(user_id=user_id, card_id=card_id, quantity=1,
+                                         acquired_from="trade", acquired_at=datetime.utcnow()))
+
+            # Swap cards B → A
+            for card_id in (trade.cards_b or []):
+                uc = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+                if not uc:
+                    return {"success": False, "error": f"You no longer own {card_id}"}
+                uc.quantity -= 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+                ex = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
+                if ex:
+                    ex.quantity += 1
+                else:
+                    session.add(UserCard(user_id=initiator_id, card_id=card_id, quantity=1,
+                                         acquired_from="trade", acquired_at=datetime.utcnow()))
+
+            # Swap gold
+            if trade.gold_a or trade.gold_b:
+                self.update_user_economy(initiator_id, gold_change=-(trade.gold_a or 0) + (trade.gold_b or 0))
+                self.update_user_economy(user_id,       gold_change=-(trade.gold_b or 0) + (trade.gold_a or 0))
+
+            trade.status = "completed"
+            session.commit()
+            return {"success": True, "trade_id": trade_id}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] accept_trade error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    def cancel_trade(self, trade_id: str, user_id: str) -> dict:
+        """Cancel a pending trade (only initiator or recipient can cancel)."""
+        import uuid as _uuid
+        session = self.get_session()
+        try:
+            trade = session.query(Trade).filter_by(
+                id=_uuid.UUID(trade_id), status="pending"
+            ).first()
+            if not trade:
+                return {"success": False, "error": "Trade not found or already closed"}
+            tg_id = self._tg_int(user_id)
+            if tg_id not in (trade.user_a, trade.user_b):
+                return {"success": False, "error": "Not a participant in this trade"}
+            trade.status = "cancelled"
+            session.commit()
+            return {"success": True}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] cancel_trade error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    def get_user_trades(self, user_id: str) -> List[dict]:
+        """Return all trades the user is involved in."""
+        from sqlalchemy import or_
+        session = self.get_session()
+        try:
+            tg_id = self._tg_int(user_id)
+            trades = (
+                session.query(Trade)
+                .filter(or_(Trade.user_a == tg_id, Trade.user_b == tg_id))
+                .order_by(desc(Trade.created_at))
+                .limit(50)
+                .all()
+            )
+            return [t.to_dict() for t in trades]
+        except Exception as e:
+            logger.error(f"[TMA] get_user_trades error: {e}")
+            return []
+        finally:
+            session.close()
+
+    # --- Dust & Crafting ---
+
+    def get_dust_balance(self, user_id: str) -> int:
+        """Return user's current dust balance."""
+        session = self.get_session()
+        try:
+            b = session.query(UserBalances).filter_by(user_id=user_id).first()
+            return b.dust or 0 if b else 0
+        finally:
+            session.close()
+
+    def dust_cards(self, user_id: str, card_ids: List[str]) -> Tuple[bool, str]:
+        """Convert cards to dust. Removes one copy of each card and awards dust."""
+        session = self.get_session()
+        try:
+            total_dust = 0
+            for card_id in card_ids:
+                uc = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+                if not uc:
+                    session.rollback()
+                    return False, f"You don't own card {card_id}"
+                card = session.query(Card).filter_by(card_id=card_id).first()
+                rarity = (card.rarity or "common").lower() if card else "common"
+                total_dust += self._DUST_VALUE.get(rarity, 10)
+                uc.quantity -= 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+
+            b = session.query(UserBalances).filter_by(user_id=user_id).first()
+            if not b:
+                b = UserBalances(user_id=user_id)
+                session.add(b)
+                session.flush()
+            b.dust = (b.dust or 0) + total_dust
+            session.commit()
+            return True, f"Converted {len(card_ids)} card(s) into {total_dust} dust"
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] dust_cards error: {e}")
+            return False, str(e)
+        finally:
+            session.close()
+
+    def craft_card(self, user_id: str, card_id: str) -> Tuple[bool, str]:
+        """Craft a card using dust. Deducts craft cost and adds card to collection."""
+        session = self.get_session()
+        try:
+            card = session.query(Card).filter_by(card_id=card_id).first()
+            if not card:
+                return False, "Card not found"
+            rarity = (card.rarity or "common").lower()
+            cost = self._CRAFT_COST.get(rarity, 40)
+
+            b = session.query(UserBalances).filter_by(user_id=user_id).first()
+            if not b or (b.dust or 0) < cost:
+                have = b.dust or 0 if b else 0
+                return False, f"Need {cost} dust but you only have {have}"
+
+            b.dust = (b.dust or 0) - cost
+            existing = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+            if existing:
+                existing.quantity += 1
+            else:
+                session.add(UserCard(
+                    user_id=user_id, card_id=card_id, quantity=1,
+                    acquired_from="craft", acquired_at=datetime.utcnow(),
+                ))
+            session.commit()
+            return True, f"Crafted {card.name} for {cost} dust"
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] craft_card error: {e}")
+            return False, str(e)
+        finally:
+            session.close()
 
     def close(self):
         """Closes the database connection."""
