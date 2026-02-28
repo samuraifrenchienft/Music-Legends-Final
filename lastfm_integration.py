@@ -7,7 +7,7 @@ Primary source for artist info, track search, and popularity data
 import requests
 from typing import List, Dict, Optional
 
-from .config import settings
+from config import settings
 
 class LastFmIntegration:
     """Last.fm API client for artist and track data"""

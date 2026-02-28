@@ -5,7 +5,7 @@ from message_queue import initialize_message_queue
 from rate_limiter import initialize_rate_limiter
 from scheduler.cron import cron_service
 
-from .config import settings
+from config import settings
 
 class InfrastructureManager:
     def __init__(self, redis_url: str = None):

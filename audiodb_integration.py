@@ -8,7 +8,7 @@ import os
 import requests
 from typing import List, Dict, Optional
 
-from .config import settings
+from config import settings
 
 class AudioDBIntegration:
     """TheAudioDB API client for artist images and metadata"""

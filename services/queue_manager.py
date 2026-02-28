@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from services.creator_service import creator_service
 from services.open_creator import open_creator_pack
-from services.creator_business_rules import creator_business_rules
 from models.audit_minimal import AuditLog
+# creator_business_rules imported lazily to break circular dependency
 
 class QueueManager:
     """Queue manager for background operations"""
@@ -99,6 +99,7 @@ class QueueManager:
     
     async def process_pack_creation(self, job: Dict[str, Any]):
         """Process pack creation job"""
+        from services.creator_business_rules import creator_business_rules  # lazy import
         user_id = job.get("user_id")
         pack_data = job.get("pack_data", {})
         
@@ -163,9 +164,10 @@ class QueueManager:
     
     async def process_pack_opening(self, job: Dict[str, Any]):
         """Process pack opening job"""
+        from services.creator_business_rules import creator_business_rules  # lazy import
         user_id = job.get("user_id")
         pack_id = job.get("pack_id")
-        
+
         # Get pack
         from models.creator_pack import CreatorPack
         pack = CreatorPack.get_by_id(pack_id)

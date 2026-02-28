@@ -83,6 +83,7 @@ class Settings(BaseSettings):
 
     # Railway
     RAILWAY_ENVIRONMENT: Optional[str] = None
+    POSTGRES_BACKUP_URL: Optional[str] = None
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

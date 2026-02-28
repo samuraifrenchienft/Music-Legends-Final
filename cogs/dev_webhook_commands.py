@@ -20,7 +20,7 @@ from services.image_cache import safe_image
 from youtube_integration import youtube_integration
 from cogs.dev_helpers import check_test_server, check_and_respond
 
-from ..config import settings
+from config import settings
 
 
 class AnnouncementModal(Modal, title="Send Update Announcement"):

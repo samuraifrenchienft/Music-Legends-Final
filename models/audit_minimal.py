@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from ..config import settings
+from config import settings
 
 
 def _get_audit_connection():

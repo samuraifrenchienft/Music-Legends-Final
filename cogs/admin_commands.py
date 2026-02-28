@@ -9,7 +9,7 @@ from discord.ext import commands
 from discord import Interaction, app_commands
 from database import DatabaseManager, get_db
 
-from ..config import settings
+from config import settings
 
 
 class AdminCommandsCog(commands.Cog):

@@ -4,7 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import os
 import asyncio
 
-from .config import settings
+from config import settings
 
 class DatabaseManager:
     """

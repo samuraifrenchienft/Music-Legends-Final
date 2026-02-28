@@ -82,3 +82,5 @@ class Drop(Base):
             'resolved': self.resolved,
             'is_expired': self.expires_at <= datetime.utcnow() if self.expires_at else False
         }
+# Alias for backward compatibility
+DropSQLite = Drop

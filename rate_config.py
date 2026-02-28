@@ -1,6 +1,6 @@
 # rate_config.py
 from rate_limiter import SimpleRateLimiter
-from .config import settings
+from config import settings
 
 # Rate limiting configuration is now in config.py
 RATES = settings.RATES

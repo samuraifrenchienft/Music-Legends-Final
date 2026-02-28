@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 import asyncio
 from cogs.dev_helpers import check_and_respond
 
-from ..config import settings
+from config import settings
 
 class AdminBulkImportCog(commands.Cog):
     """Dev-only commands for bulk pack creation (TEST_SERVER only)"""

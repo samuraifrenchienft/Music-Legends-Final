@@ -12,6 +12,7 @@ import uuid
 
 class CreatorPack(Model):
     __tablename__ = "creator_packs"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     

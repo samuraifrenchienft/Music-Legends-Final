@@ -12,7 +12,7 @@ import random
 import uuid
 from typing import List, Dict
 
-from ..config import settings
+from config import settings
 
 # Import required modules
 from discord_cards import ArtistCard, Pack, CardCollection

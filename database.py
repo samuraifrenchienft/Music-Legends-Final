@@ -838,7 +838,7 @@ class Database:
         session = self.get_session()
         try:
             if self._db_type == "postgresql":
-                critical_tables = ['users', 'cards', 'creator_packs', 'user_cards', 'transactions', 'pack_purchases', 'dev_pack_supply', 'creator_pack_limits', 'card_instances', 'trade_history', 'user_battle_stats', 'cosmetic_catalog', 'user_cosmetics', 'card_cosmetics', 'battle_logs']
+                critical_tables = ['users', 'cards', 'creator_packs', 'user_cards', 'transactions', 'pack_purchases', 'dev_pack_supply', 'creator_pack_limits', 'card_instances', 'trade_history', 'user_battle_stats', 'cosmetics_catalog', 'user_cosmetics', 'card_cosmetics', 'battle_log']
                 for table_name in critical_tables:
                     results["tables_checked"] += 1
                     # Check if table exists in public schema
@@ -850,7 +850,7 @@ class Database:
                         results["valid"] = False
                         results["errors"].append(f"Critical PostgreSQL table missing: {table_name}")
             elif self._db_type == "sqlite":
-                critical_tables = ['users', 'cards', 'creator_packs', 'user_cards', 'transactions', 'pack_purchases', 'dev_pack_supply', 'creator_pack_limits', 'card_instances', 'trade_history', 'user_battle_stats', 'cosmetic_catalog', 'user_cosmetics', 'card_cosmetics', 'battle_logs']
+                critical_tables = ['users', 'cards', 'creator_packs', 'user_cards', 'transactions', 'pack_purchases', 'dev_pack_supply', 'creator_pack_limits', 'card_instances', 'trade_history', 'user_battle_stats', 'cosmetics_catalog', 'user_cosmetics', 'card_cosmetics', 'battle_log']
                 for table_name in critical_tables:
                     results["tables_checked"] += 1
                     # Check if table exists in SQLite master table
@@ -884,6 +884,11 @@ class Database:
             self._Session = None
             Database._instance = None # Reset the singleton instance
 
+def get_db() -> Database:
+    """Returns a singleton instance of the Database class."""
+    from config import settings
+    return Database(settings.DATABASE_URL)
+
 # Example Usage (for testing or direct script execution)
 if __name__ == "__main__":
     # Example for SQLite
@@ -899,3 +904,7 @@ if __name__ == "__main__":
     # Test operations...
     # session_pg.close()
     # db_pg.close()
+
+
+# Alias for backward compatibility
+DatabaseManager = Database

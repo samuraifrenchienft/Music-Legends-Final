@@ -23,7 +23,7 @@ from cogs.pack_creation_helpers import show_song_selection_lastfm, finalize_pack
 from services.image_cache import safe_image
 from ui.brand import GOLD, PURPLE, BLUE, PINK, GREEN, NAVY, LOGO_URL, BANNER_URL, rarity_emoji, rarity_badge
 
-from ..config import settings
+from config import settings
 
 
 # ============================================

@@ -6,7 +6,7 @@ from discord.ext import commands
 from database import get_db
 from cards_config import RARITY_EMOJI, RARITY_BONUS, compute_card_power, compute_team_power
 
-from ..config import settings
+from config import settings
 
 
 def _is_dev(user_id: int) -> bool:

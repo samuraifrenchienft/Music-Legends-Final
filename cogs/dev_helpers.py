@@ -6,7 +6,7 @@ Provides consistent TEST_SERVER_ID checking across all dev commands
 
 from discord import Interaction
 
-from ..config import settings
+from config import settings
 
 
 def check_test_server(interaction: Interaction) -> bool:

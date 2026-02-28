@@ -12,7 +12,7 @@ import aiohttp
 from eth_account.messages import encode_defunct
 from eth_account import Account
 
-from ..config import settings
+from config import settings
 
 class NFTEntitlementManager:
     """

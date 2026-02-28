@@ -4,7 +4,7 @@ import redis
 import sqlite3
 import psutil
 from datetime import datetime
-from ..config import settings
+from config import settings
 from config.monitor import MONITOR, HEALTH_CHECKS
 from monitor.alerts import (
     send_ops, send_econ, queue_backlog, job_failures, 

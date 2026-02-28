@@ -9,7 +9,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 import logging
 
-from .config import settings
+from config import settings
 
 @dataclass
 class QueueMessage:

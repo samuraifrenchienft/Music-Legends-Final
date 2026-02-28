@@ -358,7 +358,7 @@ class ArtistPipeline:
             
             # Update artist data
             artist.popularity = stats.get("subs", 0)
-            artist.metadata.update({
+            artist.artist_metadata.update({
                 "subscribers": stats.get("subs", 0),
                 "total_views": stats.get("views", 0),
                 "video_count": stats.get("videos", 0),

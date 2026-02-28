@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from .config import settings
+from config import settings
 
 @dataclass
 class RateLimitRule:

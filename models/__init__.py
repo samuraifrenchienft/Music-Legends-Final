@@ -466,3 +466,8 @@ class PendingTmaBattle(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
 
+# Aliases for backward compatibility (database.py uses singular names)
+CosmeticCatalog = CosmeticsCatalog
+UserCosmetic = UserCosmetics
+CardCosmetic = CardCosmetics
+

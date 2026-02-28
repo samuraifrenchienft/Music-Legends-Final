@@ -20,7 +20,7 @@ import discord
 from discord import Interaction, app_commands
 from cogs.dev_authorization import security_logger
 
-from ..config import settings
+from config import settings
 
 
 # ==========================================

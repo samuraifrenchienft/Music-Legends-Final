@@ -39,7 +39,23 @@ class RateLimitStrategy(Enum):
 # RATE LIMIT CONFIGURATION
 # ==========================================
 
-from ..config import settings
+from config import settings
+
+@dataclass
+class RateLimitConfig:
+    action: str
+    limit: int
+    window: int
+    strategy: RateLimitStrategy = RateLimitStrategy.FIXED_WINDOW
+    enable_adaptive: bool = False
+
+    @property
+    def max_requests(self) -> int:
+        return self.limit
+
+    @property
+    def window_seconds(self) -> int:
+        return self.window
 
 # Default rate limit configurations
 DEFAULT_LIMITS = {k: RateLimitConfig(action=k, **v) for k, v in settings.RATES.items()}

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import sqlite3
 
-from ..config import settings
+from config import settings
 
 class NFTVerifier:
     """Verifies NFT ownership for revenue boost eligibility"""

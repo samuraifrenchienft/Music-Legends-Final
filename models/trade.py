@@ -74,3 +74,6 @@ class Trade(Base):
             'is_expired': self.is_expired()
         }
 
+
+# Alias for backward compatibility
+TradeSQLite = Trade

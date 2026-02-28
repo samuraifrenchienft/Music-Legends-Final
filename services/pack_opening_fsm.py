@@ -10,7 +10,8 @@ No skipping. No shortcuts.
 import asyncio
 import discord
 from typing import Dict, Any, Optional, List
-from discord import Embed, Color, Button, View, Interaction, User
+from discord import Embed, Color, Interaction, User
+from discord.ui import Button, View
 from enum import Enum
 from schemas.card_canonical import CanonicalCard, CardTier
 from schemas.pack_definition import PackDefinition

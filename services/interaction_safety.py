@@ -5,6 +5,7 @@
 import time
 from typing import Optional, Dict, Any
 from discord import Interaction
+from discord.ui import View
 from ui.state import load_state, save_state, get_user_states
 from models.creator_pack import CreatorPack
 from models.card import Card

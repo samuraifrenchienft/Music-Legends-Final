@@ -356,3 +356,13 @@ def example_usage():
 
 if __name__ == "__main__":
     example_usage()
+
+
+def get_tier_metadata(tier: str) -> dict:
+    """Return display metadata for a tier (emoji, color, label)."""
+    return {
+        "tier": tier,
+        "emoji": get_tier_emoji(tier),
+        "color": get_tier_color(tier),
+        "label": f"Tier {tier}",
+    }

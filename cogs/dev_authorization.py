@@ -16,7 +16,7 @@ from functools import wraps
 import json
 from pathlib import Path
 
-from ..config import settings
+from config import settings
 
 
 # ==========================================

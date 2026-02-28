@@ -3,7 +3,7 @@
 Server-Based Revenue Sharing System
 10% base + NFT boosts (max 30%)
 """
-from .config import settings
+from config import settings
 import sqlite3
 from typing import Dict, Optional
 from datetime import datetime

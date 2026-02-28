@@ -1,5 +1,5 @@
 # config/monitor.py
-from ..config import settings
+from config import settings
 
 MONITOR = {
     # Webhooks

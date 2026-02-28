@@ -1,7 +1,7 @@
 # queue/redis.py
 import redis
 from rq import Queue
-from ..config import settings
+from config import settings
 
 # Redis connection
 redis_conn = redis.from_url(settings.REDIS_URL, decode_responses=True)

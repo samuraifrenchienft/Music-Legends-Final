@@ -4,7 +4,7 @@ from scheduler.cron import cron_service
 from scheduler.services import rewards, drops, trades, seasons, data
 from services.backup_service import backup_service
 from pathlib import Path
-from ..config import settings
+from config import settings
 
 # Import safe decorator
 from scheduler.cron import AsyncCronService
