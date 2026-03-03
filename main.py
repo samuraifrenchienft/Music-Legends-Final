@@ -1,6 +1,7 @@
 import os
 import sys
 import discord
+from discord.ext import commands
 from config import settings
 
 # Set UTF-8 encoding for Windows console
@@ -129,8 +130,8 @@ class Bot(commands.Bot):
                 # Wait 20 minutes (1200 seconds) before next backup
                 await asyncio.sleep(1200)
         
-        asyncio.create_task(periodic_backup_loop())
-        print("⏰ Periodic backups enabled (every 20 minutes during active periods)")
+        # asyncio.create_task(periodic_backup_loop())  # DISABLED - causing hanging issues
+        print("⏰ Periodic backups DISABLED (was causing hanging issues)")
         
         # Load essential cogs without duplicates
         cogs = [
