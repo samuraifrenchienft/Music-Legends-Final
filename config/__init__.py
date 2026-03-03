@@ -1,13 +1,14 @@
 from pydantic_settings import BaseSettings
 from typing import Dict, Any, List, Optional
-from pydantic import validator
+from pydantic import validator, Field, AliasChoices
 
 class Settings(BaseSettings):
     """Manages application configuration using Pydantic."""
 
     # Core settings loaded from environment variables
     DATABASE_URL: str = "sqlite:///./music_legends.db"
-    DISCORD_TOKEN: Optional[str] = None
+    # Accept both DISCORD_TOKEN (new) and BOT_TOKEN (Railway legacy name)
+    DISCORD_TOKEN: Optional[str] = Field(None, validation_alias=AliasChoices('DISCORD_TOKEN', 'BOT_TOKEN'))
     DISCORD_APPLICATION_ID: Optional[int] = None
     TEST_SERVER_ID: Optional[int] = None
     REDIS_HOST: str = "localhost"
