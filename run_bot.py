@@ -51,10 +51,10 @@ def main():
         
         # Check environment
         logger.info("Starting Music Legends Bot...")
-        bot_token = settings.BOT_TOKEN
-        
+        bot_token = settings.DISCORD_TOKEN
+
         if not bot_token:
-            logger.error("BOT_TOKEN is required but not set in .env.txt")
+            logger.error("DISCORD_TOKEN is required but not set")
             sys.exit(1)
         
         # Start the bot

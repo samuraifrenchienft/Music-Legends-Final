@@ -66,8 +66,11 @@ class Settings(BaseSettings):
     # Development
     DEV_USER_IDS: Optional[List[int]] = []
     DEV_CHANNEL_ID: int | None = None
+    ADMIN_CHANNEL_ID: Optional[int] = None
+    LOGS_CHANNEL: Optional[int] = None
 
-    @validator('TEST_SERVER_ID', 'DISCORD_APPLICATION_ID', 'DEV_CHANNEL_ID', pre=True)
+    @validator('TEST_SERVER_ID', 'DISCORD_APPLICATION_ID', 'DEV_CHANNEL_ID',
+               'ADMIN_CHANNEL_ID', 'LOGS_CHANNEL', pre=True)
     def _parse_optional_int(cls, v: Any) -> Optional[int]:
         if v == '' or v is None:
             return None
@@ -83,6 +86,7 @@ class Settings(BaseSettings):
         return v
 
     # Monitoring
+    SENTRY_DSN: Optional[str] = None
     WEBHOOK_OPS: Optional[str] = None
     WEBHOOK_ECON: Optional[str] = None
     DEV_WEBHOOK_URL: Optional[str] = None
