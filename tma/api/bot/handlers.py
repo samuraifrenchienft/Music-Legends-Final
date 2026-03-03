@@ -135,9 +135,10 @@ async def notify_battle_result(
         return
     from database import get_db
     db = get_db()
+    ph = db._get_placeholder()
     with db._get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT telegram_id FROM users WHERE user_id = ?", (challenger_id,))
+        cursor.execute(f"SELECT telegram_id FROM users WHERE user_id = {ph}", (str(challenger_id),))
         row = cursor.fetchone()
     if not row or not row[0]:
         return
