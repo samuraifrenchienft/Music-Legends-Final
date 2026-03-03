@@ -886,10 +886,9 @@ class GameplayCommands(commands.Cog):
         result = self.db.claim_daily_reward(interaction.user.id)
 
         if not result.get('success'):
-            await interaction.followup.send(
-                f"❌ {result.get('error', 'Already claimed today!')}",
-                ephemeral=True
-            )
+            # 'message' is the key used by claim_daily_reward; 'error' is a legacy fallback
+            msg = result.get('message') or result.get('error') or 'Already claimed today!'
+            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
             return
 
         gold_reward = result.get('gold', 0)

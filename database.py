@@ -1104,8 +1104,9 @@ class Database:
         finally:
             session.close()
 
-    def get_user_collection(self, user_id: str) -> List[dict]:
+    def get_user_collection(self, user_id) -> List[dict]:
         """Return all cards owned by a user as enrichable dicts."""
+        user_id = str(user_id)
         session = self.get_session()
         try:
             rows = (
@@ -1181,8 +1182,9 @@ class Database:
             "card_count":      len(cards),
         }
 
-    def get_user_purchased_packs(self, user_id: str) -> List[dict]:
+    def get_user_purchased_packs(self, user_id) -> List[dict]:
         """Return unopened packs the user has purchased."""
+        user_id = str(user_id)
         session = self.get_session()
         try:
             purchases = (
@@ -1220,8 +1222,9 @@ class Database:
         finally:
             session.close()
 
-    def open_pack_for_drop(self, pack_id: str, user_id: str) -> dict:
+    def open_pack_for_drop(self, pack_id: str, user_id) -> dict:
         """Open a purchased pack: award its cards and mark the purchase as opened."""
+        user_id = str(user_id)
         session = self.get_session()
         try:
             purchase = (
@@ -1283,8 +1286,9 @@ class Database:
         finally:
             session.close()
 
-    def get_user_economy(self, user_id: str) -> dict:
+    def get_user_economy(self, user_id) -> dict:
         """Return user's economy stats (gold, tickets, dust, xp, level, streak)."""
+        user_id = str(user_id)
         session = self.get_session()
         try:
             b = session.query(UserBalances).filter_by(user_id=user_id).first()
@@ -1304,12 +1308,13 @@ class Database:
             session.close()
 
     def update_user_economy(
-        self, user_id: str,
+        self, user_id,
         gold_change: int = 0,
         xp_change: int = 0,
         tickets_change: int = 0,
     ) -> bool:
         """Apply delta changes to a user's economy. Creates balance row if missing."""
+        user_id = str(user_id)
         session = self.get_session()
         try:
             b = session.query(UserBalances).filter_by(user_id=user_id).first()
@@ -1333,8 +1338,9 @@ class Database:
         finally:
             session.close()
 
-    def claim_daily_reward(self, user_id: str) -> dict:
+    def claim_daily_reward(self, user_id) -> dict:
         """Claim the daily reward. Returns success/failure with gold and cards."""
+        user_id = str(user_id)
         import random
         from datetime import timedelta
         _DAILY_GOLD = {0: 100, 3: 150, 7: 300, 14: 600, 30: 1100}
@@ -1420,8 +1426,9 @@ class Database:
         finally:
             session.close()
 
-    def get_user_stats(self, user_id: str) -> dict:
+    def get_user_stats(self, user_id) -> dict:
         """Return battle stats for a user."""
+        user_id = str(user_id)
         session = self.get_session()
         try:
             user = session.query(User).filter_by(user_id=user_id).first()
