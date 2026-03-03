@@ -161,6 +161,18 @@ class Database:
         # Auto-migrate: add columns present in models but missing from the DB
         inspector = inspect(self._engine)
         with self._engine.connect() as conn:
+            # Create active_battles table (not in ORM models, managed via raw SQL)
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS active_battles (
+                    match_id TEXT PRIMARY KEY,
+                    player1_id TEXT NOT NULL,
+                    player2_id TEXT NOT NULL,
+                    wager_amount INTEGER NOT NULL DEFAULT 0,
+                    tier_key TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
             # PostgreSQL only: fix users.user_id type from BIGINT → VARCHAR
             if self._engine.dialect.name == 'postgresql':
                 self._migrate_user_id_to_varchar(conn, sa_text)
@@ -963,12 +975,12 @@ class Database:
                 critical_tables = ['users', 'cards', 'creator_packs', 'user_cards', 'transactions', 'pack_purchases', 'dev_pack_supply', 'creator_pack_limits', 'card_instances', 'trade_history', 'user_battle_stats', 'cosmetics_catalog', 'user_cosmetics', 'card_cosmetics', 'battle_log']
                 for table_name in critical_tables:
                     results["tables_checked"] += 1
-                    # Check if table exists in public schema
-                    table_exists = session.query(func.count('*')).filter(
-                        text(f"information_schema.tables.table_name = '{table_name}' AND information_schema.tables.table_schema = 'public'")
-                    ).scalar() > 0
-
-                    if not table_exists:
+                    count = session.execute(
+                        text("SELECT COUNT(*) FROM information_schema.tables "
+                             "WHERE table_schema = 'public' AND table_name = :tname"),
+                        {"tname": table_name}
+                    ).scalar()
+                    if not count:
                         results["valid"] = False
                         results["errors"].append(f"Critical PostgreSQL table missing: {table_name}")
             elif self._db_type == "sqlite":
@@ -997,6 +1009,37 @@ class Database:
         return results
 
 
+
+    # =========================================================
+    # Active Battle tracking (wager crash recovery)
+    # =========================================================
+
+    def persist_active_battle(self, match_id: str, player1_id, player2_id, wager_amount: int, tier_key: str = ""):
+        """Record a battle as active so wagers can be refunded on crash."""
+        with self._engine.connect() as conn:
+            conn.execute(text(
+                "INSERT INTO active_battles (match_id, player1_id, player2_id, wager_amount, tier_key) "
+                "VALUES (:mid, :p1, :p2, :wa, :tk) "
+                "ON CONFLICT (match_id) DO NOTHING"
+            ), {"mid": match_id, "p1": str(player1_id), "p2": str(player2_id),
+                "wa": wager_amount, "tk": tier_key})
+            conn.commit()
+
+    def clear_active_battle(self, match_id: str):
+        """Remove a battle from active tracking after it completes or is cancelled."""
+        with self._engine.connect() as conn:
+            conn.execute(text("DELETE FROM active_battles WHERE match_id = :mid"), {"mid": match_id})
+            conn.commit()
+
+    def get_all_active_battles(self) -> list:
+        """Return all active battles as dicts (used for startup wager refunds)."""
+        with self._engine.connect() as conn:
+            rows = conn.execute(text("SELECT match_id, player1_id, player2_id, wager_amount FROM active_battles")).fetchall()
+        return [{"match_id": r[0], "player1_id": r[1], "player2_id": r[2], "wager_amount": r[3]} for r in rows]
+
+    def _add_gold_direct(self, user_id, amount: int):
+        """Directly add gold to a user (used for crash-recovery wager refunds)."""
+        self.update_user_economy(str(user_id), gold_change=amount)
 
     # =========================================================
     # TMA (Telegram Mini App) methods

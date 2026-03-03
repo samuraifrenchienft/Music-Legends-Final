@@ -355,9 +355,9 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
             cursor.execute(
                 "DELETE FROM creator_packs "
                 "WHERE (stripe_payment_id = 'ADMIN_IMPORT') "
-                "   OR (stripe_payment_id = 'CLI_IMPORT' AND creator_id = 0) "
-                "   OR (stripe_payment_id IS NULL AND creator_id = 0) "
-                "   OR (creator_id = 0 AND (stripe_payment_id IS NULL OR stripe_payment_id != 'SEED_PACK'))"
+                "   OR (stripe_payment_id = 'CLI_IMPORT' AND creator_id = '0') "
+                "   OR (stripe_payment_id IS NULL AND creator_id = '0') "
+                "   OR (creator_id = '0' AND (stripe_payment_id IS NULL OR stripe_payment_id != 'SEED_PACK'))"
             )
             old_deleted = cursor.rowcount
             conn.commit()
@@ -522,7 +522,7 @@ def seed_packs_into_db(db_path: str = "music_legends.db", force_reseed: bool = F
                             (pack_id, creator_id, name, description, pack_size,
                              status, cards_data, published_at, price_cents, price_gold,
                              pack_tier, stripe_payment_id, genre)
-                            VALUES ({ph}, 0, {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP,
+                            VALUES ({ph}, '0', {ph}, {ph}, {ph}, 'LIVE', {ph}, CURRENT_TIMESTAMP,
                                     {ph}, {ph}, {ph}, 'SEED_PACK', {ph})
                         """, (
                             pack_id,
