@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     DEV_USER_IDS: Optional[List[int]] = []
     DEV_CHANNEL_ID: int | None = None
 
+    @validator('TEST_SERVER_ID', 'DISCORD_APPLICATION_ID', 'DEV_CHANNEL_ID', pre=True)
+    def _parse_optional_int(cls, v: Any) -> Optional[int]:
+        if v == '' or v is None:
+            return None
+        return int(v)
+
     @validator('DEV_USER_IDS', pre=True)
     def _parse_dev_user_ids(cls, v: Any) -> list[int]:
         if isinstance(v, (int, float)):
