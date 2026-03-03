@@ -1916,3 +1916,34 @@ if __name__ == "__main__":
 
 # Alias for backward compatibility
 DatabaseManager = Database
+
+
+class _PgConnectionWrapper:
+    """Wraps a raw psycopg2 connection so it can be used as a context manager
+    (commits on success, rolls back on error, closes on exit)."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+        self._conn.close()
+        return False
