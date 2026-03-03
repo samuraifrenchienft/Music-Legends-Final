@@ -200,7 +200,7 @@ class BattleCommands(commands.Cog):
             cursor.execute(
                 f"INSERT INTO users (user_id, username, discord_tag) VALUES ({ph}, {ph}, {ph}) "
                 f"ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username, discord_tag = EXCLUDED.discord_tag",
-                (user.id, user.display_name, str(user))
+                (str(user.id), user.display_name, str(user))
             )
             cursor.execute(
                 f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, 500) ON CONFLICT (user_id) DO NOTHING",
@@ -209,30 +209,32 @@ class BattleCommands(commands.Cog):
             conn.commit()
 
     def _get_gold(self, user_id: int) -> int:
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT gold FROM user_inventory WHERE user_id = ?", (user_id,))
+            cursor.execute(f"SELECT gold FROM user_inventory WHERE user_id = {ph}", (user_id,))
             row = cursor.fetchone()
             return row[0] if row and row[0] else 0
 
     def _add_gold(self, user_id: int, amount: int):
         if amount <= 0:
             return
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO user_inventory (user_id, gold)
-                VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold
-            """, (user_id, amount))
+            cursor.execute(
+                f"INSERT INTO user_inventory (user_id, gold) VALUES ({ph}, {ph}) "
+                f"ON CONFLICT(user_id) DO UPDATE SET gold = user_inventory.gold + EXCLUDED.gold",
+                (user_id, amount))
             conn.commit()
 
     def _remove_gold(self, user_id: int, amount: int) -> bool:
         """Atomic gold deduction — deducts only if balance is sufficient (no TOCTOU)."""
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                f"UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph} AND gold >= {ph}",
                 (amount, user_id, amount)
             )
             conn.commit()
@@ -241,15 +243,16 @@ class BattleCommands(commands.Cog):
     def _deduct_both_wagers(self, user1_id: int, user2_id: int, amount: int) -> tuple[bool, bool]:
         """Deduct wager from both players in one transaction.
         Returns (user1_ok, user2_ok). Rolls back both if either fails."""
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                f"UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph} AND gold >= {ph}",
                 (amount, user1_id, amount)
             )
             u1_ok = cursor.rowcount > 0
             cursor.execute(
-                "UPDATE user_inventory SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                f"UPDATE user_inventory SET gold = gold - {ph} WHERE user_id = {ph} AND gold >= {ph}",
                 (amount, user2_id, amount)
             )
             u2_ok = cursor.rowcount > 0
@@ -262,25 +265,26 @@ class BattleCommands(commands.Cog):
     def _add_xp(self, user_id: int, xp: int):
         if xp <= 0:
             return
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO user_inventory (user_id, xp)
-                VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET xp = COALESCE(user_inventory.xp, 0) + EXCLUDED.xp
-            """, (user_id, xp))
+            cursor.execute(
+                f"INSERT INTO user_inventory (user_id, xp) VALUES ({ph}, {ph}) "
+                f"ON CONFLICT(user_id) DO UPDATE SET xp = COALESCE(user_inventory.xp, 0) + EXCLUDED.xp",
+                (user_id, xp))
             conn.commit()
 
     def _update_battle_stats(self, winner_id: int, loser_id: int):
+        ph = self.db._get_placeholder()
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE users SET total_battles = total_battles + 1, wins = wins + 1 WHERE user_id = ?",
-                (winner_id,)
+                f"UPDATE users SET total_battles = total_battles + 1, wins = wins + 1 WHERE user_id = {ph}",
+                (str(winner_id),)
             )
             cursor.execute(
-                "UPDATE users SET total_battles = total_battles + 1, losses = losses + 1 WHERE user_id = ?",
-                (loser_id,)
+                f"UPDATE users SET total_battles = total_battles + 1, losses = losses + 1 WHERE user_id = {ph}",
+                (str(loser_id),)
             )
             conn.commit()
 
@@ -638,10 +642,12 @@ class BattleCommands(commands.Cog):
             elif result["winner"] == 2:
                 self._update_battle_stats(opponent.id, interaction.user.id)
             else:
+                ph = self.db._get_placeholder()
                 with self.db._get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN (?, ?)",
-                                   (interaction.user.id, opponent.id))
+                    cursor.execute(
+                        f"UPDATE users SET total_battles = total_battles + 1 WHERE user_id IN ({ph}, {ph})",
+                        (str(interaction.user.id), str(opponent.id)))
                     conn.commit()
         except Exception as e:
             print(f"[BATTLE] Warning: battle stats update failed (non-critical): {e}")

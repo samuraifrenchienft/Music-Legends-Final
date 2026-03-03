@@ -212,6 +212,14 @@ class Database:
             raise Exception("Database not initialized. Call Database(database_url) first.")
         return self._Session()
 
+    def _get_placeholder(self) -> str:
+        """Return the SQL parameter placeholder for the current dialect."""
+        return "%s" if self._db_type == "postgresql" else "?"
+
+    def _get_connection(self):
+        """Return a raw DBAPI connection wrapped as a context manager."""
+        return _PgConnectionWrapper(self._engine.raw_connection())
+
 
 
 
