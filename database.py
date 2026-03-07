@@ -1217,7 +1217,8 @@ class Database:
 
     def get_user_collection(self, user_id) -> List[dict]:
         """Return all cards owned by a user as enrichable dicts."""
-        user_ids = self._user_id_variants(user_id)
+        # PostgreSQL is strict about mixed-type IN clauses; ids are stored as text.
+        user_ids = [str(user_id)]
         session = self.get_session()
         try:
             rows = (
@@ -1295,7 +1296,8 @@ class Database:
 
     def get_user_purchased_packs(self, user_id, limit: int = 50) -> List[dict]:
         """Return packs the user has purchased (opened and unopened)."""
-        user_ids = self._user_id_variants(user_id)
+        # PostgreSQL is strict about mixed-type IN clauses; ids are stored as text.
+        user_ids = [str(user_id)]
         session = self.get_session()
         try:
             purchases = (
@@ -1649,7 +1651,8 @@ class Database:
     def open_pack_for_drop(self, pack_id: str, user_id) -> dict:
         """Open a purchased pack: award its cards and mark the purchase as opened."""
         user_id_str = str(user_id)
-        user_ids = self._user_id_variants(user_id)
+        # PostgreSQL is strict about mixed-type IN clauses; ids are stored as text.
+        user_ids = [user_id_str]
         session = self.get_session()
         try:
             purchase = (

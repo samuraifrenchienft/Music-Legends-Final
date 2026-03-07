@@ -3,32 +3,76 @@ Runs inside FastAPI process via webhook (no polling).
 Handles: /start, /link, outbound battle notifications.
 """
 import os
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Bot
+import logging
+from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, Bot
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 _app: Application | None = None
 _bot: Bot | None = None
+logger = logging.getLogger(__name__)
 
 
-def _tma_url() -> str:
-    return os.environ.get("TMA_URL", "https://t.me/MusicLegendsBot/app")
+def _base_tma_url() -> str:
+    """Return a safe HTTPS URL for opening the mini app."""
+    raw = (os.environ.get("TMA_URL") or "").strip()
+    if not raw:
+        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+        return f"https://t.me/{bot_username}"
+    if raw.startswith("t.me/"):
+        raw = f"https://{raw}"
+    if raw.startswith("http://"):
+        raw = "https://" + raw[len("http://") :]
+    parsed = urlparse(raw)
+    if parsed.scheme != "https":
+        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+        return f"https://t.me/{bot_username}"
+    return raw
+
+
+def _tma_url(start_param: str = "") -> str:
+    """Build a deep link while preserving existing query params."""
+    base = _base_tma_url()
+    if not start_param:
+        return base
+    parsed = urlparse(base)
+    q = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    q["startapp"] = start_param
+    new_query = urlencode(q)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """/start [battle_XXXXX] — Open TMA, optionally at a specific deep link."""
     args = ctx.args or []
     start_param = args[0] if args else ""
-    url = f"{_tma_url()}?startapp={start_param}" if start_param else _tma_url()
+    url = _tma_url(start_param)
+
+    chat_type = getattr(update.effective_chat, "type", "")
+    if chat_type in {"group", "supergroup"}:
+        await update.message.reply_text(
+            "Use the Mini App from our private chat with the bot.\n"
+            f"Open here: {url}"
+        )
+        return
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎴 Play Music Legends", web_app=WebAppInfo(url=url))
+        InlineKeyboardButton("🎴 Play Music Legends", url=url)
     ]])
-    await update.message.reply_text(
-        "🎵 *Music Legends* — collect artist cards, battle friends, win gold!\n\n"
-        "Tap below to open the game:",
-        reply_markup=keyboard,
-        parse_mode="Markdown",
-    )
+    try:
+        await update.message.reply_text(
+            "🎵 *Music Legends* — collect artist cards, battle friends, win gold!\n\n"
+            "Tap below to open the game:",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        # Fallback to plain text so /start still responds if Telegram rejects button payload.
+        logger.warning("cmd_start button send failed: %s", e)
+        await update.message.reply_text(
+            "🎵 Music Legends\n"
+            f"Open the game here: {url}"
+        )
 
 
 async def cmd_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
