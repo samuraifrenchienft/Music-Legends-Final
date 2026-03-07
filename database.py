@@ -177,6 +177,16 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Backward-compat: older deployments may have active_battles without tier_key.
+            try:
+                active_cols = {col["name"] for col in inspector.get_columns("active_battles")}
+                if "tier_key" not in active_cols:
+                    conn.execute(sa_text('ALTER TABLE active_battles ADD COLUMN tier_key TEXT'))
+                    conn.commit()
+                    logger.info("[MIGRATE] Added column active_battles.tier_key")
+            except Exception as e:
+                conn.rollback()
+                logger.warning(f"[MIGRATE] Skipped active_battles.tier_key migration: {e}")
             # Legacy economy table still used by several Discord cogs via raw SQL.
             conn.execute(sa_text("""
                 CREATE TABLE IF NOT EXISTS user_inventory (
@@ -1063,13 +1073,25 @@ class Database:
     def persist_active_battle(self, match_id: str, player1_id, player2_id, wager_amount: int, tier_key: str = ""):
         """Record a battle as active so wagers can be refunded on crash."""
         with self._engine.connect() as conn:
-            conn.execute(text(
-                "INSERT INTO active_battles (match_id, player1_id, player2_id, wager_amount, tier_key) "
-                "VALUES (:mid, :p1, :p2, :wa, :tk) "
-                "ON CONFLICT (match_id) DO NOTHING"
-            ), {"mid": match_id, "p1": str(player1_id), "p2": str(player2_id),
-                "wa": wager_amount, "tk": tier_key})
-            conn.commit()
+            try:
+                conn.execute(text(
+                    "INSERT INTO active_battles (match_id, player1_id, player2_id, wager_amount, tier_key) "
+                    "VALUES (:mid, :p1, :p2, :wa, :tk) "
+                    "ON CONFLICT (match_id) DO NOTHING"
+                ), {"mid": match_id, "p1": str(player1_id), "p2": str(player2_id),
+                    "wa": wager_amount, "tk": tier_key})
+                conn.commit()
+            except Exception as e:
+                # Runtime fallback for legacy schemas that still don't have tier_key.
+                conn.rollback()
+                logger.warning(f"[BATTLE] active_battles.tier_key unavailable, using legacy insert: {e}")
+                conn.execute(text(
+                    "INSERT INTO active_battles (match_id, player1_id, player2_id, wager_amount) "
+                    "VALUES (:mid, :p1, :p2, :wa) "
+                    "ON CONFLICT (match_id) DO NOTHING"
+                ), {"mid": match_id, "p1": str(player1_id), "p2": str(player2_id),
+                    "wa": wager_amount})
+                conn.commit()
 
     def clear_active_battle(self, match_id: str):
         """Remove a battle from active tracking after it completes or is cancelled."""
