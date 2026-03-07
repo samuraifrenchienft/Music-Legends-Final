@@ -33,16 +33,28 @@ class StartGameCog(commands.Cog):
         try:
             with self.db._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
-                pack_count = cursor.fetchone()[0]
-
-                cursor.execute("""
-                    SELECT name, pack_size FROM creator_packs
-                    WHERE status = 'LIVE'
-                    ORDER BY name
-                    LIMIT 10
-                """)
-                sample_packs = cursor.fetchall()
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                    pack_count = cursor.fetchone()[0]
+                    cursor.execute("""
+                        SELECT name, pack_size FROM creator_packs
+                        WHERE status = 'LIVE'
+                        ORDER BY name
+                        LIMIT 10
+                    """)
+                    sample_packs = cursor.fetchall()
+                except Exception:
+                    # Backward compatibility for schema variants without status/pack_size.
+                    cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE is_public = 1")
+                    pack_count = cursor.fetchone()[0]
+                    cursor.execute("""
+                        SELECT name, COALESCE(pack_size, card_count, 0) AS pack_size
+                        FROM creator_packs
+                        WHERE is_public = 1
+                        ORDER BY name
+                        LIMIT 10
+                    """)
+                    sample_packs = cursor.fetchall()
             print(f"[START_GAME] Found {pack_count} LIVE packs")
         except Exception as e:
             print(f"[START_GAME] DB query failed: {e}")
@@ -63,14 +75,25 @@ class StartGameCog(commands.Cog):
                 # Re-check after reseed
                 with self.db._get_connection() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
-                    pack_count = cursor.fetchone()[0]
-                    cursor.execute("""
-                        SELECT name, pack_size FROM creator_packs
-                        WHERE status = 'LIVE'
-                        ORDER BY name LIMIT 10
-                    """)
-                    sample_packs = cursor.fetchall()
+                    try:
+                        cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE status = 'LIVE'")
+                        pack_count = cursor.fetchone()[0]
+                        cursor.execute("""
+                            SELECT name, pack_size FROM creator_packs
+                            WHERE status = 'LIVE'
+                            ORDER BY name LIMIT 10
+                        """)
+                        sample_packs = cursor.fetchall()
+                    except Exception:
+                        cursor.execute("SELECT COUNT(*) FROM creator_packs WHERE is_public = 1")
+                        pack_count = cursor.fetchone()[0]
+                        cursor.execute("""
+                            SELECT name, COALESCE(pack_size, card_count, 0) AS pack_size
+                            FROM creator_packs
+                            WHERE is_public = 1
+                            ORDER BY name LIMIT 10
+                        """)
+                        sample_packs = cursor.fetchall()
                 print(f"[START_GAME] After reseed: {pack_count} LIVE packs")
             except Exception as e:
                 print(f"[START_GAME] Emergency reseed failed: {e}")

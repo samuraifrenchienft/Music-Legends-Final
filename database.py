@@ -28,7 +28,7 @@ from models import (
     User, UserBalances, PackPurchase, CreatorPacks, Card, UserCard,
     DevPackSupply, CardInstance, CreatorPackLimits, TradeHistory,
     UserBattleStats, CosmeticCatalog, UserCosmetic, CardCosmetic, BattleLog,
-    TmaLinkCode, DailyClaims, MarketplaceListings, VipStatus, PendingTmaBattle,
+    TmaLinkCode, MarketplaceListings, VipStatus, PendingTmaBattle,
     CreatorPackCards,
 )
 from models.trade import Trade
@@ -65,6 +65,11 @@ class Database:
     def engine(self):
         """Public access to the SQLAlchemy engine (used by tests)."""
         return self._engine
+
+    @property
+    def SessionLocal(self):
+        """Backward-compatible handle used by older tests/helpers."""
+        return self._Session
 
     def init_database(self):
         """Alias for _create_tables_if_not_exists (used by test fixtures)."""
@@ -172,6 +177,21 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Legacy economy table still used by several Discord cogs via raw SQL.
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS user_inventory (
+                    user_id TEXT PRIMARY KEY,
+                    gold INTEGER DEFAULT 0,
+                    dust INTEGER DEFAULT 0,
+                    tickets INTEGER DEFAULT 0,
+                    gems INTEGER DEFAULT 0,
+                    xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 1,
+                    total_cards INTEGER DEFAULT 0,
+                    last_daily_claim TIMESTAMP,
+                    daily_streak INTEGER DEFAULT 0
+                )
+            """))
             conn.commit()
             # PostgreSQL only: fix users.user_id type from BIGINT → VARCHAR
             if self._engine.dialect.name == 'postgresql':
@@ -219,6 +239,24 @@ class Database:
     def _get_connection(self):
         """Return a raw DBAPI connection wrapped as a context manager."""
         return _PgConnectionWrapper(self._engine.raw_connection())
+
+    @staticmethod
+    def _user_id_variants(user_id) -> list:
+        """Return compatible user_id values for mixed text/int historical schemas."""
+        values = [str(user_id)]
+        try:
+            values.append(int(user_id))
+        except (TypeError, ValueError):
+            pass
+        # Preserve order while deduplicating
+        seen = set()
+        out = []
+        for v in values:
+            if v in seen:
+                continue
+            seen.add(v)
+            out.append(v)
+        return out
 
 
 
@@ -1157,13 +1195,13 @@ class Database:
 
     def get_user_collection(self, user_id) -> List[dict]:
         """Return all cards owned by a user as enrichable dicts."""
-        user_id = str(user_id)
+        user_ids = self._user_id_variants(user_id)
         session = self.get_session()
         try:
             rows = (
                 session.query(UserCard, Card)
                 .join(Card, UserCard.card_id == Card.card_id)
-                .filter(UserCard.user_id == user_id)
+                .filter(UserCard.user_id.in_(user_ids))
                 .all()
             )
             return [
@@ -1233,15 +1271,17 @@ class Database:
             "card_count":      len(cards),
         }
 
-    def get_user_purchased_packs(self, user_id) -> List[dict]:
-        """Return unopened packs the user has purchased."""
-        user_id = str(user_id)
+    def get_user_purchased_packs(self, user_id, limit: int = 50) -> List[dict]:
+        """Return packs the user has purchased (opened and unopened)."""
+        user_ids = self._user_id_variants(user_id)
         session = self.get_session()
         try:
             purchases = (
                 session.query(PackPurchase, CreatorPacks)
                 .join(CreatorPacks, PackPurchase.pack_id == CreatorPacks.pack_id)
-                .filter(PackPurchase.buyer_id == user_id, PackPurchase.cards_received.is_(None))
+                .filter(PackPurchase.buyer_id.in_(user_ids))
+                .order_by(desc(PackPurchase.purchased_at))
+                .limit(limit)
                 .all()
             )
             result = []
@@ -1255,6 +1295,317 @@ class Database:
             return []
         finally:
             session.close()
+
+    # --- Compatibility helpers for Discord cogs / legacy flows ---
+
+    def get_or_create_user(self, user_id, username: str = "", discord_tag: str = "") -> dict:
+        """Ensure user + balance rows exist. Returns a compact user dict."""
+        user_id = str(user_id)
+        username = username or f"user_{user_id}"
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(user_id=user_id).first()
+            created = False
+            if not user:
+                user = User(user_id=user_id, username=username, discord_tag=discord_tag)
+                session.add(user)
+                created = True
+            else:
+                if username:
+                    user.username = username
+                if discord_tag:
+                    user.discord_tag = discord_tag
+
+            balances = session.query(UserBalances).filter_by(user_id=user_id).first()
+            if not balances:
+                session.add(UserBalances(user_id=user_id))
+                created = True
+
+            session.commit()
+            return {"user_id": user_id, "username": user.username, "created": created}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] get_or_create_user error: {e}")
+            return {"user_id": user_id, "username": username, "created": False}
+        finally:
+            session.close()
+
+    def ensure_user_exists(self, user_id, username: str = "") -> bool:
+        """Legacy helper used by Discord cogs."""
+        result = self.get_or_create_user(user_id, username=username, discord_tag=str(username))
+        return bool(result.get("user_id"))
+
+    def create_creator_pack(
+        self,
+        creator_id,
+        name: str,
+        description: str = "",
+        pack_size: int = 5,
+        pack_tier: str = "community",
+        genre: str = "music",
+        cover_image_url: str = "",
+    ) -> str:
+        """Create a creator pack and return pack_id."""
+        session = self.get_session()
+        try:
+            pack_id = f"pack_{uuid.uuid4().hex[:8]}"
+            pack = CreatorPacks(
+                pack_id=pack_id,
+                name=name,
+                creator_id=str(creator_id),
+                description=description,
+                card_count=pack_size,
+                pack_tier=pack_tier,
+                genre=genre,
+                cover_image_url=cover_image_url,
+                is_public=True,
+            )
+            session.add(pack)
+            session.commit()
+            return pack_id
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] create_creator_pack error: {e}")
+            return ""
+        finally:
+            session.close()
+
+    def add_card_to_master(self, card_data: Dict) -> bool:
+        """Insert/update a card in the master `cards` table."""
+        session = self.get_session()
+        try:
+            card_id = card_data.get("card_id")
+            if not card_id:
+                return False
+
+            card = session.query(Card).filter_by(card_id=card_id).first()
+            if not card:
+                card = Card(card_id=card_id)
+                session.add(card)
+
+            # Preserve existing non-empty URLs when new payload is empty.
+            new_image = card_data.get("image_url")
+            new_yt = card_data.get("youtube_url")
+
+            card.name = card_data.get("name") or card.name or "Unknown"
+            card.artist_name = card_data.get("artist_name") or card_data.get("name") or card.artist_name
+            card.title = card_data.get("title") or card.title
+            if new_image:
+                card.image_url = new_image
+            if new_yt:
+                card.youtube_url = new_yt
+            card.rarity = (card_data.get("rarity") or card.rarity or "common")
+            card.tier = card_data.get("tier") or card.tier
+            card.variant = card_data.get("variant") or card.variant or "Classic"
+            card.era = card_data.get("era") or card.era
+            card.impact = card_data.get("impact", card.impact)
+            card.skill = card_data.get("skill", card.skill)
+            card.longevity = card_data.get("longevity", card.longevity)
+            card.culture = card_data.get("culture", card.culture)
+            card.hype = card_data.get("hype", card.hype)
+            card.pack_id = card_data.get("pack_id") or card.pack_id
+            card.created_by_user_id = str(card_data.get("created_by_user_id") or card.created_by_user_id or "")
+
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] add_card_to_master error: {e}")
+            return False
+        finally:
+            session.close()
+
+    def add_card_to_pack(self, pack_id: str, card_data: Dict) -> bool:
+        """Link a card to a creator pack."""
+        session = self.get_session()
+        try:
+            card_id = card_data.get("card_id")
+            if not card_id:
+                return False
+
+            link = session.query(CreatorPackCards).filter_by(pack_id=pack_id, card_id=card_id).first()
+            if not link:
+                session.add(CreatorPackCards(pack_id=pack_id, card_id=card_id))
+
+            # Best-effort: keep card_count synced to number of links.
+            pack = session.query(CreatorPacks).filter_by(pack_id=pack_id).first()
+            if pack:
+                count = session.query(CreatorPackCards).filter_by(pack_id=pack_id).count()
+                pack.card_count = count + (0 if link else 1)
+
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] add_card_to_pack error: {e}")
+            return False
+        finally:
+            session.close()
+
+    def add_to_dev_supply(self, pack_id: str, quantity: int = 1) -> bool:
+        """Increment dev supply for a pack."""
+        session = self.get_session()
+        try:
+            row = session.query(DevPackSupply).filter_by(pack_id=pack_id).first()
+            if row:
+                row.quantity = (row.quantity or 0) + quantity
+            else:
+                session.add(DevPackSupply(pack_id=pack_id, quantity=quantity))
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] add_to_dev_supply error: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_random_live_pack_by_tier(self, tier: str = "community") -> Optional[dict]:
+        """Return a random public pack for a tier in drop/start-game format."""
+        tier = (tier or "community").lower()
+        session = self.get_session()
+        try:
+            # Preferred modern path (ORM fields).
+            pack = (
+                session.query(CreatorPacks)
+                .filter(CreatorPacks.is_public == True)
+                .filter(func.lower(func.coalesce(CreatorPacks.pack_tier, "community")) == tier)
+                .order_by(func.random())
+                .first()
+            )
+            # Fallback for legacy schemas where "live" is represented by status='LIVE'
+            # and/or pack_tier is NULL.
+            if not pack:
+                with self._engine.connect() as conn:
+                    row = conn.execute(text("""
+                        SELECT pack_id, name, COALESCE(pack_tier, :tier) AS pack_tier,
+                               COALESCE(pack_size, card_count, 0) AS pack_size,
+                               COALESCE(genre, 'music') AS genre
+                        FROM creator_packs
+                        WHERE (LOWER(COALESCE(pack_tier, :tier)) = :tier)
+                          AND (
+                                COALESCE(is_public, 0) = 1
+                                OR UPPER(COALESCE(status, '')) = 'LIVE'
+                              )
+                        ORDER BY RANDOM()
+                        LIMIT 1
+                    """), {"tier": tier}).fetchone()
+                if row:
+                    return {
+                        "pack_id": row[0],
+                        "name": row[1],
+                        "tier": row[2] or tier,
+                        "pack_size": row[3] or 0,
+                        "genre": row[4] or "music",
+                    }
+            if not pack:
+                return None
+            return {
+                "pack_id": pack.pack_id,
+                "name": pack.name,
+                "tier": (pack.pack_tier or tier),
+                "pack_size": pack.card_count or 0,
+                "genre": pack.genre or "music",
+            }
+        except Exception as e:
+            logger.error(f"[DB] get_random_live_pack_by_tier error: {e}")
+            return None
+        finally:
+            session.close()
+
+    def grant_pack_to_user(self, pack_id: str, user_id) -> dict:
+        """Legacy helper: grant/open a pack from dev supply to a user."""
+        user_id = str(user_id)
+        session = self.get_session()
+        try:
+            supply = session.query(DevPackSupply).filter_by(pack_id=pack_id).first()
+            if not supply or (supply.quantity or 0) <= 0:
+                return {"success": False, "error": "No supply available"}
+            supply.quantity = (supply.quantity or 0) - 1
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] grant_pack_to_user supply update error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+        return self.open_pack_for_drop(pack_id, user_id)
+
+    def get_user_deck(self, user_id, limit: int = 5) -> List[dict]:
+        """Return strongest `limit` cards from collection."""
+        cards = self.get_user_collection(user_id)
+        cards.sort(
+            key=lambda c: (
+                (c.get("impact") or 50)
+                + (c.get("skill") or 50)
+                + (c.get("longevity") or 50)
+                + (c.get("culture") or 50)
+                + (c.get("hype") or 50)
+            ),
+            reverse=True,
+        )
+        return cards[:limit]
+
+    def record_battle(self, battle_data: Dict) -> bool:
+        """Persist battle history row (best-effort; table auto-created if missing)."""
+        try:
+            with self._engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS battle_history (
+                        battle_id TEXT PRIMARY KEY,
+                        player1_id TEXT NOT NULL,
+                        player2_id TEXT NOT NULL,
+                        player1_card_id TEXT,
+                        player2_card_id TEXT,
+                        winner INTEGER,
+                        player1_power INTEGER,
+                        player2_power INTEGER,
+                        player1_critical BOOLEAN DEFAULT FALSE,
+                        player2_critical BOOLEAN DEFAULT FALSE,
+                        wager_tier TEXT,
+                        wager_amount INTEGER DEFAULT 0,
+                        player1_gold_reward INTEGER DEFAULT 0,
+                        player2_gold_reward INTEGER DEFAULT 0,
+                        player1_xp_reward INTEGER DEFAULT 0,
+                        player2_xp_reward INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("""
+                    INSERT INTO battle_history (
+                        battle_id, player1_id, player2_id, player1_card_id, player2_card_id,
+                        winner, player1_power, player2_power, player1_critical, player2_critical,
+                        wager_tier, wager_amount, player1_gold_reward, player2_gold_reward,
+                        player1_xp_reward, player2_xp_reward
+                    ) VALUES (
+                        :battle_id, :player1_id, :player2_id, :player1_card_id, :player2_card_id,
+                        :winner, :player1_power, :player2_power, :player1_critical, :player2_critical,
+                        :wager_tier, :wager_amount, :player1_gold_reward, :player2_gold_reward,
+                        :player1_xp_reward, :player2_xp_reward
+                    )
+                """), {
+                    "battle_id": battle_data.get("battle_id"),
+                    "player1_id": str(battle_data.get("player1_id", "")),
+                    "player2_id": str(battle_data.get("player2_id", "")),
+                    "player1_card_id": battle_data.get("player1_card_id"),
+                    "player2_card_id": battle_data.get("player2_card_id"),
+                    "winner": battle_data.get("winner"),
+                    "player1_power": battle_data.get("player1_power"),
+                    "player2_power": battle_data.get("player2_power"),
+                    "player1_critical": bool(battle_data.get("player1_critical", False)),
+                    "player2_critical": bool(battle_data.get("player2_critical", False)),
+                    "wager_tier": battle_data.get("wager_tier"),
+                    "wager_amount": battle_data.get("wager_amount", 0),
+                    "player1_gold_reward": battle_data.get("player1_gold_reward", 0),
+                    "player2_gold_reward": battle_data.get("player2_gold_reward", 0),
+                    "player1_xp_reward": battle_data.get("player1_xp_reward", 0),
+                    "player2_xp_reward": battle_data.get("player2_xp_reward", 0),
+                })
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[DB] record_battle error: {e}")
+            return False
 
     def get_live_packs(self, limit: int = 20) -> List[dict]:
         """Return publicly listed packs available in the store."""
@@ -1275,40 +1626,67 @@ class Database:
 
     def open_pack_for_drop(self, pack_id: str, user_id) -> dict:
         """Open a purchased pack: award its cards and mark the purchase as opened."""
-        user_id = str(user_id)
+        user_id_str = str(user_id)
+        user_ids = self._user_id_variants(user_id)
         session = self.get_session()
         try:
             purchase = (
                 session.query(PackPurchase)
-                .filter_by(pack_id=pack_id, buyer_id=user_id)
+                .filter(PackPurchase.pack_id == pack_id, PackPurchase.buyer_id.in_(user_ids))
                 .filter(PackPurchase.cards_received.is_(None))
                 .first()
             )
-            if not purchase:
-                return {"success": False, "error": "Pack not found or already opened"}
 
             pack = session.query(CreatorPacks).filter_by(pack_id=pack_id).first()
             if not pack:
                 return {"success": False, "error": "Pack definition not found"}
 
-            # Get cards in this pack
+            # Get cards in this pack (normalized link table first).
             card_rows = (
                 session.query(Card)
                 .join(CreatorPackCards, Card.card_id == CreatorPackCards.card_id)
                 .filter(CreatorPackCards.pack_id == pack_id)
                 .all()
             )
+            # Fallback: older packs may store cards only in creator_packs.cards_data JSON.
+            if not card_rows and pack.cards_data:
+                cards_data = pack.cards_data
+                if isinstance(cards_data, str):
+                    try:
+                        cards_data = json.loads(cards_data)
+                    except Exception:
+                        cards_data = []
+                if isinstance(cards_data, list):
+                    for raw in cards_data:
+                        if not isinstance(raw, dict):
+                            continue
+                        card_id = raw.get("card_id") or f"{pack_id}_{uuid.uuid4().hex[:8]}"
+                        payload = dict(raw)
+                        payload["card_id"] = card_id
+                        payload["pack_id"] = pack_id
+                        payload.setdefault("name", raw.get("artist_name") or "Unknown")
+                        payload.setdefault("rarity", "common")
+                        self.add_card_to_master(payload)
+                        if not session.query(CreatorPackCards).filter_by(pack_id=pack_id, card_id=card_id).first():
+                            session.add(CreatorPackCards(pack_id=pack_id, card_id=card_id))
+                    session.flush()
+                    card_rows = (
+                        session.query(Card)
+                        .join(CreatorPackCards, Card.card_id == CreatorPackCards.card_id)
+                        .filter(CreatorPackCards.pack_id == pack_id)
+                        .all()
+                    )
             cards_out = []
             for c in card_rows:
                 # Add to user collection
                 existing = session.query(UserCard).filter_by(
-                    user_id=user_id, card_id=c.card_id
+                    user_id=user_id_str, card_id=c.card_id
                 ).first()
                 if existing:
                     existing.quantity += 1
                 else:
                     session.add(UserCard(
-                        user_id=user_id, card_id=c.card_id,
+                        user_id=user_id_str, card_id=c.card_id,
                         quantity=1, acquired_from="pack_open",
                         acquired_at=datetime.utcnow(),
                     ))
@@ -1326,8 +1704,18 @@ class Database:
                     "hype":      c.hype or 50,
                 })
 
-            # Mark pack as opened
-            purchase.cards_received = [c["card_id"] for c in cards_out]
+            # Mark pack as opened if this came from purchases.
+            # For direct channel drops, create a synthetic purchase history row.
+            received_ids = [c["card_id"] for c in cards_out]
+            if purchase:
+                purchase.cards_received = received_ids
+            else:
+                session.add(PackPurchase(
+                    buyer_id=user_id_str,
+                    pack_id=pack_id,
+                    purchased_at=datetime.utcnow(),
+                    cards_received=received_ids,
+                ))
             session.commit()
             return {"success": True, "cards": cards_out}
         except Exception as e:
@@ -1399,25 +1787,31 @@ class Database:
         session = self.get_session()
         try:
             now = datetime.utcnow()
-            claim = session.query(DailyClaims).filter_by(user_id=user_id).first()
-            if claim:
-                hours_since = (now - claim.last_claim_date).total_seconds() / 3600
-                if hours_since < 24:
-                    next_claim = claim.last_claim_date + timedelta(hours=24)
-                    return {
-                        "success": False,
-                        "message": "Already claimed today",
-                        "next_claim_at": next_claim.isoformat(),
-                    }
-            # Calculate streak
+
+            # Use user_balances.last_daily_claim as canonical source.
+            # This avoids hard failure if a legacy daily_claims table is missing.
             b = session.query(UserBalances).filter_by(user_id=user_id).first()
             if not b:
                 b = UserBalances(user_id=user_id)
                 session.add(b)
                 session.flush()
 
+            last_claim_at = b.last_daily_claim
+            if last_claim_at:
+                hours_since = (now - last_claim_at).total_seconds() / 3600
+                if hours_since < 24:
+                    next_claim = last_claim_at + timedelta(hours=24)
+                    remaining_seconds = max(0, int((24 - hours_since) * 3600))
+                    return {
+                        "success": False,
+                        "message": "Already claimed today",
+                        "error": "Already claimed today",
+                        "next_claim_at": next_claim.isoformat(),
+                        "time_until": remaining_seconds,
+                    }
+
             streak = b.daily_streak or 0
-            if claim and (now - claim.last_claim_date).total_seconds() / 3600 < 48:
+            if last_claim_at and (now - last_claim_at).total_seconds() / 3600 < 48:
                 streak += 1
             else:
                 streak = 1
@@ -1457,10 +1851,26 @@ class Database:
             b.daily_streak = streak
             b.last_daily_claim = now
 
-            if claim:
-                claim.last_claim_date = now
-            else:
-                session.add(DailyClaims(user_id=user_id, last_claim_date=now))
+            # Legacy compatibility: keep old user_inventory table in sync when present.
+            try:
+                session.execute(text("""
+                    INSERT INTO user_inventory (user_id, gold, tickets, last_daily_claim, daily_streak)
+                    VALUES (:uid, :gold, :tickets, :last_claim, :streak)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        gold = COALESCE(user_inventory.gold, 0) + :gold,
+                        tickets = COALESCE(user_inventory.tickets, 0) + :tickets,
+                        last_daily_claim = :last_claim,
+                        daily_streak = :streak
+                """), {
+                    "uid": user_id,
+                    "gold": gold,
+                    "tickets": 0,
+                    "last_claim": now,
+                    "streak": streak,
+                })
+            except Exception:
+                # Some environments no longer maintain user_inventory.
+                pass
 
             session.commit()
             return {
@@ -1663,13 +2073,34 @@ class Database:
 
     def create_trade(
         self,
-        initiator_id: str,
-        partner_id: int,
-        offered_cards: List[str],
-        requested_cards: List[str],
+        initiator_id: str = None,
+        partner_id: int = None,
+        offered_cards: List[str] = None,
+        requested_cards: List[str] = None,
         offered_gold: int = 0,
         requested_gold: int = 0,
-    ) -> dict:
+        **kwargs,
+    ):
+        """Create a pending trade.
+
+        Supports two call styles:
+        - TMA: create_trade(initiator_id, partner_id, offered_cards, requested_cards, ...)
+        - Discord legacy: create_trade(initiator_user_id=..., receiver_user_id=..., ...)
+        """
+        # Discord legacy signature compatibility
+        if kwargs.get("initiator_user_id") is not None or kwargs.get("receiver_user_id") is not None:
+            initiator_id = str(kwargs.get("initiator_user_id"))
+            partner_id = int(kwargs.get("receiver_user_id"))
+            offered_cards = kwargs.get("initiator_cards") or []
+            requested_cards = kwargs.get("receiver_cards") or []
+            offered_gold = int(kwargs.get("gold_from_initiator") or 0)
+            requested_gold = int(kwargs.get("gold_from_receiver") or 0)
+            discord_mode = True
+        else:
+            offered_cards = offered_cards or []
+            requested_cards = requested_cards or []
+            discord_mode = False
+
         """Create a pending P2P trade."""
         session = self.get_session()
         try:
@@ -1682,15 +2113,15 @@ class Database:
                     return {"success": False, "error": f"You don't own card {card_id}"}
 
             # Resolve partner user_id (create placeholder if needed)
-            partner_user_id = str(self._TG_OFFSET + partner_id)
+            partner_user_id = str(partner_id) if discord_mode else str(self._TG_OFFSET + partner_id)
             if not session.query(User).filter_by(user_id=partner_user_id).first():
                 session.add(User(user_id=partner_user_id, username=f"user_{partner_id}"))
                 session.add(UserBalances(user_id=partner_user_id))
                 session.flush()
 
             trade = Trade(
-                user_a=self._tg_int(initiator_id),
-                user_b=self._TG_OFFSET + partner_id,
+                user_a=int(initiator_id) if discord_mode else self._tg_int(initiator_id),
+                user_b=int(partner_id) if discord_mode else self._TG_OFFSET + partner_id,
                 cards_a=offered_cards,
                 cards_b=requested_cards,
                 gold_a=offered_gold,
@@ -1700,11 +2131,83 @@ class Database:
             )
             session.add(trade)
             session.commit()
+            if discord_mode:
+                return str(trade.id)
             return {"success": True, "trade_id": str(trade.id)}
         except Exception as e:
             session.rollback()
             logger.error(f"[TMA] create_trade error: {e}")
+            if discord_mode:
+                return None
             return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
+    def complete_trade(self, trade_id: str) -> bool:
+        """Legacy Discord trade finalize path (atomic swap + gold exchange)."""
+        import uuid as _uuid
+        session = self.get_session()
+        try:
+            trade = session.query(Trade).filter_by(id=_uuid.UUID(trade_id), status="pending").first()
+            if not trade:
+                return False
+            if trade.is_expired():
+                trade.status = "expired"
+                session.commit()
+                return False
+
+            initiator_id = str(trade.user_a)
+            receiver_id = str(trade.user_b)
+
+            # Verify ownership before mutating
+            for card_id in (trade.cards_a or []):
+                if not session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first():
+                    return False
+            for card_id in (trade.cards_b or []):
+                if not session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first():
+                    return False
+
+            # Swap A -> B
+            for card_id in (trade.cards_a or []):
+                uc = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
+                uc.quantity = (uc.quantity or 1) - 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+                ex = session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first()
+                if ex:
+                    ex.quantity = (ex.quantity or 0) + 1
+                else:
+                    session.add(UserCard(
+                        user_id=receiver_id, card_id=card_id, quantity=1,
+                        acquired_from="trade", acquired_at=datetime.utcnow(),
+                    ))
+
+            # Swap B -> A
+            for card_id in (trade.cards_b or []):
+                uc = session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first()
+                uc.quantity = (uc.quantity or 1) - 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+                ex = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
+                if ex:
+                    ex.quantity = (ex.quantity or 0) + 1
+                else:
+                    session.add(UserCard(
+                        user_id=initiator_id, card_id=card_id, quantity=1,
+                        acquired_from="trade", acquired_at=datetime.utcnow(),
+                    ))
+
+            if trade.gold_a or trade.gold_b:
+                self.update_user_economy(initiator_id, gold_change=-(trade.gold_a or 0) + (trade.gold_b or 0))
+                self.update_user_economy(receiver_id,  gold_change=-(trade.gold_b or 0) + (trade.gold_a or 0))
+
+            trade.status = "completed"
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] complete_trade error: {e}")
+            return False
         finally:
             session.close()
 
@@ -1773,7 +2276,7 @@ class Database:
         finally:
             session.close()
 
-    def cancel_trade(self, trade_id: str, user_id: str) -> dict:
+    def cancel_trade(self, trade_id: str, user_id: str = None, reason: str = None) -> dict:
         """Cancel a pending trade (only initiator or recipient can cancel)."""
         import uuid as _uuid
         session = self.get_session()
@@ -1783,9 +2286,10 @@ class Database:
             ).first()
             if not trade:
                 return {"success": False, "error": "Trade not found or already closed"}
-            tg_id = self._tg_int(user_id)
-            if tg_id not in (trade.user_a, trade.user_b):
-                return {"success": False, "error": "Not a participant in this trade"}
+            if user_id is not None:
+                tg_id = self._tg_int(user_id)
+                if tg_id not in (trade.user_a, trade.user_b) and str(user_id) not in (str(trade.user_a), str(trade.user_b)):
+                    return {"success": False, "error": "Not a participant in this trade"}
             trade.status = "cancelled"
             session.commit()
             return {"success": True}

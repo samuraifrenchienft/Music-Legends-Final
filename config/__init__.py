@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
 
     # Payment Gateway Keys
-    STRIPE_SECRET_KEY: str = "your_stripe_secret_key"
+    STRIPE_SECRET: str = "your_stripe_secret_key"
     STRIPE_WEBHOOK_SECRET: str = "your_stripe_webhook_secret"
     PAYPAL_CLIENT_ID: str = "your_paypal_client_id"
     PAYPAL_CLIENT_SECRET: str = "your_paypal_client_secret"
@@ -113,5 +113,6 @@ class Settings(BaseSettings):
         """Pydantic configuration."""
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 settings = Settings()

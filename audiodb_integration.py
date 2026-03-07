@@ -6,9 +6,16 @@ Fallback source for high-quality artist images and album art
 
 import os
 import requests
+import sys
 from typing import List, Dict, Optional
 
 from config import settings
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 class AudioDBIntegration:
     """TheAudioDB API client for artist images and metadata"""
@@ -20,10 +27,10 @@ class AudioDBIntegration:
         self.base_url_v2 = f"https://www.theaudiodb.com/api/v2/json/{self.api_key}"
         
         if self.api_key in ['1', '2']:
-            print("ℹ️ Using TheAudioDB public test key (limited features)")
-            print("💎 Get Patreon key at: https://www.patreon.com/thedatadb for v2 API access")
+            print("[AudioDB] Using public test key (limited features)")
+            print("[AudioDB] Get Patreon key at: https://www.patreon.com/thedatadb for v2 API access")
         else:
-            print("✅ Using TheAudioDB Patreon key (full v2 API access)")
+            print("[AudioDB] Using Patreon key (full v2 API access)")
     
     def _make_request(self, endpoint: str, params: Dict = None, use_v2: bool = False) -> Optional[Dict]:
         """Make request to TheAudioDB API"""

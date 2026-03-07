@@ -13,11 +13,19 @@ import discord
 from discord import Interaction
 import random
 import sqlite3
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from music_api_manager import music_api
 from views.song_selection import SongSelectionView
 from cogs.pack_preview_integration import show_pack_preview_lastfm
+
+# Ensure emoji-heavy debug logs don't crash on Windows cp1252 consoles.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 # ==========================================
