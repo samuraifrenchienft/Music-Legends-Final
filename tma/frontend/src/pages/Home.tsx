@@ -8,10 +8,6 @@ export default function Home() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  // Debug: check what Telegram injects
-  const tg = (window as any)?.Telegram?.WebApp
-  const initDataPreview = tg?.initData ? tg.initData.substring(0, 40) + '...' : '(empty — open from Telegram bot)'
-
   useEffect(() => {
     getMe()
       .then(r => setUser(r.data))
@@ -21,8 +17,8 @@ export default function Home() {
   useEffect(() => {
     if (!mountMainButton.isAvailable()) return
     mountMainButton()
-    setMainButtonParams({ text: '📦 Open Packs', isEnabled: true, isVisible: true, backgroundColor: '#F4A800', textColor: '#000000' })
-    const off = onMainButtonClick(() => navigate('/packs'))
+    setMainButtonParams({ text: '🛒 Open Store', isEnabled: true, isVisible: true, backgroundColor: '#F4A800', textColor: '#000000' })
+    const off = onMainButtonClick(() => navigate('/store'))
     return () => { off(); unmountMainButton() }
   }, [navigate])
 
@@ -38,11 +34,6 @@ export default function Home() {
             Welcome{user.username ? `, ${user.username}` : ''}!{user.is_new ? ' 🎉 New player!' : ''}
           </p>
         )}
-      </div>
-
-      {/* Auth debug — shows if initData is present */}
-      <div style={{ background: '#1a1740', borderRadius: 8, padding: '8px 12px', marginBottom: 16, fontSize: 11, color: '#5555aa', wordBreak: 'break-all' }}>
-        initData: {initDataPreview}
       </div>
 
       {error && (
@@ -70,22 +61,51 @@ export default function Home() {
         </div>
       )}
 
+      <h3 style={{ color: '#F4A800', margin: '6px 0 10px', fontSize: 16 }}>Game Menu</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {[
+          { label: '🎁 Daily', path: '/daily', desc: 'Claim rewards' },
+          { label: '🛒 Store', path: '/store', desc: 'Buy packs with gold' },
+          { label: '🏪 Market', path: '/market', desc: 'Buy and sell cards' },
+          { label: '🤝 Trade', path: '/trade', desc: 'Player trades' },
+          { label: '📦 My Packs', path: '/packs', desc: 'Open owned packs' },
+          { label: '⚔️ Battle', path: '/battle', desc: 'Challenge players' },
+        ].map((item) => (
+          <button
+            key={item.path}
+            onClick={() => navigate(item.path)}
+            style={{
+              background: '#1a1740',
+              border: '1px solid #2a2760',
+              borderRadius: 12,
+              padding: '12px 10px',
+              textAlign: 'left',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{item.label}</div>
+            <div style={{ color: '#8888aa', fontSize: 12, marginTop: 3 }}>{item.desc}</div>
+          </button>
+        ))}
+      </div>
+
       {/* New player guidance */}
       {user?.is_new && (
         <div style={{ background: '#1a3a1a', border: '1px solid #2ECC71', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
           <div style={{ color: '#2ECC71', fontWeight: 700, marginBottom: 6 }}>🎉 Welcome to Music Legends!</div>
-          <div style={{ color: '#aaa', fontSize: 13 }}>Go to the Daily tab to claim your first pack and cards.</div>
+          <div style={{ color: '#aaa', fontSize: 13 }}>Start at Daily, then buy from Store and battle from the Battle tab.</div>
         </div>
       )}
 
       {/* Fallback button if MainButton not available */}
       {!mountMainButton.isAvailable() && (
-        <button onClick={() => navigate('/packs')} style={{
+        <button onClick={() => navigate('/store')} style={{
           width: '100%', padding: '14px 0',
           background: '#F4A800', color: '#000', border: 'none',
           borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: 'pointer',
         }}>
-          📦 Open Packs
+          🛒 Open Store
         </button>
       )}
     </div>

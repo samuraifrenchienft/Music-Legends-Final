@@ -26,7 +26,7 @@ export default function Pack() {
     if (showPopup.isAvailable()) {
       try {
         const btn = await showPopup({
-          title: `Open ${pack.pack_name}?`,
+          title: `Open ${pack.pack_name || pack.name || 'this pack'}?`,
           message: `This will open your ${pack.pack_tier?.toUpperCase() || ''} pack.`,
           buttons: [
             { id: 'open', type: 'default', text: 'Open It!' },
@@ -104,9 +104,9 @@ export default function Pack() {
           background: '#1a1740', borderRadius: 12, padding: 14, marginBottom: 10,
           border: '1px solid #2a2760',
         }}>
-          <div style={{ fontWeight: 700 }}>{pack.pack_name}</div>
+          <div style={{ fontWeight: 700 }}>{pack.pack_name || pack.name || pack.pack_id}</div>
           <div style={{ color: '#8888aa', fontSize: 12, marginTop: 2 }}>
-            {pack.pack_tier?.toUpperCase()} • {(pack.cards || []).length} cards
+            {(pack.pack_tier || pack.tier || 'community').toUpperCase()} • {(pack.cards || []).length} cards
           </div>
           <button onClick={() => handleOpenPack(pack)} style={{
             marginTop: 10, width: '100%', padding: '10px 0',
@@ -122,7 +122,7 @@ export default function Pack() {
 
   if (phase === 'revealing') return (
     <div style={{ padding: '16px 16px 80px' }}>
-      <h3 style={{ color: '#F4A800', textAlign: 'center' }}>Opening {pendingPack?.pack_name}...</h3>
+      <h3 style={{ color: '#F4A800', textAlign: 'center' }}>Opening {pendingPack?.pack_name || pendingPack?.name || 'pack'}...</h3>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
         {revealedCards.slice(0, revealIndex).map((card, i) => (
           <AnimatedCard key={i} card={card} revealOnMount delay={i * 100} />

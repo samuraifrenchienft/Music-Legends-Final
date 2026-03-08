@@ -1648,6 +1648,57 @@ class Database:
         finally:
             session.close()
 
+    def purchase_live_pack(self, user_id: str, pack_id: str) -> dict:
+        """Purchase a live/public pack with gold and add it to owned purchases."""
+        session = self.get_session()
+        try:
+            uid = str(user_id)
+            pack = session.query(CreatorPacks).filter_by(pack_id=pack_id, is_public=True).first()
+            if not pack:
+                return {"success": False, "error": "Pack not found in store"}
+
+            # Default tier prices when pack-specific price is unset.
+            tier_defaults = {
+                "community": 500,
+                "gold": 1000,
+                "platinum": 2500,
+            }
+            tier_key = (pack.pack_tier or "").strip().lower()
+            price = int(pack.price or 0)
+            if price <= 0:
+                price = tier_defaults.get(tier_key, 500)
+
+            bal = session.query(UserBalances).filter_by(user_id=uid).first()
+            if not bal:
+                bal = UserBalances(user_id=uid)
+                session.add(bal)
+                session.flush()
+            if (bal.gold or 0) < price:
+                return {"success": False, "error": f"Not enough gold ({price} required)"}
+
+            bal.gold = (bal.gold or 0) - price
+            purchase = PackPurchase(
+                buyer_id=uid,
+                pack_id=pack_id,
+                purchased_at=datetime.utcnow(),
+                cards_received=None,
+            )
+            session.add(purchase)
+            session.commit()
+            return {
+                "success": True,
+                "pack_id": pack_id,
+                "price": price,
+                "remaining_gold": bal.gold or 0,
+                "purchase_id": str(purchase.purchase_id),
+            }
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[TMA] purchase_live_pack error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
     def open_pack_for_drop(self, pack_id: str, user_id) -> dict:
         """Open a purchased pack: award its cards and mark the purchase as opened."""
         user_id_str = str(user_id)

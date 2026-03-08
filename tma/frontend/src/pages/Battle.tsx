@@ -167,8 +167,8 @@ export default function Battle() {
               border: `2px solid ${selectedPackId === pack.pack_id ? '#F4A800' : '#2a2760'}`,
               borderRadius: 10, padding: 12, marginBottom: 8, cursor: 'pointer',
             }}>
-              <div style={{ fontWeight: 700 }}>{pack.pack_name}</div>
-              <div style={{ fontSize: 12, color: '#8888aa' }}>{pack.pack_tier?.toUpperCase()} • {(pack.cards || []).length} cards</div>
+              <div style={{ fontWeight: 700 }}>{pack.pack_name || pack.name || pack.pack_id}</div>
+              <div style={{ fontSize: 12, color: '#8888aa' }}>{(pack.pack_tier || pack.tier || 'community').toUpperCase()} • {(pack.cards || []).length} cards</div>
             </div>
           ))}
           {packs.length === 0 && <p style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>You need packs to battle! Claim your daily reward first.</p>}

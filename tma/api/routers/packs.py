@@ -23,6 +23,17 @@ def get_store(tg: dict = Depends(get_tg_user)):
     return {"packs": db.get_live_packs(limit=20)}
 
 
+@router.post("/{pack_id}/purchase")
+def purchase_pack(pack_id: str, tg: dict = Depends(get_tg_user)):
+    """Purchase a live pack using gold."""
+    db = get_db()
+    user = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
+    result = db.purchase_live_pack(user["user_id"], pack_id)
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "Failed to purchase pack"))
+    return result
+
+
 @router.post("/{pack_id}/open")
 def open_pack(pack_id: str, tg: dict = Depends(get_tg_user)):
     """Open a pack the user owns. Returns enriched cards."""

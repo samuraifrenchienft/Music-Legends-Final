@@ -8,6 +8,9 @@ import Collection from './pages/Collection'
 import Pack from './pages/Pack'
 import Battle from './pages/Battle'
 import Daily from './pages/Daily'
+import Store from './pages/Store'
+import Market from './pages/Market'
+import Trade from './pages/Trade'
 
 function Inner() {
   const location = useLocation()
@@ -50,6 +53,9 @@ function Inner() {
         <Route path="/"           element={<Home />} />
         <Route path="/collection" element={<Collection />} />
         <Route path="/packs"      element={<Pack />} />
+        <Route path="/store"      element={<Store />} />
+        <Route path="/market"     element={<Market />} />
+        <Route path="/trade"      element={<Trade />} />
         <Route path="/battle"     element={<Battle />} />
         <Route path="/daily"      element={<Daily />} />
       </Routes>
