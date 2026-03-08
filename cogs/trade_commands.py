@@ -402,6 +402,39 @@ class TradeCog(commands.Cog, name="Trade"):
             )
             return
 
+        # ── Lightweight execution animation ───────
+        try:
+            anim_embed = discord.Embed(
+                title="🔄 Processing Trade...",
+                description=(
+                    "Verifying ownership and balances...\n"
+                    "Preparing secure swap..."
+                ),
+                color=discord.Color.blurple(),
+            )
+            await summary_msg.edit(
+                content=f"{initiator.mention} {opponent.mention}",
+                embed=anim_embed,
+                view=None,
+            )
+            await asyncio.sleep(0.8)
+
+            anim_embed.description = (
+                "🃏 Transferring cards...\n"
+                "💰 Moving gold..."
+            )
+            anim_embed.color = discord.Color.orange()
+            await summary_msg.edit(embed=anim_embed)
+            await asyncio.sleep(0.8)
+
+            anim_embed.description = "🧾 Finalizing trade record..."
+            anim_embed.color = discord.Color.gold()
+            await summary_msg.edit(embed=anim_embed)
+            await asyncio.sleep(0.6)
+        except Exception:
+            # Non-critical UX step; continue with core trade logic.
+            pass
+
         # ── Execute atomic swap ───────────────────
         db = self._db()
         trade_id = db.create_trade(
@@ -425,7 +458,8 @@ class TradeCog(commands.Cog, name="Trade"):
 
         if success:
             result_embed = discord.Embed(
-                title="✅ Trade Complete!",
+                title="✅ Trade Completed!",
+                description="Both offers were exchanged successfully.",
                 color=discord.Color.green()
             )
             result_embed.add_field(
@@ -439,7 +473,7 @@ class TradeCog(commands.Cog, name="Trade"):
                 inline=True
             )
             await summary_msg.edit(
-                content=f"🎉 {initiator.mention} {opponent.mention}",
+                content=f"🎉 Trade completed: {initiator.mention} ↔ {opponent.mention}",
                 embed=result_embed,
                 view=None
             )
