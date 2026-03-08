@@ -23,14 +23,18 @@ export default function Trade() {
   const [busyTradeId, setBusyTradeId] = useState('')
   const [creating, setCreating] = useState(false)
   const [loadingPartnerCards, setLoadingPartnerCards] = useState(false)
+  const [myRarity, setMyRarity] = useState('all')
+  const [partnerRarity, setPartnerRarity] = useState('all')
+  const [myCardSearch, setMyCardSearch] = useState('')
+  const [partnerCardSearch, setPartnerCardSearch] = useState('')
 
   const myTopCards = useMemo(
-    () => myCards.slice(0, 30),
-    [myCards]
+    () => filterCards(myCards, myRarity, myCardSearch).slice(0, 40),
+    [myCards, myRarity, myCardSearch]
   )
   const partnerTopCards = useMemo(
-    () => partnerCards.slice(0, 30),
-    [partnerCards]
+    () => filterCards(partnerCards, partnerRarity, partnerCardSearch).slice(0, 40),
+    [partnerCards, partnerRarity, partnerCardSearch]
   )
 
   const load = async () => {
@@ -172,12 +176,24 @@ export default function Trade() {
 
         {selectedPartner && (
           <div style={{ marginBottom: 8, fontSize: 12, color: '#F4A800' }}>
-            Trading with: <b>@{selectedPartner.username}</b>
+            <span style={avatarBadgeStyle}>{avatarInitial(selectedPartner.username)}</span>{' '}
+            Trading with: <b>@{selectedPartner.username}</b> (ID: {selectedPartner.telegram_id})
           </div>
         )}
 
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 12, color: '#8888aa', marginBottom: 4 }}>Your offered cards</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
+            <select value={myRarity} onChange={(e) => setMyRarity(e.target.value)} style={inputStyle}>
+              <option value="all">All rarities</option>
+              <option value="common">Common</option>
+              <option value="rare">Rare</option>
+              <option value="epic">Epic</option>
+              <option value="legendary">Legendary</option>
+              <option value="mythic">Mythic</option>
+            </select>
+            <input value={myCardSearch} onChange={(e) => setMyCardSearch(e.target.value)} placeholder="Search your cards" style={inputStyle} />
+          </div>
           <div style={cardGridStyle}>
             {myTopCards.map((c: any) => (
               <button
@@ -185,7 +201,7 @@ export default function Trade() {
                 onClick={() => toggleId(offeredIds, setOfferedIds, c.card_id)}
                 style={chipStyle(offeredIds.includes(c.card_id))}
               >
-                {c.name || c.card_id}
+                {(c.name || c.card_id)} [{(c.rarity || 'common').toUpperCase()}]
               </button>
             ))}
             {myTopCards.length === 0 && <span style={{ color: '#8888aa', fontSize: 12 }}>No cards found</span>}
@@ -194,6 +210,17 @@ export default function Trade() {
 
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 12, color: '#8888aa', marginBottom: 4 }}>Requested cards from partner</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
+            <select value={partnerRarity} onChange={(e) => setPartnerRarity(e.target.value)} style={inputStyle}>
+              <option value="all">All rarities</option>
+              <option value="common">Common</option>
+              <option value="rare">Rare</option>
+              <option value="epic">Epic</option>
+              <option value="legendary">Legendary</option>
+              <option value="mythic">Mythic</option>
+            </select>
+            <input value={partnerCardSearch} onChange={(e) => setPartnerCardSearch(e.target.value)} placeholder="Search partner cards" style={inputStyle} />
+          </div>
           {loadingPartnerCards && <div style={{ color: '#8888aa', fontSize: 12 }}>Loading partner cards...</div>}
           <div style={cardGridStyle}>
             {partnerTopCards.map((c: any) => (
@@ -202,7 +229,7 @@ export default function Trade() {
                 onClick={() => toggleId(requestedIds, setRequestedIds, c.card_id)}
                 style={chipStyle(requestedIds.includes(c.card_id))}
               >
-                {c.name || c.card_id}
+                {(c.name || c.card_id)} [{(c.rarity || 'common').toUpperCase()}]
               </button>
             ))}
             {!loadingPartnerCards && selectedPartner && partnerTopCards.length === 0 && (
@@ -228,7 +255,13 @@ export default function Trade() {
       {trades.length === 0 && <p style={{ color: '#8888aa' }}>No trades yet.</p>}
       {trades.map((t: any) => (
         <div key={t.id} style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 12, padding: 12, marginBottom: 8 }}>
-          <div style={{ fontWeight: 700 }}>Trade #{String(t.id).slice(0, 8)}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontWeight: 700 }}>Trade #{String(t.id).slice(0, 8)}</div>
+            <div style={{ fontSize: 12, color: '#F4A800' }}>
+              <span style={avatarBadgeStyle}>{avatarInitial(t.partner_username)}</span>{' '}
+              @{t.partner_username || 'partner'}
+            </div>
+          </div>
           <div style={{ color: '#8888aa', fontSize: 12 }}>Status: {t.status}</div>
           <div style={{ marginTop: 6, fontSize: 12 }}>A→B cards: {(t.cards_a || []).length}, B→A cards: {(t.cards_b || []).length}</div>
           <div style={{ fontSize: 12 }}>Gold: A {t.gold_a || 0} / B {t.gold_b || 0}</div>
@@ -269,6 +302,37 @@ const cardGridStyle = {
   borderRadius: 8,
   padding: 6,
 } as const
+
+const avatarBadgeStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 18,
+  height: 18,
+  borderRadius: 999,
+  background: '#6B2EBE',
+  color: '#fff',
+  fontSize: 10,
+  fontWeight: 700,
+  verticalAlign: 'middle',
+} as const
+
+const avatarInitial = (username?: string) => {
+  const v = (username || '').trim()
+  return v ? v[0].toUpperCase() : '?'
+}
+
+const filterCards = (cards: any[], rarity: string, query: string) => {
+  const q = query.trim().toLowerCase()
+  return (cards || []).filter((c: any) => {
+    const r = String(c?.rarity || '').toLowerCase()
+    if (rarity !== 'all' && r !== rarity) return false
+    if (!q) return true
+    const name = String(c?.name || '').toLowerCase()
+    const id = String(c?.card_id || '').toLowerCase()
+    return name.includes(q) || id.includes(q)
+  })
+}
 
 const chipStyle = (active: boolean) => ({
   border: '1px solid #2a2760',

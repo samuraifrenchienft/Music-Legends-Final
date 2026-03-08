@@ -2565,7 +2565,38 @@ class Database:
                 .limit(50)
                 .all()
             )
-            return [t.to_dict() for t in trades]
+            # Enrich with usernames for better Telegram UI rendering.
+            user_ids = set()
+            for t in trades:
+                user_ids.add(str(t.user_a))
+                user_ids.add(str(t.user_b))
+            users = (
+                session.query(User)
+                .filter(User.user_id.in_(list(user_ids)))
+                .all()
+            ) if user_ids else []
+            usernames = {str(u.user_id): (u.username or f"user_{u.user_id}") for u in users}
+
+            out = []
+            for t in trades:
+                d = t.to_dict()
+                user_a_id = str(t.user_a)
+                user_b_id = str(t.user_b)
+                d["user_a_username"] = usernames.get(user_a_id, f"user_{user_a_id}")
+                d["user_b_username"] = usernames.get(user_b_id, f"user_{user_b_id}")
+
+                partner_id = user_b_id if t.user_a == tg_id else user_a_id
+                d["partner_user_id"] = partner_id
+                d["partner_username"] = usernames.get(partner_id, f"user_{partner_id}")
+                try:
+                    pid_int = int(partner_id)
+                    if pid_int >= self._TG_OFFSET:
+                        d["partner_telegram_id"] = pid_int - self._TG_OFFSET
+                except Exception:
+                    pass
+
+                out.append(d)
+            return out
         except Exception as e:
             logger.error(f"[TMA] get_user_trades error: {e}")
             return []
