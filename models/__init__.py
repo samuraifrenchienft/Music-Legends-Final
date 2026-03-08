@@ -28,7 +28,11 @@ class UUIDType(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None:
             return value
-        return uuid.UUID(value)
+        # Backward compatibility: tolerate legacy non-UUID identifiers.
+        try:
+            return uuid.UUID(str(value))
+        except (ValueError, TypeError, AttributeError):
+            return str(value)
 
 # Custom TypeDecorator for JSONB to handle SQLite incompatibility
 class JSONType(TypeDecorator):
