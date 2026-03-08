@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     # Development
     DEV_USER_IDS: Optional[List[int]] = []
     DEV_CHANNEL_ID: int | None = None
+    ENABLE_DEV_COMMANDS: bool = False
     ADMIN_CHANNEL_ID: Optional[int] = None
     LOGS_CHANNEL: Optional[int] = None
 

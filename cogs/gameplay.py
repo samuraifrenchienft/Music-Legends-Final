@@ -386,6 +386,12 @@ class GameplayCommands(commands.Cog):
     ])
     async def drop_command(self, interaction: Interaction, tier: str = "community"):
         """Dev-only: drop a random LIVE pack into this channel."""
+        if not settings.ENABLE_DEV_COMMANDS:
+            await interaction.response.send_message("❌ /drop is disabled in this environment.", ephemeral=True)
+            return
+        if settings.TEST_SERVER_ID and interaction.guild_id != int(settings.TEST_SERVER_ID):
+            await interaction.response.send_message("❌ /drop is restricted to the test server.", ephemeral=True)
+            return
         if interaction.user.id not in settings.DEV_USER_IDS:
             await interaction.response.send_message("❌ Dev only.", ephemeral=True)
             return

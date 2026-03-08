@@ -133,7 +133,7 @@ class Bot(commands.Bot):
         # asyncio.create_task(periodic_backup_loop())  # DISABLED - causing hanging issues
         print("⏰ Periodic backups DISABLED (was causing hanging issues)")
         
-        # Load essential cogs without duplicates
+        # Load production cogs (global user-facing command surface)
         cogs = [
             'cogs.start_game',                # Start game command
             'cogs.game_info',                 # /post_game_info — branded game guide
@@ -141,10 +141,7 @@ class Bot(commands.Bot):
             'cogs.card_game',                 # Collection and pack creation commands
             'cogs.menu_system',               # Persistent menu system (User Hub + Dev Panel)
             'cogs.marketplace',               # Marketplace commands
-            'cogs.admin_bulk_import',         # Dev-only bulk pack import (TEST_SERVER)
             'cogs.admin_commands',            # Admin commands (all servers)
-            'cogs.dev_webhook_commands',      # Dev webhook channel commands (TEST_SERVER)
-            'cogs.dev_supply_commands',       # Dev pack supply — grant packs for prizes/giveaways
             'cogs.battle_commands',           # Battle system (/battle, /battle_stats)
             'cogs.battlepass_commands',       # Battle Pass + Daily Quests
             'cogs.trade_commands',            # /trade and /trade_history
@@ -170,6 +167,23 @@ class Bot(commands.Bot):
                 print(f'✅ Loaded extension: {cog}')
             except Exception as e:
                 print(f'⚠️ Could not load {cog}: {e}')
+
+        # Load dev/test cogs only when explicitly enabled.
+        dev_cogs = [
+            'cogs.admin_bulk_import',
+            'cogs.dev_webhook_commands',
+            'cogs.dev_supply_commands',
+        ]
+        if settings.ENABLE_DEV_COMMANDS:
+            print("🧪 ENABLE_DEV_COMMANDS=true — loading dev command cogs")
+            for cog in dev_cogs:
+                try:
+                    await self.load_extension(cog)
+                    print(f'✅ Loaded dev extension: {cog}')
+                except Exception as e:
+                    print(f'⚠️ Could not load dev extension {cog}: {e}')
+        else:
+            print("🧹 Dev command cogs disabled (ENABLE_DEV_COMMANDS=false)")
         
         print("🔍 Checking loaded commands...")
         loaded_commands = []
