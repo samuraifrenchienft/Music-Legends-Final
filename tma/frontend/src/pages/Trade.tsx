@@ -1,47 +1,101 @@
 import { useEffect, useMemo, useState } from 'react'
-import { acceptTrade, cancelTrade, createTrade, getCards, getTrades } from '../api/client'
+import {
+  acceptTrade,
+  cancelTrade,
+  createTrade,
+  getCards,
+  getPartnerCards,
+  getTrades,
+  searchTradePartners,
+} from '../api/client'
 
 export default function Trade() {
-  const [cards, setCards] = useState<any[]>([])
+  const [myCards, setMyCards] = useState<any[]>([])
+  const [partnerCards, setPartnerCards] = useState<any[]>([])
   const [trades, setTrades] = useState<any[]>([])
-  const [partnerId, setPartnerId] = useState('')
-  const [offeredIds, setOfferedIds] = useState('')
-  const [requestedIds, setRequestedIds] = useState('')
+  const [partnerQuery, setPartnerQuery] = useState('')
+  const [partnerResults, setPartnerResults] = useState<any[]>([])
+  const [selectedPartner, setSelectedPartner] = useState<any>(null)
+  const [offeredIds, setOfferedIds] = useState<string[]>([])
+  const [requestedIds, setRequestedIds] = useState<string[]>([])
   const [offeredGold, setOfferedGold] = useState('0')
   const [requestedGold, setRequestedGold] = useState('0')
   const [busyTradeId, setBusyTradeId] = useState('')
   const [creating, setCreating] = useState(false)
+  const [loadingPartnerCards, setLoadingPartnerCards] = useState(false)
 
-  const cardHints = useMemo(
-    () => cards.slice(0, 8).map((c: any) => `${c.card_id} (${c.name || 'card'})`),
-    [cards]
+  const myTopCards = useMemo(
+    () => myCards.slice(0, 30),
+    [myCards]
+  )
+  const partnerTopCards = useMemo(
+    () => partnerCards.slice(0, 30),
+    [partnerCards]
   )
 
   const load = async () => {
     const [c, t] = await Promise.all([getCards(), getTrades()])
-    setCards(c.data?.cards || [])
+    setMyCards(c.data?.cards || [])
     setTrades(t.data?.trades || [])
   }
 
   useEffect(() => { load().catch(() => undefined) }, [])
 
-  const parseIds = (raw: string) => raw.split(',').map((s) => s.trim()).filter(Boolean)
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!partnerQuery.trim()) {
+        setPartnerResults([])
+        return
+      }
+      try {
+        const res = await searchTradePartners(partnerQuery.trim())
+        if (!cancelled) setPartnerResults(res.data?.partners || [])
+      } catch {
+        if (!cancelled) setPartnerResults([])
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [partnerQuery])
+
+  const pickPartner = async (partner: any) => {
+    setSelectedPartner(partner)
+    setRequestedIds([])
+    setLoadingPartnerCards(true)
+    try {
+      const res = await getPartnerCards(Number(partner.telegram_id))
+      setPartnerCards(res.data?.cards || [])
+    } catch {
+      setPartnerCards([])
+    } finally {
+      setLoadingPartnerCards(false)
+    }
+  }
+
+  const toggleId = (ids: string[], setIds: (v: string[]) => void, id: string) => {
+    if (ids.includes(id)) setIds(ids.filter((x) => x !== id))
+    else setIds([...ids, id])
+  }
 
   const onCreate = async () => {
-    const pid = Number(partnerId)
-    if (!Number.isFinite(pid) || pid <= 0) return alert('Enter partner Telegram ID')
+    const pid = Number(selectedPartner?.telegram_id)
+    if (!Number.isFinite(pid) || pid <= 0) return alert('Select a trade partner')
     setCreating(true)
     try {
       await createTrade({
         partner_id: Math.floor(pid),
-        offered_card_ids: parseIds(offeredIds),
-        requested_card_ids: parseIds(requestedIds),
+        offered_card_ids: offeredIds,
+        requested_card_ids: requestedIds,
         offered_gold: Math.max(0, Math.floor(Number(offeredGold) || 0)),
         requested_gold: Math.max(0, Math.floor(Number(requestedGold) || 0)),
       })
-      setPartnerId('')
-      setOfferedIds('')
-      setRequestedIds('')
+      setSelectedPartner(null)
+      setPartnerQuery('')
+      setPartnerResults([])
+      setOfferedIds([])
+      setRequestedIds([])
+      setPartnerCards([])
       setOfferedGold('0')
       setRequestedGold('0')
       await load()
@@ -88,9 +142,75 @@ export default function Trade() {
 
       <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 12, padding: 12, marginBottom: 14 }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Create Trade</div>
-        <input value={partnerId} onChange={(e) => setPartnerId(e.target.value)} placeholder="Partner Telegram ID" style={inputStyle} />
-        <textarea value={offeredIds} onChange={(e) => setOfferedIds(e.target.value)} placeholder="Offered card IDs (comma-separated)" style={textareaStyle} />
-        <textarea value={requestedIds} onChange={(e) => setRequestedIds(e.target.value)} placeholder="Requested card IDs (comma-separated)" style={textareaStyle} />
+        <input
+          value={partnerQuery}
+          onChange={(e) => setPartnerQuery(e.target.value)}
+          placeholder="Search partner by username or Telegram ID"
+          style={inputStyle}
+        />
+        {partnerResults.length > 0 && (
+          <div style={{ background: '#0f1030', border: '1px solid #2a2760', borderRadius: 8, marginBottom: 8, maxHeight: 150, overflowY: 'auto' }}>
+            {partnerResults.map((p: any) => (
+              <button
+                key={String(p.telegram_id)}
+                onClick={() => pickPartner(p)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  background: selectedPartner?.telegram_id === p.telegram_id ? '#2a1760' : 'transparent',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                }}
+              >
+                @{p.username} (ID: {p.telegram_id})
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedPartner && (
+          <div style={{ marginBottom: 8, fontSize: 12, color: '#F4A800' }}>
+            Trading with: <b>@{selectedPartner.username}</b>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#8888aa', marginBottom: 4 }}>Your offered cards</div>
+          <div style={cardGridStyle}>
+            {myTopCards.map((c: any) => (
+              <button
+                key={c.card_id}
+                onClick={() => toggleId(offeredIds, setOfferedIds, c.card_id)}
+                style={chipStyle(offeredIds.includes(c.card_id))}
+              >
+                {c.name || c.card_id}
+              </button>
+            ))}
+            {myTopCards.length === 0 && <span style={{ color: '#8888aa', fontSize: 12 }}>No cards found</span>}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#8888aa', marginBottom: 4 }}>Requested cards from partner</div>
+          {loadingPartnerCards && <div style={{ color: '#8888aa', fontSize: 12 }}>Loading partner cards...</div>}
+          <div style={cardGridStyle}>
+            {partnerTopCards.map((c: any) => (
+              <button
+                key={c.card_id}
+                onClick={() => toggleId(requestedIds, setRequestedIds, c.card_id)}
+                style={chipStyle(requestedIds.includes(c.card_id))}
+              >
+                {c.name || c.card_id}
+              </button>
+            ))}
+            {!loadingPartnerCards && selectedPartner && partnerTopCards.length === 0 && (
+              <span style={{ color: '#8888aa', fontSize: 12 }}>No cards visible for this user</span>
+            )}
+          </div>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <input value={offeredGold} onChange={(e) => setOfferedGold(e.target.value)} placeholder="Offered gold" style={inputStyle} />
           <input value={requestedGold} onChange={(e) => setRequestedGold(e.target.value)} placeholder="Requested gold" style={inputStyle} />
@@ -102,9 +222,6 @@ export default function Trade() {
         >
           {creating ? 'Creating...' : 'Create Trade'}
         </button>
-        <div style={{ marginTop: 8, color: '#8888aa', fontSize: 11 }}>
-          Card ID hints: {cardHints.join(', ')}
-        </div>
       </div>
 
       <h4 style={{ color: '#F4A800', marginBottom: 8 }}>My Trades</h4>
@@ -141,10 +258,27 @@ const inputStyle = {
   border: '1px solid #2a2760',
 } as const
 
-const textareaStyle = {
-  ...inputStyle,
-  minHeight: 52,
+const cardGridStyle = {
+  display: 'flex',
+  gap: 6,
+  flexWrap: 'wrap',
+  maxHeight: 120,
+  overflowY: 'auto',
+  background: '#0f1030',
+  border: '1px solid #2a2760',
+  borderRadius: 8,
+  padding: 6,
 } as const
+
+const chipStyle = (active: boolean) => ({
+  border: '1px solid #2a2760',
+  background: active ? '#6B2EBE' : '#1a1740',
+  color: '#fff',
+  borderRadius: 999,
+  padding: '6px 10px',
+  fontSize: 11,
+  cursor: 'pointer',
+}) as const
 
 const actionBtn = (bg: string) => ({
   width: '100%',

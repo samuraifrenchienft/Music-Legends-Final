@@ -42,5 +42,7 @@ export const getTrades       = ()                         => api.get('/api/trade
 export const createTrade     = (body: object)             => api.post('/api/trades', body)
 export const acceptTrade     = (id: string)               => api.post(`/api/trades/${id}/accept`)
 export const cancelTrade     = (id: string)               => api.post(`/api/trades/${id}/cancel`)
+export const searchTradePartners = (query = '')           => api.get(`/api/trades/partners?query=${encodeURIComponent(query)}`)
+export const getPartnerCards = (telegramId: number)       => api.get(`/api/trades/partners/${telegramId}/cards`)
 export const getDust         = ()                         => api.get('/api/dust')
 export const dustCards       = (card_ids: string[])       => api.post('/api/dust/dust_cards', { card_ids })

@@ -1632,12 +1632,19 @@ class Database:
             return False
 
     def get_live_packs(self, limit: int = 20) -> List[dict]:
-        """Return publicly listed packs available in the store."""
+        """Return packs available in Telegram store.
+
+        Includes public packs plus legacy Discord-created packs that have cards.
+        """
         session = self.get_session()
         try:
             packs = (
                 session.query(CreatorPacks)
-                .filter_by(is_public=True)
+                .filter(
+                    (CreatorPacks.is_public == True) |  # noqa: E712
+                    (CreatorPacks.card_count > 0)
+                )
+                .order_by(desc(CreatorPacks.created_at))
                 .limit(limit)
                 .all()
             )
@@ -1649,11 +1656,11 @@ class Database:
             session.close()
 
     def purchase_live_pack(self, user_id: str, pack_id: str) -> dict:
-        """Purchase a live/public pack with gold and add it to owned purchases."""
+        """Purchase a store pack with gold and add it to owned purchases."""
         session = self.get_session()
         try:
             uid = str(user_id)
-            pack = session.query(CreatorPacks).filter_by(pack_id=pack_id, is_public=True).first()
+            pack = session.query(CreatorPacks).filter_by(pack_id=pack_id).first()
             if not pack:
                 return {"success": False, "error": "Pack not found in store"}
 
