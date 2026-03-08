@@ -368,7 +368,7 @@ class TradeCog(commands.Cog, name="Trade"):
         recv_cards_text = cards_summary(recv_view.selected_cards, recv_collection)
 
         summary_embed = discord.Embed(
-            title="🤝 Trade Summary — Final Confirmation",
+            title="🤝 Trade Summary",
             color=discord.Color.gold()
         )
         summary_embed.add_field(
@@ -381,26 +381,23 @@ class TradeCog(commands.Cog, name="Trade"):
             value=f"{recv_cards_text}\n💰 {recv_view.gold_offer:,} gold",
             inline=True
         )
-        summary_embed.set_footer(text="Both players must confirm within 60 seconds.")
+        summary_embed.set_footer(text="Both offers confirmed in DM. Finalizing trade...")
 
-        confirm_view = FinalConfirmView(initiator.id, opponent.id)
+        # DM-only confirmation flow: once both offers are confirmed in DM,
+        # proceed directly to execution and use channel only for status/results.
+        try:
+            await initiator.send(embed=summary_embed)
+        except Exception:
+            pass
+        try:
+            await opponent.send(embed=summary_embed)
+        except Exception:
+            pass
+
         summary_msg = await interaction.followup.send(
-            content=f"{initiator.mention} {opponent.mention}",
+            content=f"🤝 Finalizing trade: {initiator.mention} ↔ {opponent.mention}",
             embed=summary_embed,
-            view=confirm_view
         )
-
-        await confirm_view.wait()
-
-        # ── Final cancel ──────────────────────────
-        if confirm_view.cancelled or not confirm_view.both_confirmed:
-            reason = "cancelled" if confirm_view.cancelled else "timed out"
-            await summary_msg.edit(
-                content=f"❌ Trade {reason}.",
-                embed=None,
-                view=None
-            )
-            return
 
         # ── Lightweight execution animation ───────
         try:
