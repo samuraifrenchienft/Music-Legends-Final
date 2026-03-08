@@ -2341,16 +2341,28 @@ class Database:
             bal_a.gold = max(0, (bal_a.gold or 0) - gold_a + gold_b)
             bal_b.gold = max(0, (bal_b.gold or 0) - gold_b + gold_a)
 
-            # Minimal history record for auditability.
-            session.add(TradeHistory(
-                user_id_1=initiator_id,
-                user_id_2=receiver_id,
-                card_id_1=cards_a[0] if cards_a else "gold_only",
-                card_id_2=cards_b[0] if cards_b else "gold_only",
-                status="completed",
-            ))
-
             session.commit()
+            # Best-effort history logging in a separate transaction so legacy
+            # schema issues do not fail the completed trade swap.
+            try:
+                log_sess = self.get_session()
+                try:
+                    log_sess.add(TradeHistory(
+                        user_id_1=initiator_id,
+                        user_id_2=receiver_id,
+                        card_id_1=cards_a[0] if cards_a else "gold_only",
+                        card_id_2=cards_b[0] if cards_b else "gold_only",
+                        status="completed",
+                    ))
+                    log_sess.commit()
+                except Exception as history_err:
+                    log_sess.rollback()
+                    logger.warning(f"[DB] trade completed but history insert failed: {history_err}")
+                finally:
+                    log_sess.close()
+            except Exception:
+                pass
+
             return {"success": True}
         except Exception as e:
             session.rollback()
