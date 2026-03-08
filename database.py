@@ -2171,9 +2171,31 @@ class Database:
     def complete_trade(self, trade_id: str) -> bool:
         """Legacy Discord trade finalize path (atomic swap + gold exchange)."""
         import uuid as _uuid
+
+        def _find_pending_trade(session, raw_trade_id: str):
+            """Find pending trade across legacy id formats safely."""
+            tid = str(raw_trade_id)
+            # Fast path for UUID-shaped ids.
+            try:
+                return session.query(Trade).filter_by(id=_uuid.UUID(tid), status="pending").first()
+            except (ValueError, TypeError, AttributeError):
+                pass
+            # Compatibility path: scan pending rows and compare normalized string ids.
+            pending_rows = (
+                session.query(Trade)
+                .filter_by(status="pending")
+                .order_by(desc(Trade.created_at))
+                .limit(500)
+                .all()
+            )
+            for row in pending_rows:
+                if str(row.id) == tid:
+                    return row
+            return None
+
         session = self.get_session()
         try:
-            trade = session.query(Trade).filter_by(id=_uuid.UUID(trade_id), status="pending").first()
+            trade = _find_pending_trade(session, trade_id)
             if not trade:
                 return False
             if trade.is_expired():
@@ -2239,11 +2261,28 @@ class Database:
     def accept_trade(self, trade_id: str, user_id: str) -> dict:
         """Accept a trade: swap cards and gold atomically."""
         import uuid as _uuid
+
+        def _find_pending_trade(session, raw_trade_id: str):
+            tid = str(raw_trade_id)
+            try:
+                return session.query(Trade).filter_by(id=_uuid.UUID(tid), status="pending").first()
+            except (ValueError, TypeError, AttributeError):
+                pass
+            pending_rows = (
+                session.query(Trade)
+                .filter_by(status="pending")
+                .order_by(desc(Trade.created_at))
+                .limit(500)
+                .all()
+            )
+            for row in pending_rows:
+                if str(row.id) == tid:
+                    return row
+            return None
+
         session = self.get_session()
         try:
-            trade = session.query(Trade).filter_by(
-                id=_uuid.UUID(trade_id), status="pending"
-            ).first()
+            trade = _find_pending_trade(session, trade_id)
             if not trade:
                 return {"success": False, "error": "Trade not found or already closed"}
 
@@ -2304,11 +2343,28 @@ class Database:
     def cancel_trade(self, trade_id: str, user_id: str = None, reason: str = None) -> dict:
         """Cancel a pending trade (only initiator or recipient can cancel)."""
         import uuid as _uuid
+
+        def _find_pending_trade(session, raw_trade_id: str):
+            tid = str(raw_trade_id)
+            try:
+                return session.query(Trade).filter_by(id=_uuid.UUID(tid), status="pending").first()
+            except (ValueError, TypeError, AttributeError):
+                pass
+            pending_rows = (
+                session.query(Trade)
+                .filter_by(status="pending")
+                .order_by(desc(Trade.created_at))
+                .limit(500)
+                .all()
+            )
+            for row in pending_rows:
+                if str(row.id) == tid:
+                    return row
+            return None
+
         session = self.get_session()
         try:
-            trade = session.query(Trade).filter_by(
-                id=_uuid.UUID(trade_id), status="pending"
-            ).first()
+            trade = _find_pending_trade(session, trade_id)
             if not trade:
                 return {"success": False, "error": "Trade not found or already closed"}
             if user_id is not None:
