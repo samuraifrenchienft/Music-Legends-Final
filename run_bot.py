@@ -6,7 +6,11 @@ Production bot runner with proper error handling and monitoring
 import os
 import sys
 import logging
+import time
+import random
 from pathlib import Path
+import asyncio
+import discord
 
 # Add current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -57,13 +61,51 @@ def main():
             logger.error("DISCORD_TOKEN is required but not set")
             sys.exit(1)
         
-        # Start the bot
+        # Start the bot with backoff to avoid restart storms on Discord/Cloudflare 429s.
         print("[DOCKER] Importing main module...")
         import main
-        print("[DOCKER] Creating bot instance...")
-        bot = main.Bot()
-        print("[DOCKER] Starting bot run...")
-        bot.run(bot_token)
+        attempt = 0
+        max_delay_seconds = 900  # 15 minutes
+
+        while True:
+            bot = None
+            try:
+                print("[DOCKER] Creating bot instance...")
+                bot = main.Bot()
+                print("[DOCKER] Starting bot run...")
+                bot.run(bot_token)
+                logger.info("Bot stopped cleanly")
+                return
+            except discord.HTTPException as e:
+                is_rate_limit = getattr(e, "status", None) == 429 or "1015" in str(e)
+                if not is_rate_limit:
+                    raise
+
+                attempt += 1
+                base_delay = min(max_delay_seconds, 30 * (2 ** min(attempt, 5)))
+                jitter = random.randint(0, 15)
+                delay = base_delay + jitter
+                logger.warning(
+                    "Discord rate limited startup/login (attempt=%s, status=%s). "
+                    "Sleeping %ss before retry to avoid restart storm.",
+                    attempt,
+                    getattr(e, "status", "unknown"),
+                    delay,
+                )
+                from services.system_monitor import log_bot_crash
+                log_bot_crash(
+                    error=f"Discord rate limit: {e}",
+                    traceback_str="rate_limit_backoff",
+                    additional_data={"attempt": attempt, "sleep_seconds": delay},
+                )
+                time.sleep(delay)
+            finally:
+                if bot is not None:
+                    try:
+                        asyncio.run(bot.close())
+                    except Exception:
+                        # Best-effort cleanup to avoid unclosed aiohttp connector warnings.
+                        pass
         
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
