@@ -446,15 +446,29 @@ class TradeCog(commands.Cog, name="Trade"):
             gold_from_receiver=recv_view.gold_offer,
         )
 
-        if not trade_id:
-            await summary_msg.edit(
-                content="❌ Failed to create trade record. Please try again.",
-                embed=None,
-                view=None
+        success = False
+        if isinstance(trade_id, str) and trade_id:
+            success = db.complete_trade(trade_id)
+        else:
+            # Fallback for legacy/misaligned trade table schemas:
+            # execute the swap directly in one DB transaction.
+            fallback = db.execute_trade_direct(
+                initiator_user_id=str(initiator.id),
+                receiver_user_id=str(opponent.id),
+                initiator_cards=init_view.selected_cards,
+                receiver_cards=recv_view.selected_cards,
+                gold_from_initiator=init_view.gold_offer,
+                gold_from_receiver=recv_view.gold_offer,
             )
-            return
-
-        success = db.complete_trade(trade_id)
+            success = bool(fallback.get("success"))
+            if not success:
+                error_msg = fallback.get("error", "Unknown error")
+                await summary_msg.edit(
+                    content=f"❌ Trade failed: {error_msg}",
+                    embed=None,
+                    view=None
+                )
+                return
 
         if success:
             result_embed = discord.Embed(
@@ -479,7 +493,8 @@ class TradeCog(commands.Cog, name="Trade"):
             )
         else:
             # Roll back trade status (already None or 'pending' — complete_trade handles rollback)
-            db.cancel_trade(trade_id, reason="execution_failed")
+            if isinstance(trade_id, str) and trade_id:
+                db.cancel_trade(trade_id, reason="execution_failed")
             await summary_msg.edit(
                 content="❌ Trade execution failed. No changes were made. Please try again.",
                 embed=None,

@@ -2258,6 +2258,107 @@ class Database:
         finally:
             session.close()
 
+    def execute_trade_direct(
+        self,
+        initiator_user_id: str,
+        receiver_user_id: str,
+        initiator_cards: List[str],
+        receiver_cards: List[str],
+        gold_from_initiator: int = 0,
+        gold_from_receiver: int = 0,
+    ) -> dict:
+        """Direct Discord trade path that does not depend on trade-record creation."""
+        session = self.get_session()
+        try:
+            initiator_id = str(initiator_user_id)
+            receiver_id = str(receiver_user_id)
+            cards_a = initiator_cards or []
+            cards_b = receiver_cards or []
+            gold_a = int(gold_from_initiator or 0)
+            gold_b = int(gold_from_receiver or 0)
+
+            # Verify ownership before any mutations.
+            for card_id in cards_a:
+                if not session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first():
+                    return {"success": False, "error": f"Initiator no longer owns {card_id}"}
+            for card_id in cards_b:
+                if not session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first():
+                    return {"success": False, "error": f"Receiver no longer owns {card_id}"}
+
+            bal_a = session.query(UserBalances).filter_by(user_id=initiator_id).first()
+            bal_b = session.query(UserBalances).filter_by(user_id=receiver_id).first()
+            if not bal_a:
+                bal_a = UserBalances(user_id=initiator_id)
+                session.add(bal_a)
+                session.flush()
+            if not bal_b:
+                bal_b = UserBalances(user_id=receiver_id)
+                session.add(bal_b)
+                session.flush()
+
+            if gold_a > (bal_a.gold or 0):
+                return {"success": False, "error": "Initiator no longer has enough gold"}
+            if gold_b > (bal_b.gold or 0):
+                return {"success": False, "error": "Receiver no longer has enough gold"}
+
+            # Swap A -> B
+            for card_id in cards_a:
+                uc = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
+                uc.quantity = (uc.quantity or 1) - 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+                ex = session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first()
+                if ex:
+                    ex.quantity = (ex.quantity or 0) + 1
+                else:
+                    session.add(UserCard(
+                        user_id=receiver_id,
+                        card_id=card_id,
+                        quantity=1,
+                        acquired_from="trade",
+                        acquired_at=datetime.utcnow(),
+                    ))
+
+            # Swap B -> A
+            for card_id in cards_b:
+                uc = session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first()
+                uc.quantity = (uc.quantity or 1) - 1
+                if uc.quantity <= 0:
+                    session.delete(uc)
+                ex = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
+                if ex:
+                    ex.quantity = (ex.quantity or 0) + 1
+                else:
+                    session.add(UserCard(
+                        user_id=initiator_id,
+                        card_id=card_id,
+                        quantity=1,
+                        acquired_from="trade",
+                        acquired_at=datetime.utcnow(),
+                    ))
+
+            # Gold swap (same transaction for atomicity)
+            bal_a.gold = max(0, (bal_a.gold or 0) - gold_a + gold_b)
+            bal_b.gold = max(0, (bal_b.gold or 0) - gold_b + gold_a)
+
+            # Minimal history record for auditability.
+            session.add(TradeHistory(
+                user_id_1=initiator_id,
+                user_id_2=receiver_id,
+                card_id_1=cards_a[0] if cards_a else "gold_only",
+                card_id_2=cards_b[0] if cards_b else "gold_only",
+                status="completed",
+            ))
+
+            session.commit()
+            return {"success": True}
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[DB] execute_trade_direct error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            session.close()
+
     def accept_trade(self, trade_id: str, user_id: str) -> dict:
         """Accept a trade: swap cards and gold atomically."""
         import uuid as _uuid
