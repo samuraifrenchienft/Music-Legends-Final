@@ -251,8 +251,15 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     battle_id = _make_battle_id()
     expires = datetime.utcnow() + timedelta(hours=24)
 
-    # Ensure opponent placeholder user exists
-    opponent_user = db.get_or_create_telegram_user(body.opponent_telegram_id)
+    if body.opponent_telegram_id <= 0:
+        raise HTTPException(400, "Select a valid opponent")
+    if int(body.opponent_telegram_id) == int(tg["id"]):
+        raise HTTPException(400, "You can't challenge yourself")
+
+    # Fallback flow: opponent must explicitly register as battle-ready.
+    opponent_user = db.get_registered_battle_player(body.opponent_telegram_id)
+    if not opponent_user:
+        raise HTTPException(404, "Opponent is not registered for battle yet")
 
     session = db.get_session()
     try:
@@ -296,6 +303,28 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
         "status": "waiting",
         "expires_at": expires.isoformat(),
     }
+
+
+@router.post("/register")
+def register_for_battle(tg: dict = Depends(get_tg_user)):
+    """Register current Telegram user as available battle opponent."""
+    db = get_db()
+    result = db.register_battle_player(
+        telegram_id=tg["id"],
+        username=tg.get("username", ""),
+        first_name=tg.get("first_name", ""),
+    )
+    return result
+
+
+@router.get("/opponents")
+def list_registered_opponents(tg: dict = Depends(get_tg_user)):
+    """List users who manually registered as available for battle."""
+    db = get_db()
+    # Keep caller's user profile fresh, but don't auto-register for battle.
+    db.get_or_create_telegram_user(tg["id"], tg.get("username", ""), tg.get("first_name", ""))
+    players = db.list_registered_battle_players(exclude_telegram_id=tg["id"], limit=100)
+    return {"players": players}
 
 
 @router.get("/incoming")

@@ -202,6 +202,20 @@ class Database:
                     daily_streak INTEGER DEFAULT 0
                 )
             """))
+            conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS battle_registry (
+                    user_id TEXT PRIMARY KEY,
+                    telegram_id BIGINT UNIQUE NOT NULL,
+                    username TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.execute(sa_text(
+                "CREATE INDEX IF NOT EXISTS idx_battle_registry_active_seen "
+                "ON battle_registry(is_active, last_seen DESC)"
+            ))
             conn.commit()
             # PostgreSQL only: fix users.user_id type from BIGINT → VARCHAR
             if self._engine.dialect.name == 'postgresql':
@@ -1205,6 +1219,77 @@ class Database:
             return {"user_id": resolved_user_id, "username": user.username}
         finally:
             session.close()
+
+    def register_battle_player(self, telegram_id: int, username: str = "", first_name: str = "") -> dict:
+        """Register (or refresh) a Telegram user as available for battle matchmaking."""
+        user = self.get_or_create_telegram_user(telegram_id, username, first_name)
+        uname = user.get("username") or username or first_name or f"user_{telegram_id}"
+        now = datetime.utcnow()
+        with self._engine.connect() as conn:
+            conn.execute(text(
+                """
+                INSERT INTO battle_registry (user_id, telegram_id, username, is_active, registered_at, last_seen)
+                VALUES (:uid, :tid, :uname, TRUE, :now, :now)
+                ON CONFLICT (telegram_id)
+                DO UPDATE SET
+                    user_id = excluded.user_id,
+                    username = excluded.username,
+                    is_active = TRUE,
+                    last_seen = excluded.last_seen
+                """
+            ), {"uid": str(user["user_id"]), "tid": int(telegram_id), "uname": uname, "now": now})
+            conn.commit()
+        return {
+            "success": True,
+            "user_id": str(user["user_id"]),
+            "telegram_id": int(telegram_id),
+            "username": uname,
+            "registered_at": now.isoformat(),
+        }
+
+    def get_registered_battle_player(self, telegram_id: int) -> Optional[dict]:
+        with self._engine.connect() as conn:
+            row = conn.execute(text(
+                """
+                SELECT user_id, telegram_id, username, is_active, last_seen
+                FROM battle_registry
+                WHERE telegram_id = :tid AND is_active = TRUE
+                LIMIT 1
+                """
+            ), {"tid": int(telegram_id)}).fetchone()
+        if not row:
+            return None
+        return {
+            "user_id": str(row[0]),
+            "telegram_id": int(row[1]),
+            "username": row[2],
+            "is_active": bool(row[3]),
+            "last_seen": row[4].isoformat() if row[4] else None,
+        }
+
+    def list_registered_battle_players(self, exclude_telegram_id: Optional[int] = None, limit: int = 50) -> List[dict]:
+        query = (
+            "SELECT user_id, telegram_id, username, last_seen "
+            "FROM battle_registry WHERE is_active = TRUE "
+        )
+        params: Dict[str, Union[int, str]] = {"lim": int(limit)}
+        if exclude_telegram_id is not None:
+            query += "AND telegram_id != :exclude_tid "
+            params["exclude_tid"] = int(exclude_telegram_id)
+        query += "ORDER BY last_seen DESC LIMIT :lim"
+
+        with self._engine.connect() as conn:
+            rows = conn.execute(text(query), params).fetchall()
+
+        out = []
+        for r in rows:
+            out.append({
+                "user_id": str(r[0]),
+                "telegram_id": int(r[1]),
+                "username": r[2] or f"user_{r[1]}",
+                "last_seen": r[3].isoformat() if r[3] else None,
+            })
+        return out
 
     def generate_tma_link_code(self, user_id: str) -> str:
         """Generate a 6-char uppercase code for Telegram↔Discord linking (10 min TTL)."""

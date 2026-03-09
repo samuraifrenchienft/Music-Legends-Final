@@ -37,6 +37,8 @@ export const cancelBattle    = (id: string)               => api.post(`/api/batt
 export const getBattle       = (id: string)               => api.get(`/api/battle/${id}`)
 export const getIncomingBattles = ()                      => api.get('/api/battle/incoming')
 export const searchPlayers   = (q: string, limit = 10)    => api.get(`/api/players/search?q=${encodeURIComponent(q)}&limit=${limit}`)
+export const registerBattlePlayer = ()                    => api.post('/api/battle/register')
+export const getBattleOpponents   = ()                    => api.get('/api/battle/opponents')
 export const generateLink    = ()                         => api.post('/api/link/generate')
 export const getMarketplace  = ()                         => api.get('/api/marketplace')
 export const sellCard        = (body: object)             => api.post('/api/marketplace/sell', body)

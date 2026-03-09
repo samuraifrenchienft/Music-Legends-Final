@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred } from '@telegram-apps/sdk'
-import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, searchPlayers } from '../api/client'
+import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, registerBattlePlayer, getBattleOpponents } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
@@ -21,6 +21,8 @@ export default function Battle() {
   const [partnerResults, setPartnerResults] = useState<any[]>([])
   const [selectedPartner, setSelectedPartner] = useState<any>(null)
   const [incomingChallenges, setIncomingChallenges] = useState<any[]>([])
+  const [registeringBattle, setRegisteringBattle] = useState(false)
+  const [loadingOpponents, setLoadingOpponents] = useState(false)
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [manualBattleCode, setManualBattleCode] = useState('')
   const [battleLink, setBattleLink] = useState('')
@@ -32,6 +34,18 @@ export default function Battle() {
 
   const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
   const autoResolvedPartner = selectedPartner || resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
+
+  const loadOpponents = async () => {
+    setLoadingOpponents(true)
+    try {
+      const r = await getBattleOpponents()
+      setPartnerResults(r.data?.players || [])
+    } catch {
+      setPartnerResults([])
+    } finally {
+      setLoadingOpponents(false)
+    }
+  }
 
   const loadIncoming = async () => {
     try {
@@ -101,27 +115,44 @@ export default function Battle() {
       setLoadingBattle(false)
     }
     loadIncoming().catch(() => undefined)
+    loadOpponents().catch(() => undefined)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      const q = partnerQuery.trim()
-      if (!q) {
-        setPartnerResults([])
-        return
-      }
-      try {
-        const r = await searchPlayers(q)
-        if (!cancelled) setPartnerResults(r.data?.players || [])
-      } catch {
-        if (!cancelled) setPartnerResults([])
-      }
-    }
-    run()
-    return () => { cancelled = true }
+    loadOpponents().catch(() => undefined)
+  }, [phase])
+
+  useEffect(() => {
+    const q = normalizedPartnerQuery
+    if (!q) return
+    const match = partnerResults.find((p: any) =>
+      String(p?.username || '').toLowerCase() === q || String(p?.telegram_id || '') === q.replace(/\D/g, ''),
+    )
+    if (match) setSelectedPartner(match)
   }, [partnerQuery])
+
+  const filteredPartners = normalizedPartnerQuery
+    ? partnerResults.filter((p: any) => {
+        const username = String(p?.username || '').toLowerCase()
+        const tid = String(p?.telegram_id || '')
+        return username.includes(normalizedPartnerQuery) || tid.includes(normalizedPartnerQuery.replace(/\D/g, ''))
+      })
+    : partnerResults
+
+  const handleRegisterForBattle = async () => {
+    setRegisteringBattle(true)
+    try {
+      await registerBattlePlayer()
+      await loadOpponents()
+      if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
+      alert('You are now registered for battle matchmaking.')
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to register for battle')
+    } finally {
+      setRegisteringBattle(false)
+    }
+  }
 
   const handleChallenge = async () => {
     if (!selectedPackId) return
@@ -375,10 +406,26 @@ export default function Battle() {
       {phase === 'select-pack' && (
         <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 10, padding: 12, marginBottom: 12 }}>
           <div style={{ color: '#F4A800', fontWeight: 700, marginBottom: 6 }}>Challenge a player</div>
+          <button
+            onClick={handleRegisterForBattle}
+            disabled={registeringBattle}
+            style={{
+              width: '100%',
+              background: registeringBattle ? '#4a2a4a' : '#2ECC71',
+              color: '#0a0a0a',
+              border: 'none',
+              borderRadius: 8,
+              padding: '10px 12px',
+              fontWeight: 700,
+              marginBottom: 8,
+            }}
+          >
+            {registeringBattle ? 'Registering...' : 'Register For Battle'}
+          </button>
           <input
             value={partnerQuery}
             onChange={(e) => setPartnerQuery(e.target.value)}
-            placeholder="Search username or Telegram ID"
+            placeholder="Filter registered opponents"
             style={{
               width: '100%',
               background: '#0f0d2a',
@@ -389,9 +436,12 @@ export default function Battle() {
               marginBottom: 8,
             }}
           />
-          {partnerResults.length > 0 && (
+          {loadingOpponents && (
+            <div style={{ color: '#8888aa', fontSize: 12, marginBottom: 8 }}>Loading registered opponents...</div>
+          )}
+          {filteredPartners.length > 0 && (
             <div style={{ background: '#0f1030', border: '1px solid #2a2760', borderRadius: 8, marginBottom: 8, maxHeight: 140, overflowY: 'auto' }}>
-              {partnerResults.map((p: any) => (
+              {filteredPartners.map((p: any) => (
                 <button
                   key={String(p.telegram_id)}
                   onClick={() => setSelectedPartner(p)}
@@ -404,6 +454,11 @@ export default function Battle() {
                   @{p.username} (ID: {p.telegram_id})
                 </button>
               ))}
+            </div>
+          )}
+          {!loadingOpponents && filteredPartners.length === 0 && (
+            <div style={{ color: '#8888aa', fontSize: 12 }}>
+              No registered opponents found yet. Ask players to tap "Register For Battle".
             </div>
           )}
           {selectedPartner && (
