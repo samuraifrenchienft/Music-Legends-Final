@@ -18,6 +18,7 @@ export default function Battle() {
   const [selectedPackId, setSelectedPackId] = useState<string>('')
   const [selectionType, setSelectionType] = useState<'pack' | 'card'>('pack')
   const [battleId, setBattleId] = useState(battleIdParam || '')
+  const [manualBattleCode, setManualBattleCode] = useState('')
   const [battleLink, setBattleLink] = useState('')
   const [result, setResult] = useState<any>(null)
   const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
@@ -138,6 +139,25 @@ export default function Battle() {
     }
   }
 
+  const handleLoadBattleCode = async () => {
+    const code = manualBattleCode.trim().toUpperCase()
+    if (!code) return
+    try {
+      const r = await getBattle(code)
+      if (r.data?.status === 'complete' && r.data?.result) {
+        setBattleId(code)
+        setResult(r.data.result)
+        setPhase('result')
+        return
+      }
+      setBattleId(code)
+      setPhase('accept')
+      if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Battle code not found')
+    }
+  }
+
   useEffect(() => {
     if (!mountMainButton.isAvailable()) return
     mountMainButton()
@@ -254,6 +274,42 @@ export default function Battle() {
           <p style={{ color: '#2ECC71', marginTop: 8 }}>Challenge created!</p>
           <p style={{ color: '#8888aa', fontSize: 12 }}>Share the link with your opponent. Waiting for them to accept...</p>
           <div style={{ marginTop: 12, padding: '8px 12px', background: '#1a1740', borderRadius: 8, fontSize: 12, color: '#F4A800', wordBreak: 'break-all' }}>{battleLink}</div>
+        </div>
+      )}
+      {phase === 'select-pack' && (
+        <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{ color: '#F4A800', fontWeight: 700, marginBottom: 6 }}>Have a battle code?</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={manualBattleCode}
+              onChange={(e) => setManualBattleCode(e.target.value)}
+              placeholder="Enter code (e.g. F727EC)"
+              style={{
+                flex: 1,
+                background: '#0f0d2a',
+                border: '1px solid #2a2760',
+                borderRadius: 8,
+                color: '#fff',
+                padding: '10px 12px',
+              }}
+            />
+            <button
+              onClick={handleLoadBattleCode}
+              style={{
+                background: '#6B2EBE',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 12px',
+                fontWeight: 700,
+              }}
+            >
+              Load
+            </button>
+          </div>
+          <div style={{ color: '#8888aa', fontSize: 11, marginTop: 6 }}>
+            Use this if invite links open chat instead of battle directly.
+          </div>
         </div>
       )}
       {(phase === 'select-pack' || phase === 'accept') && (

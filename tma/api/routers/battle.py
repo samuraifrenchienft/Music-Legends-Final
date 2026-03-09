@@ -40,7 +40,7 @@ def _build_tma_battle_link(battle_id: str) -> str:
     raw = (os.environ.get("TMA_URL") or "").strip()
     if not raw:
         bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        raw = f"https://t.me/{bot_username}/app"
+        raw = f"https://t.me/{bot_username}"
     elif raw.startswith("t.me/"):
         raw = f"https://{raw}"
     elif raw.startswith("http://"):
@@ -49,15 +49,17 @@ def _build_tma_battle_link(battle_id: str) -> str:
     parsed = urlparse(raw)
     if parsed.scheme != "https":
         bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        parsed = urlparse(f"https://t.me/{bot_username}/app")
-    elif parsed.netloc == "t.me":
-        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        if parsed.path.strip("/") in {bot_username, ""}:
-            parsed = urlparse(f"https://t.me/{bot_username}/app")
+        parsed = urlparse(f"https://t.me/{bot_username}")
 
     q = dict(parse_qsl(parsed.query, keep_blank_values=True))
     q["startapp"] = f"battle_{battle_id}"
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(q), parsed.fragment))
+
+
+def _build_bot_start_link(battle_id: str) -> str:
+    """Universal fallback link that always opens bot chat with /start payload."""
+    bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+    return f"https://t.me/{bot_username}?start=battle_{battle_id}"
 
 
 def _card_to_artist(card: dict) -> ArtistCard:
@@ -254,7 +256,8 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     finally:
         session.close()
 
-    link = _build_tma_battle_link(battle_id)
+    mini_app_link = _build_tma_battle_link(battle_id)
+    link = _build_bot_start_link(battle_id)
 
     # Notify opponent (best-effort)
     try:
@@ -269,7 +272,12 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     except Exception as e:
         print(f"[BATTLE] Notification failed (non-critical): {e}")
 
-    return {"battle_id": battle_id, "link": link, "status": "waiting"}
+    return {
+        "battle_id": battle_id,
+        "link": link,
+        "mini_app_link": mini_app_link,
+        "status": "waiting",
+    }
 
 
 @router.post("/{battle_id}/accept")

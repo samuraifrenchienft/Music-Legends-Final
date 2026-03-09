@@ -18,7 +18,7 @@ def _base_tma_url() -> str:
     raw = (os.environ.get("TMA_URL") or "").strip()
     if not raw:
         bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        return f"https://t.me/{bot_username}/app"
+        return f"https://t.me/{bot_username}"
     if raw.startswith("t.me/"):
         raw = f"https://{raw}"
     if raw.startswith("http://"):
@@ -26,11 +26,7 @@ def _base_tma_url() -> str:
     parsed = urlparse(raw)
     if parsed.scheme != "https":
         bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        return f"https://t.me/{bot_username}/app"
-    bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-    if parsed.netloc == "t.me" and parsed.path.strip("/") in {bot_username, ""}:
-        # Prefer explicit mini app route when URL points to bare bot profile.
-        return f"https://t.me/{bot_username}/app"
+        return f"https://t.me/{bot_username}"
     return raw
 
 
@@ -51,6 +47,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     args = ctx.args or []
     start_param = args[0] if args else ""
     url = _tma_url(start_param)
+    tma_configured = bool((os.environ.get("TMA_URL") or "").strip())
 
     chat_type = getattr(update.effective_chat, "type", "")
     if chat_type in {"group", "supergroup"}:
@@ -64,9 +61,14 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         InlineKeyboardButton("🎴 Play Music Legends", url=url)
     ]])
     try:
+        battle_code_hint = ""
+        if start_param.startswith("battle_"):
+            battle_code_hint = f"\n\nBattle code: `{start_param.replace('battle_', '').upper()}`"
+            if not tma_configured:
+                battle_code_hint += "\nIf app deep-linking fails, open the Mini App from bot menu and paste this code in Battle."
         await update.message.reply_text(
             "🎵 *Music Legends* — collect artist cards, battle friends, win gold!\n\n"
-            "Tap below to open the game:",
+            f"Tap below to open the game:{battle_code_hint}",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )
