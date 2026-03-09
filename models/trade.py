@@ -10,6 +10,8 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id = Column(UUIDType, primary_key=True, default=uuid.uuid4)
+    # Legacy PostgreSQL schema expects non-null trade_id.
+    trade_id = Column(Integer, nullable=False)
 
     user_a = Column(BigInteger, nullable=False)
     user_b = Column(BigInteger, nullable=False)
@@ -28,6 +30,7 @@ class Trade(Base):
     def create_trade(cls, session, user_a, user_b, cards_a=None, cards_b=None, gold_a=0, gold_b=0, timeout_minutes=5):
         """Create a new trade"""
         trade = cls(
+            trade_id=cls._next_trade_id(session),
             user_a=user_a,
             user_b=user_b,
             cards_a=cards_a or [],
@@ -40,6 +43,11 @@ class Trade(Base):
         session.add(trade)
         session.commit()
         return trade
+
+    @classmethod
+    def _next_trade_id(cls, session) -> int:
+        max_id = session.query(cls.trade_id).order_by(cls.trade_id.desc()).first()
+        return int(max_id[0]) + 1 if max_id and max_id[0] is not None else 1
     
     @classmethod
     def get_pending_trades(cls, session, user_id):
@@ -62,6 +70,7 @@ class Trade(Base):
         """Convert to dictionary"""
         return {
             'id': str(self.id),
+            'trade_id': self.trade_id,
             'user_a': self.user_a,
             'user_b': self.user_b,
             'cards_a': self.cards_a,
