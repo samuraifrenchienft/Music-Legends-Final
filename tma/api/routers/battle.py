@@ -117,24 +117,43 @@ def _resolve_selected_pack(db, user_id: str, pack_id: str | None, card_id: str |
     Returns (selection_ref, pack_payload).
     """
     if pack_id:
+        pack_str = str(pack_id)
         # Backward-compatible card-first selection for older clients that send card ids via pack_id.
-        if str(pack_id).startswith("card:"):
-            parsed_card_id = str(pack_id).split(":", 1)[1]
+        if pack_str.startswith("card:"):
+            parsed_card_id = pack_str.split(":", 1)[1]
             pack = _build_collection_pack(db, user_id, focus_card_id=parsed_card_id)
-            if not pack:
-                raise HTTPException(403, "You don't own that card")
-            return str(pack_id), pack
-        if str(pack_id).startswith("collection:"):
+            if pack:
+                return pack_str, pack
+            if card_id:
+                # Fallback to explicit card_id when both fields are present.
+                explicit = _build_collection_pack(db, user_id, focus_card_id=str(card_id))
+                if explicit:
+                    return f"card:{card_id}", explicit
+            raise HTTPException(403, "You don't own that card")
+        if pack_str.startswith("collection:"):
             pack = _build_collection_pack(db, user_id)
-            if not pack:
-                raise HTTPException(403, "You don't have cards for battle")
-            return str(pack_id), pack
+            if pack:
+                return pack_str, pack
+            raise HTTPException(403, "You don't have cards for battle")
 
         packs = db.get_user_purchased_packs(user_id)
-        resolved = next((p for p in packs if str(p.get("pack_id")) == str(pack_id)), None)
-        if not resolved:
-            raise HTTPException(403, "You don't own that pack")
-        return str(pack_id), resolved
+        resolved = next((p for p in packs if str(p.get("pack_id")) == pack_str), None)
+        if resolved and (resolved.get("cards") or []):
+            return pack_str, resolved
+
+        # Some legacy clients send raw card_id in pack_id.
+        as_card = _build_collection_pack(db, user_id, focus_card_id=pack_str)
+        if as_card:
+            return f"card:{pack_str}", as_card
+        # If pack exists but has empty card payload, fallback to collection squad.
+        collection_pack = _build_collection_pack(db, user_id)
+        if collection_pack:
+            return f"collection:{user_id}", collection_pack
+        if card_id:
+            explicit = _build_collection_pack(db, user_id, focus_card_id=str(card_id))
+            if explicit:
+                return f"card:{card_id}", explicit
+        raise HTTPException(403, "You don't own that pack or card")
 
     if card_id:
         pack = _build_collection_pack(db, user_id, focus_card_id=card_id)
