@@ -13,6 +13,28 @@ def list_packs(tg: dict = Depends(get_tg_user)):
     db = get_db()
     user = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
     packs = db.get_user_purchased_packs(user["user_id"])
+    # Backward-compatible battle fallback:
+    # if a user has cards but no purchased packs, expose card-based pseudo packs
+    # so older Telegram clients can still enter battles.
+    if not packs:
+        cards = db.get_user_collection(user["user_id"]) or []
+        pseudo = []
+        for c in cards[:50]:
+            cid = str(c.get("card_id") or "")
+            if not cid:
+                continue
+            pseudo.append({
+                "pack_id": f"card:{cid}",
+                "name": f"Card: {c.get('name') or cid}",
+                "pack_name": f"Card: {c.get('name') or cid}",
+                "pack_tier": (c.get("rarity") or "community").lower(),
+                "tier": (c.get("rarity") or "community").lower(),
+                "genre": "Music",
+                "cards": [c],
+                "card_count": 1,
+                "_type": "card",
+            })
+        packs = pseudo
     return {"packs": packs, "total": len(packs)}
 
 

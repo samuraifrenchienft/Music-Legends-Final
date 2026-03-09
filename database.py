@@ -1899,9 +1899,12 @@ class Database:
 
             last_claim_at = b.last_daily_claim
             if last_claim_at:
-                hours_since = (now - last_claim_at).total_seconds() / 3600
+                # Guard against clock/timezone drift causing future timestamps
+                # (which can incorrectly show >24h remaining like 28h).
+                effective_last_claim = last_claim_at if last_claim_at <= now else now
+                hours_since = (now - effective_last_claim).total_seconds() / 3600
                 if hours_since < 24:
-                    next_claim = last_claim_at + timedelta(hours=24)
+                    next_claim = effective_last_claim + timedelta(hours=24)
                     remaining_seconds = max(0, int((24 - hours_since) * 3600))
                     return {
                         "success": False,

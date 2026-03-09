@@ -93,6 +93,19 @@ def _resolve_selected_pack(db, user_id: str, pack_id: str | None, card_id: str |
     Returns (selection_ref, pack_payload).
     """
     if pack_id:
+        # Backward-compatible card-first selection for older clients that send card ids via pack_id.
+        if str(pack_id).startswith("card:"):
+            parsed_card_id = str(pack_id).split(":", 1)[1]
+            pack = _build_collection_pack(db, user_id, focus_card_id=parsed_card_id)
+            if not pack:
+                raise HTTPException(403, "You don't own that card")
+            return str(pack_id), pack
+        if str(pack_id).startswith("collection:"):
+            pack = _build_collection_pack(db, user_id)
+            if not pack:
+                raise HTTPException(403, "You don't have cards for battle")
+            return str(pack_id), pack
+
         packs = db.get_user_purchased_packs(user_id)
         resolved = next((p for p in packs if str(p.get("pack_id")) == str(pack_id)), None)
         if not resolved:
