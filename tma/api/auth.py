@@ -81,6 +81,7 @@ def _parse_user_from_raw(
 def get_tg_user(
     authorization: str = Header(default=""),
     x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data"),
+    referer: str = Header(default="", alias="Referer"),
     x_forwarded_for: str = Header(default="", alias="X-Forwarded-For"),
     user_agent: str = Header(default="", alias="User-Agent"),
 ) -> dict:
@@ -103,7 +104,21 @@ def get_tg_user(
             # Some clients send raw initData directly in Authorization.
             if "user=" in auth or "hash=" in auth:
                 return auth
-        return (x_telegram_init_data or "").strip()
+        x_tg = (x_telegram_init_data or "").strip()
+        if x_tg:
+            return x_tg
+        # Telegram WebView often includes initData as tgWebAppData in page URL.
+        ref = (referer or "").strip()
+        if ref:
+            try:
+                q = urllib.parse.urlparse(ref).query
+                qs = urllib.parse.parse_qs(q, keep_blank_values=True)
+                ref_data = (qs.get("tgWebAppData", [""])[0] or "").strip()
+                if ref_data:
+                    return ref_data
+            except Exception:
+                pass
+        return ""
 
     raw = _extract_raw_init_data()
 

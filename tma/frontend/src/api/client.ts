@@ -4,11 +4,26 @@ import axios from 'axios'
 // In dev, Vite proxy forwards /api → localhost:8001.
 const api = axios.create({ baseURL: '' })
 
+function readInitDataFromUrl(): string {
+  try {
+    const fromSearch = new URLSearchParams(window.location.search).get('tgWebAppData')
+    if (fromSearch) return fromSearch
+    const hash = (window.location.hash || '').replace(/^#/, '')
+    if (hash) {
+      const fromHash = new URLSearchParams(hash).get('tgWebAppData')
+      if (fromHash) return fromHash
+    }
+  } catch {
+    // ignore
+  }
+  return ''
+}
+
 api.interceptors.request.use(config => {
   // Read initData directly from Telegram's injected global — always available
   // inside a Mini App regardless of SDK initialization state.
   const tg = (window as any)?.Telegram?.WebApp
-  const initDataRaw = tg?.initData || ''
+  const initDataRaw = tg?.initData || readInitDataFromUrl()
 
   if (initDataRaw) {
     config.headers['Authorization'] = `tma ${initDataRaw}`
