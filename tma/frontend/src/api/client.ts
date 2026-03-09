@@ -34,6 +34,7 @@ export const getLeaderboard  = (metric = 'wins')          => api.get(`/api/leade
 export const createChallenge = (body: object)             => api.post('/api/battle/challenge', body)
 export const acceptBattle    = (id: string, body: object) => api.post(`/api/battle/${id}/accept`, body)
 export const getBattle       = (id: string)               => api.get(`/api/battle/${id}`)
+export const getIncomingBattles = ()                      => api.get('/api/battle/incoming')
 export const generateLink    = ()                         => api.post('/api/link/generate')
 export const getMarketplace  = ()                         => api.get('/api/marketplace')
 export const sellCard        = (body: object)             => api.post('/api/marketplace/sell', body)

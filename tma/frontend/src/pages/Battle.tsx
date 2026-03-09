@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred, openTelegramLink } from '@telegram-apps/sdk'
-import { getPacks, getCards, createChallenge, acceptBattle, getBattle } from '../api/client'
+import { getPacks, getCards, createChallenge, acceptBattle, getBattle, getIncomingBattles, searchTradePartners } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
@@ -17,12 +17,25 @@ export default function Battle() {
   const [packs, setPacks] = useState<any[]>([])
   const [selectedPackId, setSelectedPackId] = useState<string>('')
   const [selectionType, setSelectionType] = useState<'pack' | 'card'>('pack')
+  const [partnerQuery, setPartnerQuery] = useState('')
+  const [partnerResults, setPartnerResults] = useState<any[]>([])
+  const [selectedPartner, setSelectedPartner] = useState<any>(null)
+  const [incomingChallenges, setIncomingChallenges] = useState<any[]>([])
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [manualBattleCode, setManualBattleCode] = useState('')
   const [battleLink, setBattleLink] = useState('')
   const [result, setResult] = useState<any>(null)
   const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+
+  const loadIncoming = async () => {
+    try {
+      const r = await getIncomingBattles()
+      setIncomingChallenges(r.data?.challenges || [])
+    } catch {
+      setIncomingChallenges([])
+    }
+  }
 
   useEffect(() => {
     getPacks()
@@ -81,16 +94,40 @@ export default function Battle() {
     } else {
       setLoadingBattle(false)
     }
+    loadIncoming().catch(() => undefined)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      const q = partnerQuery.trim()
+      if (!q) {
+        setPartnerResults([])
+        return
+      }
+      try {
+        const r = await searchTradePartners(q)
+        if (!cancelled) setPartnerResults(r.data?.partners || [])
+      } catch {
+        if (!cancelled) setPartnerResults([])
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [partnerQuery])
+
   const handleChallenge = async () => {
     if (!selectedPackId) return
+    if (!selectedPartner?.telegram_id) {
+      alert('Select who to challenge first')
+      return
+    }
     const selected = packs.find((p: any) => String(p.pack_id) === String(selectedPackId))
     const label = selected?.pack_name || selected?.name || selectedPackId
-    if (!window.confirm(`Create battle challenge with "${label}"?`)) return
+    if (!window.confirm(`Challenge @${selectedPartner.username || selectedPartner.telegram_id} using "${label}"?`)) return
     try {
-      const body: any = { opponent_telegram_id: 0, wager_tier: 'casual' }
+      const body: any = { opponent_telegram_id: Number(selectedPartner.telegram_id), wager_tier: 'casual' }
       if (selectionType === 'card' || selectedPackId.startsWith('card:')) body.card_id = selectedPackId.replace('card:', '')
       else body.pack_id = selectedPackId
       const r = await createChallenge(body)
@@ -131,6 +168,7 @@ export default function Battle() {
       const r = await acceptBattle(battleId, body)
       setResult(r.data.result)
       setPhase('result')
+      loadIncoming().catch(() => undefined)
       if (hapticFeedbackNotificationOccurred.isAvailable()) {
         hapticFeedbackNotificationOccurred(r.data.result?.winner === 2 ? 'success' : 'error')
       }
@@ -162,9 +200,10 @@ export default function Battle() {
     if (!mountMainButton.isAvailable()) return
     mountMainButton()
     if (phase === 'select-pack') {
+      const canCreate = !!selectedPackId && !!selectedPartner?.telegram_id
       setMainButtonParams({
-        text: selectedPackId ? '⚔️ Create Challenge' : 'Select a Card or Pack',
-        isEnabled: !!selectedPackId,
+        text: canCreate ? '⚔️ Create Challenge' : 'Pick Opponent + Card/Pack',
+        isEnabled: canCreate,
         isVisible: true,
         backgroundColor: '#E74C3C',
       })
@@ -272,8 +311,75 @@ export default function Battle() {
         <div style={{ textAlign: 'center', padding: 20 }}>
           <div style={{ fontSize: 40 }}>✅</div>
           <p style={{ color: '#2ECC71', marginTop: 8 }}>Challenge created!</p>
-          <p style={{ color: '#8888aa', fontSize: 12 }}>Share the link with your opponent. Waiting for them to accept...</p>
-          <div style={{ marginTop: 12, padding: '8px 12px', background: '#1a1740', borderRadius: 8, fontSize: 12, color: '#F4A800', wordBreak: 'break-all' }}>{battleLink}</div>
+          <p style={{ color: '#8888aa', fontSize: 12 }}>
+            Opponent was notified. They can accept from Battle in the Mini App.
+          </p>
+          <div style={{ marginTop: 10, fontSize: 11, color: '#666699' }}>
+            Fallback link: {battleLink}
+          </div>
+        </div>
+      )}
+      {phase === 'select-pack' && (
+        <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{ color: '#F4A800', fontWeight: 700, marginBottom: 6 }}>Challenge a player</div>
+          <input
+            value={partnerQuery}
+            onChange={(e) => setPartnerQuery(e.target.value)}
+            placeholder="Search username or Telegram ID"
+            style={{
+              width: '100%',
+              background: '#0f0d2a',
+              border: '1px solid #2a2760',
+              borderRadius: 8,
+              color: '#fff',
+              padding: '10px 12px',
+              marginBottom: 8,
+            }}
+          />
+          {partnerResults.length > 0 && (
+            <div style={{ background: '#0f1030', border: '1px solid #2a2760', borderRadius: 8, marginBottom: 8, maxHeight: 140, overflowY: 'auto' }}>
+              {partnerResults.map((p: any) => (
+                <button
+                  key={String(p.telegram_id)}
+                  onClick={() => setSelectedPartner(p)}
+                  style={{
+                    width: '100%', textAlign: 'left',
+                    background: selectedPartner?.telegram_id === p.telegram_id ? '#2a1760' : 'transparent',
+                    color: '#fff', border: 'none', padding: '8px 10px', cursor: 'pointer',
+                  }}
+                >
+                  @{p.username} (ID: {p.telegram_id})
+                </button>
+              ))}
+            </div>
+          )}
+          {selectedPartner && (
+            <div style={{ color: '#2ECC71', fontSize: 12 }}>
+              Challenging: <b>@{selectedPartner.username}</b>
+            </div>
+          )}
+        </div>
+      )}
+      {phase === 'select-pack' && incomingChallenges.length > 0 && (
+        <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{ color: '#F4A800', fontWeight: 700, marginBottom: 6 }}>Incoming Challenges</div>
+          {incomingChallenges.slice(0, 8).map((ch: any) => (
+            <div key={ch.battle_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #2a2760' }}>
+              <div style={{ fontSize: 12 }}>
+                <div style={{ color: '#fff' }}>@{ch.challenger_username || 'player'} challenged you</div>
+                <div style={{ color: '#8888aa' }}>Tier: {(ch.wager_tier || 'casual').toUpperCase()} • #{String(ch.battle_id).slice(0, 6)}</div>
+              </div>
+              <button
+                onClick={() => {
+                  setBattleId(String(ch.battle_id))
+                  setPhase('accept')
+                }}
+                style={{ background: '#2ECC71', color: '#000', border: 'none', borderRadius: 8, padding: '8px 10px', fontWeight: 700 }}
+              >
+                Accept
+              </button>
+            </div>
+          ))}
         </div>
       )}
       {phase === 'select-pack' && (
@@ -337,10 +443,12 @@ export default function Battle() {
           {packs.length > 0 && !mountMainButton.isAvailable() && (
             <button
               onClick={phase === 'accept' ? handleAccept : handleChallenge}
-              disabled={!selectedPackId}
+              disabled={phase === 'accept' ? !selectedPackId : (!selectedPackId || !selectedPartner?.telegram_id)}
               style={{
                 width: '100%', padding: '14px 0', marginTop: 16,
-                background: selectedPackId ? '#E74C3C' : '#4a2a4a',
+                background: (phase === 'accept'
+                  ? !!selectedPackId
+                  : !!selectedPackId && !!selectedPartner?.telegram_id) ? '#E74C3C' : '#4a2a4a',
                 color: '#fff', border: 'none', borderRadius: 12,
                 fontWeight: 700, fontSize: 15, cursor: selectedPackId ? 'pointer' : 'not-allowed',
               }}

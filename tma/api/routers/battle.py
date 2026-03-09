@@ -6,12 +6,13 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import desc
 from tma.api.auth import get_tg_user
 from database import get_db
 from cards_config import compute_card_power, compute_team_power
 from battle_engine import BattleEngine
 from discord_cards import ArtistCard
-from models import PendingTmaBattle
+from models import PendingTmaBattle, User
 
 router = APIRouter(prefix="/api/battle", tags=["battle"])
 
@@ -60,6 +61,22 @@ def _build_bot_start_link(battle_id: str) -> str:
     """Universal fallback link that always opens bot chat with /start payload."""
     bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
     return f"https://t.me/{bot_username}?start=battle_{battle_id}"
+
+
+def _extract_telegram_id(db, user: User) -> int | None:
+    tag = (user.discord_tag or "").strip()
+    if tag.startswith("telegram:"):
+        try:
+            return int(tag.split(":", 1)[1])
+        except Exception:
+            return None
+    try:
+        uid = int(str(user.user_id))
+        if uid >= db._TG_OFFSET:
+            return uid - db._TG_OFFSET
+    except Exception:
+        return None
+    return None
 
 
 def _card_to_artist(card: dict) -> ArtistCard:
@@ -278,6 +295,49 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
         "mini_app_link": mini_app_link,
         "status": "waiting",
     }
+
+
+@router.get("/incoming")
+def list_incoming_challenges(tg: dict = Depends(get_tg_user)):
+    """List waiting battle challenges for the current Telegram user."""
+    db = get_db()
+    me = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
+    now = datetime.utcnow()
+
+    session = db.get_session()
+    try:
+        rows = (
+            session.query(PendingTmaBattle)
+            .filter(PendingTmaBattle.opponent_id == str(me["user_id"]))
+            .filter(PendingTmaBattle.status == "waiting")
+            .order_by(desc(PendingTmaBattle.created_at))
+            .limit(50)
+            .all()
+        )
+        valid = [r for r in rows if not r.expires_at or r.expires_at > now]
+        challenger_ids = list({str(r.challenger_id) for r in valid})
+        users = (
+            session.query(User).filter(User.user_id.in_(challenger_ids)).all()
+            if challenger_ids else []
+        )
+        u_map = {str(u.user_id): u for u in users}
+
+        out = []
+        for r in valid:
+            cu = u_map.get(str(r.challenger_id))
+            challenger_name = (cu.username if cu and cu.username else f"user_{r.challenger_id}")
+            out.append({
+                "battle_id": r.battle_id,
+                "challenger_user_id": str(r.challenger_id),
+                "challenger_username": challenger_name,
+                "challenger_telegram_id": _extract_telegram_id(db, cu) if cu else None,
+                "wager_tier": r.wager_tier or "casual",
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+            })
+        return {"challenges": out}
+    finally:
+        session.close()
 
 
 @router.post("/{battle_id}/accept")
