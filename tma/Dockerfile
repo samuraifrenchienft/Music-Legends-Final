@@ -2,7 +2,7 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /frontend
 COPY tma/frontend/package*.json ./
-RUN npm ci --prefer-offline
+RUN npm ci --prefer-offline --include=dev
 COPY tma/frontend/ .
 RUN npm run build
 
