@@ -294,6 +294,7 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
         "link": link,
         "mini_app_link": mini_app_link,
         "status": "waiting",
+        "expires_at": expires.isoformat(),
     }
 
 
@@ -408,6 +409,35 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
     return {"battle_id": battle_id, "result": result}
 
 
+@router.post("/{battle_id}/cancel")
+def cancel_challenge(battle_id: str, tg: dict = Depends(get_tg_user)):
+    """Cancel a waiting challenge (challenger or opponent)."""
+    db = get_db()
+    actor = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
+    actor_id = str(actor["user_id"])
+
+    session = db.get_session()
+    try:
+        row = session.query(PendingTmaBattle).filter_by(battle_id=battle_id).first()
+        if not row:
+            raise HTTPException(404, "Battle not found")
+        if row.status != "waiting":
+            raise HTTPException(400, f"Battle is already {row.status}")
+        if actor_id not in {str(row.challenger_id), str(row.opponent_id)}:
+            raise HTTPException(403, "Not allowed to cancel this battle")
+        row.status = "cancelled"
+        session.commit()
+        return {"success": True, "battle_id": battle_id, "status": "cancelled"}
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(500, f"Failed to cancel battle: {e}")
+    finally:
+        session.close()
+
+
 @router.get("/{battle_id}")
 def get_battle(battle_id: str, tg: dict = Depends(get_tg_user)):
     """Poll for battle status/result."""
@@ -417,9 +447,13 @@ def get_battle(battle_id: str, tg: dict = Depends(get_tg_user)):
         row = session.query(PendingTmaBattle).filter_by(battle_id=battle_id).first()
         if not row:
             raise HTTPException(404, "Battle not found")
+        status = row.status
+        if status == "waiting" and row.expires_at and datetime.utcnow() > row.expires_at:
+            status = "expired"
         return {
             "battle_id": battle_id,
-            "status":    row.status,
+            "status":    status,
+            "expires_at": row.expires_at.isoformat() if row.expires_at else None,
             "result":    json.loads(row.result_json) if row.result_json else None,
         }
     finally:

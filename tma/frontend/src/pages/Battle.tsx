@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred, openTelegramLink } from '@telegram-apps/sdk'
-import { getPacks, getCards, createChallenge, acceptBattle, getBattle, getIncomingBattles, searchTradePartners } from '../api/client'
+import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, searchTradePartners } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
@@ -24,6 +24,8 @@ export default function Battle() {
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [manualBattleCode, setManualBattleCode] = useState('')
   const [battleLink, setBattleLink] = useState('')
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [countdown, setCountdown] = useState('')
   const [result, setResult] = useState<any>(null)
   const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
@@ -87,6 +89,7 @@ export default function Battle() {
             setResult(r.data.result)
             setPhase('result')
           } else {
+            setExpiresAt(r.data?.expires_at || null)
             setPhase('accept')
           }
         })
@@ -137,6 +140,7 @@ export default function Battle() {
       const r = await createChallenge(body)
       setBattleId(r.data.battle_id)
       setBattleLink(r.data.link)
+      setExpiresAt(r.data?.expires_at || null)
       setPhase('challenge-sent')
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
       pollRef.current = setInterval(async () => {
@@ -149,6 +153,10 @@ export default function Battle() {
             if (hapticFeedbackNotificationOccurred.isAvailable()) {
               hapticFeedbackNotificationOccurred(poll.data.result?.winner === 1 ? 'success' : 'error')
             }
+          } else if (poll.data.status === 'cancelled' || poll.data.status === 'expired') {
+            clearInterval(pollRef.current)
+            setPhase('select-pack')
+            alert(`Challenge ${poll.data.status}.`)
           }
         } catch {
           // Keep polling; transient network errors should not break battle completion flow.
@@ -193,12 +201,45 @@ export default function Battle() {
         return
       }
       setBattleId(code)
+      setExpiresAt(r.data?.expires_at || null)
       setPhase('accept')
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
     } catch (e: any) {
       alert(e?.response?.data?.detail || 'Battle code not found')
     }
   }
+
+  const handleCancelChallenge = async () => {
+    if (!battleId) return
+    if (!window.confirm('Cancel this battle challenge?')) return
+    try {
+      await cancelBattle(battleId)
+      if (pollRef.current) clearInterval(pollRef.current)
+      setBattleId('')
+      setBattleLink('')
+      setExpiresAt(null)
+      setCountdown('')
+      setPhase('select-pack')
+      loadIncoming().catch(() => undefined)
+      if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to cancel challenge')
+    }
+  }
+
+  useEffect(() => {
+    if (!expiresAt || !['challenge-sent', 'accept'].includes(phase)) {
+      setCountdown('')
+      return
+    }
+    const tick = () => {
+      const left = getCountdownLabel(expiresAt)
+      setCountdown(left)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [expiresAt, phase])
 
   useEffect(() => {
     if (!mountMainButton.isAvailable()) return
@@ -225,11 +266,8 @@ export default function Battle() {
       return () => { off(); unmountMainButton() }
     }
     if (phase === 'challenge-sent') {
-      setMainButtonParams({ text: '🔗 Share Challenge Link', isEnabled: true, isVisible: true, backgroundColor: '#6B2EBE' })
-      const off = onMainButtonClick(() => {
-        if (openTelegramLink.isAvailable()) openTelegramLink(battleLink)
-        else window.open(battleLink, '_blank')
-      })
+      setMainButtonParams({ text: '❌ Cancel Challenge', isEnabled: true, isVisible: true, backgroundColor: '#E74C3C' })
+      const off = onMainButtonClick(handleCancelChallenge)
       return () => { off(); unmountMainButton() }
     }
     if (phase === 'resolving') {
@@ -318,9 +356,20 @@ export default function Battle() {
           <p style={{ color: '#8888aa', fontSize: 12 }}>
             Opponent was notified. They can accept from Battle in the Mini App.
           </p>
+          {countdown && (
+            <div style={{ marginTop: 8, color: '#F4A800', fontSize: 12 }}>
+              Expires in: {countdown}
+            </div>
+          )}
           <div style={{ marginTop: 10, fontSize: 11, color: '#666699' }}>
             Fallback link: {battleLink}
           </div>
+          <button
+            onClick={handleCancelChallenge}
+            style={{ marginTop: 10, background: '#E74C3C', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontWeight: 700 }}
+          >
+            Cancel Challenge
+          </button>
         </div>
       )}
       {phase === 'select-pack' && (
@@ -483,4 +532,14 @@ const resolvePartnerFromQuery = (results: any[], normalizedQuery: string) => {
     if (exactId) return exactId
   }
   return results.length === 1 ? results[0] : null
+}
+
+const getCountdownLabel = (expiresAt: string) => {
+  const end = new Date(expiresAt).getTime()
+  if (!Number.isFinite(end)) return ''
+  const diff = Math.max(0, Math.floor((end - Date.now()) / 1000))
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  return `${h}h ${m}m ${s}s`
 }

@@ -33,6 +33,7 @@ export const claimDaily      = ()                         => api.post('/api/econ
 export const getLeaderboard  = (metric = 'wins')          => api.get(`/api/leaderboard?metric=${metric}`)
 export const createChallenge = (body: object)             => api.post('/api/battle/challenge', body)
 export const acceptBattle    = (id: string, body: object) => api.post(`/api/battle/${id}/accept`, body)
+export const cancelBattle    = (id: string)               => api.post(`/api/battle/${id}/cancel`)
 export const getBattle       = (id: string)               => api.get(`/api/battle/${id}`)
 export const getIncomingBattles = ()                      => api.get('/api/battle/incoming')
 export const generateLink    = ()                         => api.post('/api/link/generate')
