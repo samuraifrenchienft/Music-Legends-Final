@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
-         hapticFeedbackNotificationOccurred, openTelegramLink } from '@telegram-apps/sdk'
+         hapticFeedbackNotificationOccurred } from '@telegram-apps/sdk'
 import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, searchTradePartners } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
