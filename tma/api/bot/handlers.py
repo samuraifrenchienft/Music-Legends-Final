@@ -171,23 +171,20 @@ def setup_webhook_route(app) -> None:
 
 async def notify_battle_challenge(
     opponent_telegram_id: int, challenger_name: str,
-    battle_id: str, wager_tier: str, link: str,
+    battle_id: str, wager_tier: str,
 ) -> None:
-    """Send battle challenge notification to opponent."""
+    """Send in-app battle challenge notification to opponent."""
     if not _bot:
         return
     try:
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("⚔️ Accept Battle", url=link)
-        ]])
         await _bot.send_message(
             chat_id=opponent_telegram_id,
             text=(
                 f"⚔️ *{challenger_name}* challenged you to a battle!\n"
                 f"Tier: *{wager_tier.upper()}*\n\n"
-                f"If the button does not open the battle, use /start battle_{battle_id}."
+                f"Open the Mini App and go to the Battle screen.\n"
+                f"Incoming challenge code: *{battle_id}*"
             ),
-            reply_markup=keyboard,
             parse_mode="Markdown",
         )
     except Exception as e:

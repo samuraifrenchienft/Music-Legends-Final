@@ -24,13 +24,13 @@ export default function Battle() {
   const [registeringBattle, setRegisteringBattle] = useState(false)
   const [loadingOpponents, setLoadingOpponents] = useState(false)
   const [battleId, setBattleId] = useState(battleIdParam || '')
-  const [manualBattleCode, setManualBattleCode] = useState('')
-  const [battleLink, setBattleLink] = useState('')
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
   const [countdown, setCountdown] = useState('')
   const [result, setResult] = useState<any>(null)
   const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const incomingPollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const incomingCountRef = useRef<number>(0)
 
   const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
   const autoResolvedPartner = selectedPartner || resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
@@ -50,7 +50,12 @@ export default function Battle() {
   const loadIncoming = async () => {
     try {
       const r = await getIncomingBattles()
-      setIncomingChallenges(r.data?.challenges || [])
+      const next = r.data?.challenges || []
+      if (next.length > incomingCountRef.current && hapticFeedbackNotificationOccurred.isAvailable()) {
+        hapticFeedbackNotificationOccurred('success')
+      }
+      incomingCountRef.current = next.length
+      setIncomingChallenges(next)
     } catch {
       setIncomingChallenges([])
     }
@@ -116,7 +121,14 @@ export default function Battle() {
     }
     loadIncoming().catch(() => undefined)
     loadOpponents().catch(() => undefined)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    incomingPollRef.current = setInterval(() => {
+      loadIncoming().catch(() => undefined)
+      loadOpponents().catch(() => undefined)
+    }, 3000)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+      if (incomingPollRef.current) clearInterval(incomingPollRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -170,10 +182,10 @@ export default function Battle() {
       else body.pack_id = selectedPackId
       const r = await createChallenge(body)
       setBattleId(r.data.battle_id)
-      setBattleLink(r.data.link)
       setExpiresAt(r.data?.expires_at || null)
       setPhase('challenge-sent')
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
+      loadIncoming().catch(() => undefined)
       pollRef.current = setInterval(async () => {
         try {
           const poll = await getBattle(r.data.battle_id)
@@ -220,26 +232,6 @@ export default function Battle() {
     }
   }
 
-  const handleLoadBattleCode = async () => {
-    const code = manualBattleCode.trim().toUpperCase()
-    if (!code) return
-    try {
-      const r = await getBattle(code)
-      if (r.data?.status === 'complete' && r.data?.result) {
-        setBattleId(code)
-        setResult(r.data.result)
-        setPhase('result')
-        return
-      }
-      setBattleId(code)
-      setExpiresAt(r.data?.expires_at || null)
-      setPhase('accept')
-      if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
-    } catch (e: any) {
-      alert(e?.response?.data?.detail || 'Battle code not found')
-    }
-  }
-
   const handleCancelChallenge = async () => {
     if (!battleId) return
     if (!window.confirm('Cancel this battle challenge?')) return
@@ -247,7 +239,6 @@ export default function Battle() {
       await cancelBattle(battleId)
       if (pollRef.current) clearInterval(pollRef.current)
       setBattleId('')
-      setBattleLink('')
       setExpiresAt(null)
       setCountdown('')
       setPhase('select-pack')
@@ -312,13 +303,12 @@ export default function Battle() {
         setResult(null)
         setSelectedPackId('')
         setBattleId('')
-        setBattleLink('')
         setPhase('select-pack')
       })
       return () => { off(); unmountMainButton() }
     }
     unmountMainButton()
-  }, [phase, selectedPackId, battleLink, selectedPartner, partnerResults]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, selectedPackId, selectedPartner, partnerResults]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (phase === 'result' && result) {
     const c = result.challenger, o = result.opponent, winner = result.winner
@@ -385,16 +375,13 @@ export default function Battle() {
           <div style={{ fontSize: 40 }}>✅</div>
           <p style={{ color: '#2ECC71', marginTop: 8 }}>Challenge created!</p>
           <p style={{ color: '#8888aa', fontSize: 12 }}>
-            Opponent was notified. They can accept from Battle in the Mini App.
+            Opponent can accept from the Battle screen inside the Mini App.
           </p>
           {countdown && (
             <div style={{ marginTop: 8, color: '#F4A800', fontSize: 12 }}>
               Expires in: {countdown}
             </div>
           )}
-          <div style={{ marginTop: 10, fontSize: 11, color: '#666699' }}>
-            Fallback link: {battleLink}
-          </div>
           <button
             onClick={handleCancelChallenge}
             style={{ marginTop: 10, background: '#E74C3C', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontWeight: 700 }}
@@ -485,6 +472,7 @@ export default function Battle() {
               <button
                 onClick={() => {
                   setBattleId(String(ch.battle_id))
+                  setExpiresAt(ch.expires_at || null)
                   setPhase('accept')
                 }}
                 style={{ background: '#2ECC71', color: '#000', border: 'none', borderRadius: 8, padding: '8px 10px', fontWeight: 700 }}
@@ -493,42 +481,6 @@ export default function Battle() {
               </button>
             </div>
           ))}
-        </div>
-      )}
-      {phase === 'select-pack' && (
-        <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 10, padding: 12, marginBottom: 12 }}>
-          <div style={{ color: '#F4A800', fontWeight: 700, marginBottom: 6 }}>Have a battle code?</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={manualBattleCode}
-              onChange={(e) => setManualBattleCode(e.target.value)}
-              placeholder="Enter code (e.g. F727EC)"
-              style={{
-                flex: 1,
-                background: '#0f0d2a',
-                border: '1px solid #2a2760',
-                borderRadius: 8,
-                color: '#fff',
-                padding: '10px 12px',
-              }}
-            />
-            <button
-              onClick={handleLoadBattleCode}
-              style={{
-                background: '#6B2EBE',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '10px 12px',
-                fontWeight: 700,
-              }}
-            >
-              Load
-            </button>
-          </div>
-          <div style={{ color: '#8888aa', fontSize: 11, marginTop: 6 }}>
-            Use this if invite links open chat instead of battle directly.
-          </div>
         </div>
       )}
       {(phase === 'select-pack' || phase === 'accept') && (

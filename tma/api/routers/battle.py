@@ -1,9 +1,7 @@
-"""Battle router — share-link PvP battles."""
+"""Battle router — in-app PvP battles."""
 import json
 import secrets
-import os
 from datetime import datetime, timedelta
-from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import desc
@@ -31,36 +29,6 @@ class AcceptRequest(BaseModel):
 
 def _make_battle_id() -> str:
     return secrets.token_hex(3).upper()
-
-
-def _build_tma_battle_link(battle_id: str) -> str:
-    """
-    Build a safe Mini App deep-link for battle acceptance.
-    Uses configured TMA_URL when present; otherwise falls back to current bot username.
-    """
-    raw = (os.environ.get("TMA_URL") or "").strip()
-    if not raw:
-        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        raw = f"https://t.me/{bot_username}"
-    elif raw.startswith("t.me/"):
-        raw = f"https://{raw}"
-    elif raw.startswith("http://"):
-        raw = "https://" + raw[len("http://") :]
-
-    parsed = urlparse(raw)
-    if parsed.scheme != "https":
-        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        parsed = urlparse(f"https://t.me/{bot_username}")
-
-    q = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    q["startapp"] = f"battle_{battle_id}"
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(q), parsed.fragment))
-
-
-def _build_bot_start_link(battle_id: str) -> str:
-    """Universal fallback link that always opens bot chat with /start payload."""
-    bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-    return f"https://t.me/{bot_username}?start=battle_{battle_id}"
 
 
 def _extract_telegram_id(db, user: User) -> int | None:
@@ -240,7 +208,7 @@ def _run_battle(db, challenger_id: int, opponent_id: int,
 
 @router.post("/challenge")
 async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_user)):
-    """Challenger picks pack and creates a pending battle. Returns shareable link."""
+    """Challenger picks pack and creates a pending battle for in-app acceptance."""
     db = get_db()
     challenger = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
 
@@ -280,10 +248,8 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     finally:
         session.close()
 
-    mini_app_link = _build_tma_battle_link(battle_id)
-    link = _build_bot_start_link(battle_id)
-
-    # Notify opponent (best-effort)
+    # Optional Telegram message (best-effort), but challenge is always accepted in-app.
+    notified = False
     try:
         from tma.api.bot.handlers import notify_battle_challenge
         await notify_battle_challenge(
@@ -291,17 +257,17 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
             challenger_name=tg.get("username") or tg.get("first_name", "Someone"),
             battle_id=battle_id,
             wager_tier=body.wager_tier,
-            link=link,
         )
+        notified = True
     except Exception as e:
         print(f"[BATTLE] Notification failed (non-critical): {e}")
 
     return {
         "battle_id": battle_id,
-        "link": link,
-        "mini_app_link": mini_app_link,
         "status": "waiting",
         "expires_at": expires.isoformat(),
+        "in_app_only": True,
+        "notification_sent": notified,
     }
 
 
