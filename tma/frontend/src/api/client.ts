@@ -41,20 +41,35 @@ function getStableInitData(): string {
   }
 }
 
-api.interceptors.request.use(config => {
-  // Keep a stable initData token across route changes and SDK timing quirks.
-  const initDataRaw = getStableInitData()
+async function waitForInitData(maxWaitMs = 2000): Promise<string> {
+  const existing = getStableInitData()
+  if (existing) return existing
 
-  if (initDataRaw) {
-    config.headers['Authorization'] = `tma ${initDataRaw}`
-    // Proxy-safe fallback in case Authorization is stripped upstream.
-    config.headers['X-Telegram-Init-Data'] = initDataRaw
-  } else if (import.meta.env.DEV) {
-    const devInitData = import.meta.env.VITE_DEV_INIT_DATA || 'dev'
-    config.headers['Authorization'] = `tma ${devInitData}`
-    config.headers['X-Telegram-Init-Data'] = devInitData
+  const started = Date.now()
+  while (Date.now() - started < maxWaitMs) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const next = getStableInitData()
+    if (next) return next
   }
-  return config
+  return ''
+}
+
+api.interceptors.request.use(config => {
+  return Promise.resolve().then(async () => {
+    // Keep a stable initData token across route changes and SDK timing quirks.
+    const initDataRaw = await waitForInitData()
+
+    if (initDataRaw) {
+      config.headers['Authorization'] = `tma ${initDataRaw}`
+      // Proxy-safe fallback in case Authorization is stripped upstream.
+      config.headers['X-Telegram-Init-Data'] = initDataRaw
+    } else if (import.meta.env.DEV) {
+      const devInitData = import.meta.env.VITE_DEV_INIT_DATA || 'dev'
+      config.headers['Authorization'] = `tma ${devInitData}`
+      config.headers['X-Telegram-Init-Data'] = devInitData
+    }
+    return config
+  })
 })
 
 export default api
