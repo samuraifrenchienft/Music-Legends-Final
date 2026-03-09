@@ -4,6 +4,29 @@ import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainBut
 import AnimatedCard from '../components/AnimatedCard'
 import { getEconomy, claimDaily } from '../api/client'
 
+const DAY_SECONDS = 24 * 60 * 60
+
+function parseServerTimestamp(value?: string): Date | null {
+  if (!value) return null
+  // Backend timestamps are UTC-ish ISO strings and may arrive without timezone.
+  // Force UTC when no explicit timezone is present to avoid local-time inflation.
+  const hasTz = /[zZ]$|[+-]\d{2}:\d{2}$/.test(value)
+  const normalized = hasTz ? value : `${value}Z`
+  const dt = new Date(normalized)
+  if (Number.isNaN(dt.getTime())) return null
+  return dt
+}
+
+function getDailyRemainingSeconds(lastClaim?: string): number {
+  const last = parseServerTimestamp(lastClaim)
+  if (!last) return 0
+  const nowMs = Date.now()
+  const nextMs = last.getTime() + DAY_SECONDS * 1000
+  const raw = Math.floor((nextMs - nowMs) / 1000)
+  // Never show >24h cooldown due to timezone/clock anomalies.
+  return Math.max(0, Math.min(DAY_SECONDS, raw))
+}
+
 export default function Daily() {
   const [economy, setEconomy] = useState<any>(null)
   const [claiming, setClaiming] = useState(false)
@@ -18,11 +41,8 @@ export default function Daily() {
     getEconomy()
       .then(r => {
         setEconomy(r.data)
-        const last = r.data.last_daily_claim
-        if (!last) { setCanClaim(true); return }
-        const next = new Date(last)
-        next.setHours(next.getHours() + 24)
-        setCanClaim(next.getTime() - Date.now() <= 0)
+        const remaining = getDailyRemainingSeconds(r.data.last_daily_claim)
+        setCanClaim(remaining <= 0)
       })
       .catch((e: any) => setError(`API error ${e?.response?.status || 'network'}: ${e?.response?.data?.detail || e?.message || 'Could not load economy data'}`))
   }, [])
@@ -32,14 +52,12 @@ export default function Daily() {
   // Live countdown ticker
   useEffect(() => {
     const tick = () => {
-      if (!economy?.last_daily_claim) return
-      const next = new Date(economy.last_daily_claim)
-      next.setHours(next.getHours() + 24)
-      const diff = next.getTime() - Date.now()
-      if (diff <= 0) { setCanClaim(true); setTimeLeft(''); return }
-      const h = Math.floor(diff / 3600000)
-      const m = Math.floor((diff % 3600000) / 60000)
-      const s = Math.floor((diff % 60000) / 1000)
+      const remaining = getDailyRemainingSeconds(economy?.last_daily_claim)
+      if (remaining <= 0) { setCanClaim(true); setTimeLeft(''); return }
+      setCanClaim(false)
+      const h = Math.floor(remaining / 3600)
+      const m = Math.floor((remaining % 3600) / 60)
+      const s = Math.floor(remaining % 60)
       setTimeLeft(`${h}h ${m}m ${s}s`)
     }
     tick()

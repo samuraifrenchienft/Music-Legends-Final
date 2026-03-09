@@ -4,7 +4,7 @@ import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainBut
          hapticFeedbackNotificationOccurred, openTelegramLink } from '@telegram-apps/sdk'
 import { getPacks, getCards, createChallenge, acceptBattle, getBattle } from '../api/client'
 
-type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'result'
+type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
 const RARITY_COLORS: Record<string, string> = {
   common: '#95A5A6', rare: '#4488FF', epic: '#6B2EBE', legendary: '#F4A800', mythic: '#E74C3C',
@@ -20,6 +20,7 @@ export default function Battle() {
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [battleLink, setBattleLink] = useState('')
   const [result, setResult] = useState<any>(null)
+  const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   useEffect(() => {
@@ -62,11 +63,31 @@ export default function Battle() {
           setPacks([])
         }
       })
+    if (battleIdParam) {
+      getBattle(battleIdParam)
+        .then((r) => {
+          if (r.data?.status === 'complete' && r.data?.result) {
+            setResult(r.data.result)
+            setPhase('result')
+          } else {
+            setPhase('accept')
+          }
+        })
+        .catch(() => {
+          setPhase('accept')
+        })
+        .finally(() => setLoadingBattle(false))
+    } else {
+      setLoadingBattle(false)
+    }
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
   const handleChallenge = async () => {
     if (!selectedPackId) return
+    const selected = packs.find((p: any) => String(p.pack_id) === String(selectedPackId))
+    const label = selected?.pack_name || selected?.name || selectedPackId
+    if (!window.confirm(`Create battle challenge with "${label}"?`)) return
     try {
       const body: any = { opponent_telegram_id: 0, wager_tier: 'casual' }
       if (selectionType === 'card' || selectedPackId.startsWith('card:')) body.card_id = selectedPackId.replace('card:', '')
@@ -77,14 +98,18 @@ export default function Battle() {
       setPhase('challenge-sent')
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
       pollRef.current = setInterval(async () => {
-        const poll = await getBattle(r.data.battle_id)
-        if (poll.data.status === 'complete') {
-          clearInterval(pollRef.current)
-          setResult(poll.data.result)
-          setPhase('result')
-          if (hapticFeedbackNotificationOccurred.isAvailable()) {
-            hapticFeedbackNotificationOccurred(poll.data.result?.winner === 1 ? 'success' : 'error')
+        try {
+          const poll = await getBattle(r.data.battle_id)
+          if (poll.data.status === 'complete') {
+            clearInterval(pollRef.current)
+            setResult(poll.data.result)
+            setPhase('result')
+            if (hapticFeedbackNotificationOccurred.isAvailable()) {
+              hapticFeedbackNotificationOccurred(poll.data.result?.winner === 1 ? 'success' : 'error')
+            }
           }
+        } catch {
+          // Keep polling; transient network errors should not break battle completion flow.
         }
       }, 3000)
     } catch (e: any) {
@@ -94,7 +119,11 @@ export default function Battle() {
 
   const handleAccept = async () => {
     if (!selectedPackId || !battleId) return
+    const selected = packs.find((p: any) => String(p.pack_id) === String(selectedPackId))
+    const label = selected?.pack_name || selected?.name || selectedPackId
+    if (!window.confirm(`Confirm accepting this battle using "${label}"?`)) return
     try {
+      setPhase('resolving')
       const body: any = {}
       if (selectionType === 'card' || selectedPackId.startsWith('card:')) body.card_id = selectedPackId.replace('card:', '')
       else body.pack_id = selectedPackId
@@ -139,6 +168,10 @@ export default function Battle() {
         else window.open(battleLink, '_blank')
       })
       return () => { off(); unmountMainButton() }
+    }
+    if (phase === 'resolving') {
+      setMainButtonParams({ text: 'Resolving Battle...', isEnabled: false, isVisible: true, backgroundColor: '#6B2EBE' })
+      return () => { unmountMainButton() }
     }
     if (phase === 'result') {
       // "Play Again" button on result screen
@@ -199,9 +232,21 @@ export default function Battle() {
 
   return (
     <div style={{ padding: '16px 16px 80px' }}>
+      {loadingBattle && (
+        <div style={{ textAlign: 'center', color: '#8888aa', padding: '12px 0 16px' }}>
+          Loading battle status...
+        </div>
+      )}
       <h3 style={{ color: '#F4A800', marginBottom: 6 }}>
         {phase === 'accept' ? '⚔️ Battle Challenge!' : '⚔️ Battle'}
       </h3>
+      {phase === 'resolving' && (
+        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+          <div style={{ fontSize: 36 }}>⚡</div>
+          <div style={{ color: '#F4A800', fontWeight: 700 }}>Battle in progress...</div>
+          <div style={{ color: '#8888aa', fontSize: 12, marginTop: 6 }}>Calculating winner and rewards.</div>
+        </div>
+      )}
       {phase === 'accept' && <p style={{ color: '#F4A800', fontSize: 13, marginBottom: 12 }}>Someone challenged you! Pick your best card or pack.</p>}
       {phase === 'challenge-sent' && (
         <div style={{ textAlign: 'center', padding: 20 }}>

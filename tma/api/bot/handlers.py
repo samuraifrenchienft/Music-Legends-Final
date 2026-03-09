@@ -18,7 +18,7 @@ def _base_tma_url() -> str:
     raw = (os.environ.get("TMA_URL") or "").strip()
     if not raw:
         bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        return f"https://t.me/{bot_username}"
+        return f"https://t.me/{bot_username}/app"
     if raw.startswith("t.me/"):
         raw = f"https://{raw}"
     if raw.startswith("http://"):
@@ -26,7 +26,11 @@ def _base_tma_url() -> str:
     parsed = urlparse(raw)
     if parsed.scheme != "https":
         bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
-        return f"https://t.me/{bot_username}"
+        return f"https://t.me/{bot_username}/app"
+    bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+    if parsed.netloc == "t.me" and parsed.path.strip("/") in {bot_username, ""}:
+        # Prefer explicit mini app route when URL points to bare bot profile.
+        return f"https://t.me/{bot_username}/app"
     return raw
 
 
@@ -157,13 +161,17 @@ async def notify_battle_challenge(
     if not _bot:
         return
     try:
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⚔️ Accept Battle", url=link)
+        ]])
         await _bot.send_message(
             chat_id=opponent_telegram_id,
             text=(
                 f"⚔️ *{challenger_name}* challenged you to a battle!\n"
                 f"Tier: *{wager_tier.upper()}*\n\n"
-                f"[🎴 Accept the challenge]({link})"
+                f"If the button does not open the battle, use /start battle_{battle_id}."
             ),
+            reply_markup=keyboard,
             parse_mode="Markdown",
         )
     except Exception as e:

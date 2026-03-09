@@ -1,7 +1,9 @@
 """Battle router — share-link PvP battles."""
 import json
 import secrets
+import os
 from datetime import datetime, timedelta
+from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from tma.api.auth import get_tg_user
@@ -28,6 +30,34 @@ class AcceptRequest(BaseModel):
 
 def _make_battle_id() -> str:
     return secrets.token_hex(3).upper()
+
+
+def _build_tma_battle_link(battle_id: str) -> str:
+    """
+    Build a safe Mini App deep-link for battle acceptance.
+    Uses configured TMA_URL when present; otherwise falls back to current bot username.
+    """
+    raw = (os.environ.get("TMA_URL") or "").strip()
+    if not raw:
+        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+        raw = f"https://t.me/{bot_username}/app"
+    elif raw.startswith("t.me/"):
+        raw = f"https://{raw}"
+    elif raw.startswith("http://"):
+        raw = "https://" + raw[len("http://") :]
+
+    parsed = urlparse(raw)
+    if parsed.scheme != "https":
+        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+        parsed = urlparse(f"https://t.me/{bot_username}/app")
+    elif parsed.netloc == "t.me":
+        bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+        if parsed.path.strip("/") in {bot_username, ""}:
+            parsed = urlparse(f"https://t.me/{bot_username}/app")
+
+    q = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    q["startapp"] = f"battle_{battle_id}"
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(q), parsed.fragment))
 
 
 def _card_to_artist(card: dict) -> ArtistCard:
@@ -224,9 +254,7 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     finally:
         session.close()
 
-    import os
-    tma_url = os.environ.get("TMA_URL", "https://t.me/MusicLegendsBot/app")
-    link = f"{tma_url}?startapp=battle_{battle_id}"
+    link = _build_tma_battle_link(battle_id)
 
     # Notify opponent (best-effort)
     try:
