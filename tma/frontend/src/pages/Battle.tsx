@@ -31,10 +31,11 @@ export default function Battle() {
   const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const incomingPollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const registerPollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const incomingCountRef = useRef<number>(0)
 
   const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
-  const autoResolvedPartner = selectedPartner || resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
+  const autoResolvedPartner = resolveAutoPartner(selectedPartner, partnerResults, normalizedPartnerQuery)
 
   const loadOpponents = async () => {
     setLoadingOpponents(true)
@@ -133,6 +134,11 @@ export default function Battle() {
     }
     loadBattleUpdates().catch(() => undefined)
     loadOpponents().catch(() => undefined)
+    // Keep this user battle-registered while the screen is open.
+    registerBattlePlayer().catch(() => undefined)
+    registerPollRef.current = setInterval(() => {
+      registerBattlePlayer().catch(() => undefined)
+    }, 30000)
     incomingPollRef.current = setInterval(() => {
       loadBattleUpdates().catch(() => undefined)
       loadOpponents().catch(() => undefined)
@@ -140,6 +146,7 @@ export default function Battle() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
       if (incomingPollRef.current) clearInterval(incomingPollRef.current)
+      if (registerPollRef.current) clearInterval(registerPollRef.current)
     }
   }, [])
 
@@ -148,13 +155,9 @@ export default function Battle() {
   }, [phase])
 
   useEffect(() => {
-    const q = normalizedPartnerQuery
-    if (!q) return
-    const match = partnerResults.find((p: any) =>
-      String(p?.username || '').toLowerCase() === q || String(p?.telegram_id || '') === q.replace(/\D/g, ''),
-    )
-    if (match) setSelectedPartner(match)
-  }, [partnerQuery])
+    const next = resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
+    setSelectedPartner(next)
+  }, [partnerQuery, partnerResults])
 
   const filteredPartners = normalizedPartnerQuery
     ? partnerResults.filter((p: any) => {
@@ -563,7 +566,22 @@ const resolvePartnerFromQuery = (results: any[], normalizedQuery: string) => {
     const exactId = results.find((p: any) => String(p?.telegram_id || '') === digitsOnly)
     if (exactId) return exactId
   }
-  return results.length === 1 ? results[0] : null
+  const startsWith = results.find((p: any) => String(p?.username || '').toLowerCase().startsWith(normalizedQuery))
+  if (startsWith) return startsWith
+  const contains = results.find((p: any) => String(p?.username || '').toLowerCase().includes(normalizedQuery))
+  if (contains) return contains
+  return null
+}
+
+const resolveAutoPartner = (selected: any, results: any[], normalizedQuery: string) => {
+  if (selected) {
+    if (!normalizedQuery) return selected
+    const uname = String(selected?.username || '').toLowerCase()
+    const tid = String(selected?.telegram_id || '')
+    const digits = normalizedQuery.replace(/\D/g, '')
+    if (uname.includes(normalizedQuery) || (!!digits && tid.includes(digits))) return selected
+  }
+  return resolvePartnerFromQuery(results, normalizedQuery)
 }
 
 const getCountdownLabel = (expiresAt: string) => {
