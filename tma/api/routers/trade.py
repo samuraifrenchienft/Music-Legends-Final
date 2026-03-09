@@ -9,6 +9,31 @@ from models import User
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
 
+
+def _extract_telegram_id(db, user: User) -> int | None:
+    """Best-effort Telegram ID extraction across legacy/new schemas."""
+    tag = (user.discord_tag or "").strip()
+    if tag.startswith("telegram:"):
+        try:
+            return int(tag.split(":", 1)[1])
+        except Exception:
+            return None
+
+    try:
+        uid = int(str(user.user_id))
+    except Exception:
+        return None
+
+    # New schema: offset id.
+    if uid >= db._TG_OFFSET:
+        return uid - db._TG_OFFSET
+
+    # Legacy Telegram IDs are much smaller than Discord snowflakes.
+    if 1_000_000 <= uid <= 9_999_999_999:
+        return uid
+
+    return None
+
 class CreateTradeRequest(BaseModel):
     partner_id: int
     offered_card_ids: List[str]
@@ -77,25 +102,18 @@ def search_trade_partners(
     try:
         rows = (
             session.query(User)
-            .filter(User.discord_tag.like("telegram:%"))
             .order_by(desc(User.last_active))
-            .limit(200)
+            .limit(500)
             .all()
         )
         out = []
         for u in rows:
             if str(u.user_id) == me_user_id:
                 continue
-            tag = u.discord_tag or ""
-            tg_id = None
-            if tag.startswith("telegram:"):
-                tg_id = tag.split(":", 1)[1]
-            if not tg_id:
-                try:
-                    if int(str(u.user_id)) >= db._TG_OFFSET:
-                        tg_id = str(int(str(u.user_id)) - db._TG_OFFSET)
-                except Exception:
-                    tg_id = None
+            tg_id_int = _extract_telegram_id(db, u)
+            if not tg_id_int:
+                continue
+            tg_id = str(tg_id_int)
             if not tg_id:
                 continue
 
@@ -108,7 +126,7 @@ def search_trade_partners(
                 if not hit:
                     continue
             out.append({
-                "telegram_id": int(tg_id),
+                "telegram_id": tg_id_int,
                 "username": username or f"user_{tg_id}",
             })
 
@@ -123,6 +141,10 @@ def get_partner_cards(partner_telegram_id: int, tg: dict = Depends(get_tg_user))
     db = get_db()
     # Ensure caller exists/authenticated
     db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
-    partner_user_id = str(db._TG_OFFSET + int(partner_telegram_id))
+    partner = db.get_telegram_user_by_id(int(partner_telegram_id))
+    partner_user_id = str(partner["user_id"]) if partner else str(db._TG_OFFSET + int(partner_telegram_id))
     cards = db.get_user_collection(partner_user_id)
+    if not cards and not partner:
+        # Legacy fallback in case the row uses raw telegram id.
+        cards = db.get_user_collection(str(partner_telegram_id))
     return {"cards": cards[:100], "total": len(cards)}

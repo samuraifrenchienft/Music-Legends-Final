@@ -27,6 +27,8 @@ export default function Trade() {
   const [partnerRarity, setPartnerRarity] = useState('all')
   const [myCardSearch, setMyCardSearch] = useState('')
   const [partnerCardSearch, setPartnerCardSearch] = useState('')
+  const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
+  const autoResolvedPartner = selectedPartner || (partnerResults.length === 1 ? partnerResults[0] : null)
 
   const myTopCards = useMemo(
     () => filterCards(myCards, myRarity, myCardSearch).slice(0, 40),
@@ -83,7 +85,8 @@ export default function Trade() {
   }
 
   const onCreate = async () => {
-    const pid = Number(selectedPartner?.telegram_id)
+    const partner = autoResolvedPartner
+    const pid = Number(partner?.telegram_id)
     if (!Number.isFinite(pid) || pid <= 0) return alert('Select a trade partner')
     setCreating(true)
     try {
@@ -110,6 +113,13 @@ export default function Trade() {
       setCreating(false)
     }
   }
+
+  useEffect(() => {
+    // Auto-load partner cards when a single search result is present and user hasn't manually picked.
+    if (selectedPartner || !autoResolvedPartner?.telegram_id || !normalizedPartnerQuery) return
+    pickPartner(autoResolvedPartner).catch(() => undefined)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partnerResults, normalizedPartnerQuery])
 
   const onAccept = async (tradeId: string) => {
     setBusyTradeId(tradeId)
@@ -174,10 +184,13 @@ export default function Trade() {
           </div>
         )}
 
-        {selectedPartner && (
+        {(selectedPartner || autoResolvedPartner) && (
           <div style={{ marginBottom: 8, fontSize: 12, color: '#F4A800' }}>
-            <span style={avatarBadgeStyle}>{avatarInitial(selectedPartner.username)}</span>{' '}
-            Trading with: <b>@{selectedPartner.username}</b> (ID: {selectedPartner.telegram_id})
+            <span style={avatarBadgeStyle}>{avatarInitial((selectedPartner || autoResolvedPartner).username)}</span>{' '}
+            Trading with: <b>@{(selectedPartner || autoResolvedPartner).username}</b> (ID: {(selectedPartner || autoResolvedPartner).telegram_id})
+            {!selectedPartner && autoResolvedPartner && (
+              <span style={{ color: '#2ECC71' }}> • auto-selected</span>
+            )}
           </div>
         )}
 
