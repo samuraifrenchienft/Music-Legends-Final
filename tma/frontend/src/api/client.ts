@@ -36,6 +36,7 @@ export const acceptBattle    = (id: string, body: object) => api.post(`/api/batt
 export const cancelBattle    = (id: string)               => api.post(`/api/battle/${id}/cancel`)
 export const getBattle       = (id: string)               => api.get(`/api/battle/${id}`)
 export const getIncomingBattles = ()                      => api.get('/api/battle/incoming')
+export const getBattleUpdates = ()                        => api.get('/api/battle/updates')
 export const searchPlayers   = (q: string, limit = 10)    => api.get(`/api/players/search?q=${encodeURIComponent(q)}&limit=${limit}`)
 export const registerBattlePlayer = ()                    => api.post('/api/battle/register')
 export const getBattleOpponents   = ()                    => api.get('/api/battle/opponents')

@@ -248,26 +248,11 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     finally:
         session.close()
 
-    # Optional Telegram message (best-effort), but challenge is always accepted in-app.
-    notified = False
-    try:
-        from tma.api.bot.handlers import notify_battle_challenge
-        await notify_battle_challenge(
-            opponent_telegram_id=body.opponent_telegram_id,
-            challenger_name=tg.get("username") or tg.get("first_name", "Someone"),
-            battle_id=battle_id,
-            wager_tier=body.wager_tier,
-        )
-        notified = True
-    except Exception as e:
-        print(f"[BATTLE] Notification failed (non-critical): {e}")
-
     return {
         "battle_id": battle_id,
         "status": "waiting",
         "expires_at": expires.isoformat(),
         "in_app_only": True,
-        "notification_sent": notified,
     }
 
 
@@ -336,6 +321,85 @@ def list_incoming_challenges(tg: dict = Depends(get_tg_user)):
         session.close()
 
 
+@router.get("/updates")
+def battle_updates(tg: dict = Depends(get_tg_user)):
+    """
+    Return in-app battle updates for current user:
+    - incoming waiting challenges
+    - outgoing waiting challenges
+    - recent completed battles with result payload
+    """
+    db = get_db()
+    me = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
+    me_id = str(me["user_id"])
+    now = datetime.utcnow()
+
+    session = db.get_session()
+    try:
+        rows = (
+            session.query(PendingTmaBattle)
+            .filter(
+                (PendingTmaBattle.challenger_id == me_id) |
+                (PendingTmaBattle.opponent_id == me_id)
+            )
+            .order_by(desc(PendingTmaBattle.created_at))
+            .limit(100)
+            .all()
+        )
+        user_ids = {
+            str(r.challenger_id) for r in rows
+        } | {
+            str(r.opponent_id) for r in rows if r.opponent_id
+        }
+        users = (
+            session.query(User).filter(User.user_id.in_(list(user_ids))).all()
+            if user_ids else []
+        )
+        u_map = {str(u.user_id): u for u in users}
+
+        incoming = []
+        outgoing = []
+        completed = []
+        for r in rows:
+            expired = bool(r.expires_at and r.expires_at <= now)
+            status = "expired" if (r.status == "waiting" and expired) else r.status
+
+            challenger_user = u_map.get(str(r.challenger_id))
+            opponent_user = u_map.get(str(r.opponent_id)) if r.opponent_id else None
+            challenger_name = challenger_user.username if challenger_user and challenger_user.username else f"user_{r.challenger_id}"
+            opponent_name = opponent_user.username if opponent_user and opponent_user.username else (f"user_{r.opponent_id}" if r.opponent_id else "unknown")
+
+            payload = {
+                "battle_id": r.battle_id,
+                "status": status,
+                "wager_tier": r.wager_tier or "casual",
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+                "challenger_user_id": str(r.challenger_id),
+                "opponent_user_id": str(r.opponent_id) if r.opponent_id else None,
+                "challenger_username": challenger_name,
+                "opponent_username": opponent_name,
+                "challenger_telegram_id": _extract_telegram_id(db, challenger_user) if challenger_user else None,
+                "opponent_telegram_id": _extract_telegram_id(db, opponent_user) if opponent_user else None,
+            }
+
+            if str(r.opponent_id) == me_id and status == "waiting":
+                incoming.append(payload)
+            if str(r.challenger_id) == me_id and status == "waiting":
+                outgoing.append(payload)
+            if status == "complete":
+                result = json.loads(r.result_json) if r.result_json else None
+                completed.append({**payload, "result": result})
+
+        return {
+            "incoming": incoming[:30],
+            "outgoing": outgoing[:30],
+            "completed": completed[:30],
+        }
+    finally:
+        session.close()
+
+
 @router.post("/{battle_id}/accept")
 async def accept_challenge(battle_id: str, body: AcceptRequest,
                            tg: dict = Depends(get_tg_user)):
@@ -388,18 +452,6 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
         session.rollback()
     finally:
         session.close()
-
-    # Notify challenger (best-effort)
-    try:
-        from tma.api.bot.handlers import notify_battle_result
-        await notify_battle_result(
-            challenger_id=battle["challenger_id"],
-            result=result,
-            opponent_name=tg.get("username") or tg.get("first_name", "Opponent"),
-            battle_id=battle_id,
-        )
-    except Exception as e:
-        print(f"[BATTLE] Result notification failed (non-critical): {e}")
 
     return {"battle_id": battle_id, "result": result}
 

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred } from '@telegram-apps/sdk'
-import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, registerBattlePlayer, getBattleOpponents } from '../api/client'
+import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getBattleUpdates, registerBattlePlayer, getBattleOpponents } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
@@ -21,6 +21,7 @@ export default function Battle() {
   const [partnerResults, setPartnerResults] = useState<any[]>([])
   const [selectedPartner, setSelectedPartner] = useState<any>(null)
   const [incomingChallenges, setIncomingChallenges] = useState<any[]>([])
+  const [outgoingChallenges, setOutgoingChallenges] = useState<any[]>([])
   const [registeringBattle, setRegisteringBattle] = useState(false)
   const [loadingOpponents, setLoadingOpponents] = useState(false)
   const [battleId, setBattleId] = useState(battleIdParam || '')
@@ -47,17 +48,28 @@ export default function Battle() {
     }
   }
 
-  const loadIncoming = async () => {
+  const loadBattleUpdates = async () => {
     try {
-      const r = await getIncomingBattles()
-      const next = r.data?.challenges || []
-      if (next.length > incomingCountRef.current && hapticFeedbackNotificationOccurred.isAvailable()) {
+      const r = await getBattleUpdates()
+      const nextIncoming = r.data?.incoming || []
+      if (nextIncoming.length > incomingCountRef.current && hapticFeedbackNotificationOccurred.isAvailable()) {
         hapticFeedbackNotificationOccurred('success')
       }
-      incomingCountRef.current = next.length
-      setIncomingChallenges(next)
+      incomingCountRef.current = nextIncoming.length
+      setIncomingChallenges(nextIncoming)
+      setOutgoingChallenges(r.data?.outgoing || [])
+      const completed = r.data?.completed || []
+      if (battleId && phase === 'challenge-sent') {
+        const completedCurrent = completed.find((b: any) => String(b?.battle_id) === String(battleId) && b?.result)
+        if (completedCurrent) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          setResult(completedCurrent.result)
+          setPhase('result')
+        }
+      }
     } catch {
       setIncomingChallenges([])
+      setOutgoingChallenges([])
     }
   }
 
@@ -119,10 +131,10 @@ export default function Battle() {
     } else {
       setLoadingBattle(false)
     }
-    loadIncoming().catch(() => undefined)
+    loadBattleUpdates().catch(() => undefined)
     loadOpponents().catch(() => undefined)
     incomingPollRef.current = setInterval(() => {
-      loadIncoming().catch(() => undefined)
+      loadBattleUpdates().catch(() => undefined)
       loadOpponents().catch(() => undefined)
     }, 3000)
     return () => {
@@ -185,7 +197,7 @@ export default function Battle() {
       setExpiresAt(r.data?.expires_at || null)
       setPhase('challenge-sent')
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
-      loadIncoming().catch(() => undefined)
+      loadBattleUpdates().catch(() => undefined)
       pollRef.current = setInterval(async () => {
         try {
           const poll = await getBattle(r.data.battle_id)
@@ -223,7 +235,7 @@ export default function Battle() {
       const r = await acceptBattle(battleId, body)
       setResult(r.data.result)
       setPhase('result')
-      loadIncoming().catch(() => undefined)
+      loadBattleUpdates().catch(() => undefined)
       if (hapticFeedbackNotificationOccurred.isAvailable()) {
         hapticFeedbackNotificationOccurred(r.data.result?.winner === 2 ? 'success' : 'error')
       }
@@ -242,7 +254,7 @@ export default function Battle() {
       setExpiresAt(null)
       setCountdown('')
       setPhase('select-pack')
-      loadIncoming().catch(() => undefined)
+      loadBattleUpdates().catch(() => undefined)
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
     } catch (e: any) {
       alert(e?.response?.data?.detail || 'Failed to cancel challenge')
@@ -479,6 +491,19 @@ export default function Battle() {
               >
                 Accept
               </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {phase === 'select-pack' && outgoingChallenges.length > 0 && (
+        <div style={{ background: '#1a1740', border: '1px solid #2a2760', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{ color: '#F4A800', fontWeight: 700, marginBottom: 6 }}>Outgoing Challenges</div>
+          {outgoingChallenges.slice(0, 8).map((ch: any) => (
+            <div key={ch.battle_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #2a2760' }}>
+              <div style={{ fontSize: 12 }}>
+                <div style={{ color: '#fff' }}>Waiting for @{ch.opponent_username || 'player'}</div>
+                <div style={{ color: '#8888aa' }}>Tier: {(ch.wager_tier || 'casual').toUpperCase()} • #{String(ch.battle_id).slice(0, 6)}</div>
+              </div>
             </div>
           ))}
         </div>
