@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred } from '@telegram-apps/sdk'
-import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, searchTradePartners } from '../api/client'
+import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getIncomingBattles, searchPlayers } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
@@ -113,8 +113,8 @@ export default function Battle() {
         return
       }
       try {
-        const r = await searchTradePartners(q)
-        if (!cancelled) setPartnerResults(r.data?.partners || [])
+        const r = await searchPlayers(q)
+        if (!cancelled) setPartnerResults(r.data?.players || [])
       } catch {
         if (!cancelled) setPartnerResults([])
       }

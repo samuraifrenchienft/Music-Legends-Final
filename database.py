@@ -2241,6 +2241,7 @@ class Database:
                 session.flush()
 
             trade = Trade(
+                trade_id=Trade._next_trade_id(session),
                 user_a=int(initiator_id) if discord_mode else self._tg_int(initiator_id),
                 user_b=int(partner_id) if discord_mode else self._TG_OFFSET + partner_id,
                 cards_a=offered_cards,
