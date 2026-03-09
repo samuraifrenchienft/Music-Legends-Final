@@ -16,12 +16,14 @@ router = APIRouter(prefix="/api/battle", tags=["battle"])
 
 class ChallengeRequest(BaseModel):
     opponent_telegram_id: int
-    pack_id: str
+    pack_id: str | None = None
+    card_id: str | None = None
     wager_tier: str = "casual"
 
 
 class AcceptRequest(BaseModel):
-    pack_id: str
+    pack_id: str | None = None
+    card_id: str | None = None
 
 
 def _make_battle_id() -> str:
@@ -40,6 +42,82 @@ def _card_to_artist(card: dict) -> ArtistCard:
         thumbnail=card.get("image_url", ""),
         rarity=card.get("rarity", "common"),
     )
+
+
+def _build_collection_pack(db, user_id: str, focus_card_id: str | None = None) -> dict | None:
+    """
+    Build a synthetic battle pack from a user's collection.
+    If focus_card_id is provided, it is forced as champion and surrounded by strongest supports.
+    """
+    cards = db.get_user_collection(user_id) or []
+    if not cards:
+        return None
+
+    # Deduplicate by card_id and sort strongest-first.
+    unique = {}
+    for c in cards:
+        cid = str(c.get("card_id") or "")
+        if cid and cid not in unique:
+            unique[cid] = c
+    ordered = sorted(unique.values(), key=compute_card_power, reverse=True)
+    if not ordered:
+        return None
+
+    selected = None
+    if focus_card_id:
+        selected = next((c for c in ordered if str(c.get("card_id")) == str(focus_card_id)), None)
+        if not selected:
+            return None
+        supports = [c for c in ordered if str(c.get("card_id")) != str(focus_card_id)][:4]
+        squad = [selected] + supports
+        name = selected.get("name") or "Selected Card"
+        pack_id = f"card:{focus_card_id}"
+        pack_name = f"{name} Squad"
+    else:
+        squad = ordered[:5]
+        pack_id = f"collection:{user_id}"
+        pack_name = "My Collection Squad"
+
+    return {
+        "pack_id": pack_id,
+        "pack_name": pack_name,
+        "pack_tier": "community",
+        "genre": "Music",
+        "cards": squad,
+    }
+
+
+def _resolve_selected_pack(db, user_id: str, pack_id: str | None, card_id: str | None) -> tuple[str, dict]:
+    """
+    Resolve battle selection from either purchased pack_id or selected card_id.
+    Returns (selection_ref, pack_payload).
+    """
+    if pack_id:
+        packs = db.get_user_purchased_packs(user_id)
+        resolved = next((p for p in packs if str(p.get("pack_id")) == str(pack_id)), None)
+        if not resolved:
+            raise HTTPException(403, "You don't own that pack")
+        return str(pack_id), resolved
+
+    if card_id:
+        pack = _build_collection_pack(db, user_id, focus_card_id=card_id)
+        if not pack:
+            raise HTTPException(403, "You don't own that card")
+        return f"card:{card_id}", pack
+
+    raise HTTPException(400, "Select a pack or a card")
+
+
+def _resolve_pack_from_ref(db, user_id: str, selection_ref: str) -> dict | None:
+    """Resolve a stored battle selection reference into a concrete pack payload."""
+    if selection_ref.startswith("card:"):
+        card_id = selection_ref.split(":", 1)[1]
+        return _build_collection_pack(db, user_id, focus_card_id=card_id)
+    if selection_ref.startswith("collection:"):
+        return _build_collection_pack(db, user_id)
+
+    packs = db.get_user_purchased_packs(user_id)
+    return next((p for p in packs if str(p.get("pack_id")) == str(selection_ref)), None)
 
 
 def _run_battle(db, challenger_id: int, opponent_id: int,
@@ -104,9 +182,9 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     db = get_db()
     challenger = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
 
-    packs = db.get_user_purchased_packs(challenger["user_id"])
-    if not any(str(p.get("pack_id")) == body.pack_id for p in packs):
-        raise HTTPException(403, "You don't own that pack")
+    selection_ref, _challenger_pack = _resolve_selected_pack(
+        db, challenger["user_id"], body.pack_id, body.card_id
+    )
 
     battle_id = _make_battle_id()
     expires = datetime.utcnow() + timedelta(hours=24)
@@ -120,7 +198,7 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
             battle_id=battle_id,
             challenger_id=challenger["user_id"],
             opponent_id=opponent_user["user_id"],
-            challenger_pack=body.pack_id,
+            challenger_pack=selection_ref,
             wager_tier=body.wager_tier,
             status="waiting",
             expires_at=expires,
@@ -181,16 +259,13 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
     if battle["expires_at"] and datetime.utcnow() > battle["expires_at"]:
         raise HTTPException(400, "Battle link has expired")
 
-    packs = db.get_user_purchased_packs(opponent["user_id"])
-    if not any(str(p.get("pack_id")) == body.pack_id for p in packs):
-        raise HTTPException(403, "You don't own that pack")
-
-    c_packs = db.get_user_purchased_packs(battle["challenger_id"])
-    c_pack = next((p for p in c_packs if str(p.get("pack_id")) == battle["challenger_pack"]), None)
-    o_pack = next((p for p in packs if str(p.get("pack_id")) == body.pack_id), None)
+    opponent_ref, o_pack = _resolve_selected_pack(
+        db, opponent["user_id"], body.pack_id, body.card_id
+    )
+    c_pack = _resolve_pack_from_ref(db, battle["challenger_id"], str(battle["challenger_pack"]))
 
     if not c_pack or not o_pack:
-        raise HTTPException(400, "Could not resolve packs for battle")
+        raise HTTPException(400, "Could not resolve battle squads")
 
     result = _run_battle(db, battle["challenger_id"], opponent["user_id"],
                          c_pack, o_pack, battle["wager_tier"])
@@ -201,7 +276,7 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
         if battle_row:
             battle_row.status = "complete"
             battle_row.opponent_id = opponent["user_id"]
-            battle_row.opponent_pack = body.pack_id
+            battle_row.opponent_pack = opponent_ref
             battle_row.result_json = json.dumps(result)
             session.commit()
     except Exception as e:

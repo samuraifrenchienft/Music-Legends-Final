@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred, openTelegramLink } from '@telegram-apps/sdk'
-import { getPacks, createChallenge, acceptBattle, getBattle } from '../api/client'
+import { getPacks, getCards, createChallenge, acceptBattle, getBattle } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'result'
 
@@ -16,6 +16,7 @@ export default function Battle() {
   const [phase, setPhase] = useState<Phase>(battleIdParam ? 'accept' : 'select-pack')
   const [packs, setPacks] = useState<any[]>([])
   const [selectedPackId, setSelectedPackId] = useState<string>('')
+  const [selectionType, setSelectionType] = useState<'pack' | 'card'>('pack')
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [battleLink, setBattleLink] = useState('')
   const [result, setResult] = useState<any>(null)
@@ -23,15 +24,54 @@ export default function Battle() {
 
   useEffect(() => {
     getPacks()
-      .then(r => setPacks(r.data.packs))
-      .catch(() => setPacks([]))
+      .then(async r => {
+        const ownedPacks = r.data.packs || []
+        if (ownedPacks.length > 0) {
+          setPacks(ownedPacks)
+          return
+        }
+        // Fallback flow: allow battle from collection when user has cards but no purchased packs.
+        try {
+          const cardsResp = await getCards()
+          const cards = cardsResp.data.cards || []
+          const synthetic = cards.map((c: any) => ({
+            pack_id: `card:${c.card_id}`,
+            pack_name: `Card: ${c.name || c.card_id}`,
+            pack_tier: c.rarity || 'community',
+            cards: [c],
+            _type: 'card',
+          }))
+          setPacks(synthetic)
+        } catch {
+          setPacks([])
+        }
+      })
+      .catch(async () => {
+        try {
+          const cardsResp = await getCards()
+          const cards = cardsResp.data.cards || []
+          const synthetic = cards.map((c: any) => ({
+            pack_id: `card:${c.card_id}`,
+            pack_name: `Card: ${c.name || c.card_id}`,
+            pack_tier: c.rarity || 'community',
+            cards: [c],
+            _type: 'card',
+          }))
+          setPacks(synthetic)
+        } catch {
+          setPacks([])
+        }
+      })
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
   const handleChallenge = async () => {
     if (!selectedPackId) return
     try {
-      const r = await createChallenge({ pack_id: selectedPackId, opponent_telegram_id: 0, wager_tier: 'casual' })
+      const body: any = { opponent_telegram_id: 0, wager_tier: 'casual' }
+      if (selectionType === 'card' || selectedPackId.startsWith('card:')) body.card_id = selectedPackId.replace('card:', '')
+      else body.pack_id = selectedPackId
+      const r = await createChallenge(body)
       setBattleId(r.data.battle_id)
       setBattleLink(r.data.link)
       setPhase('challenge-sent')
@@ -55,7 +95,10 @@ export default function Battle() {
   const handleAccept = async () => {
     if (!selectedPackId || !battleId) return
     try {
-      const r = await acceptBattle(battleId, { pack_id: selectedPackId })
+      const body: any = {}
+      if (selectionType === 'card' || selectedPackId.startsWith('card:')) body.card_id = selectedPackId.replace('card:', '')
+      else body.pack_id = selectedPackId
+      const r = await acceptBattle(battleId, body)
       setResult(r.data.result)
       setPhase('result')
       if (hapticFeedbackNotificationOccurred.isAvailable()) {
@@ -70,12 +113,22 @@ export default function Battle() {
     if (!mountMainButton.isAvailable()) return
     mountMainButton()
     if (phase === 'select-pack') {
-      setMainButtonParams({ text: selectedPackId ? '⚔️ Create Challenge' : 'Select a Pack First', isEnabled: !!selectedPackId, isVisible: true, backgroundColor: '#E74C3C' })
+      setMainButtonParams({
+        text: selectedPackId ? '⚔️ Create Challenge' : 'Select a Card or Pack',
+        isEnabled: !!selectedPackId,
+        isVisible: true,
+        backgroundColor: '#E74C3C',
+      })
       const off = onMainButtonClick(handleChallenge)
       return () => { off(); unmountMainButton() }
     }
     if (phase === 'accept') {
-      setMainButtonParams({ text: selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Pack', isEnabled: !!selectedPackId, isVisible: true, backgroundColor: '#E74C3C' })
+      setMainButtonParams({
+        text: selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Card or Pack',
+        isEnabled: !!selectedPackId,
+        isVisible: true,
+        backgroundColor: '#E74C3C',
+      })
       const off = onMainButtonClick(handleAccept)
       return () => { off(); unmountMainButton() }
     }
@@ -149,7 +202,7 @@ export default function Battle() {
       <h3 style={{ color: '#F4A800', marginBottom: 6 }}>
         {phase === 'accept' ? '⚔️ Battle Challenge!' : '⚔️ Battle'}
       </h3>
-      {phase === 'accept' && <p style={{ color: '#F4A800', fontSize: 13, marginBottom: 12 }}>Someone challenged you! Pick your best pack.</p>}
+      {phase === 'accept' && <p style={{ color: '#F4A800', fontSize: 13, marginBottom: 12 }}>Someone challenged you! Pick your best card or pack.</p>}
       {phase === 'challenge-sent' && (
         <div style={{ textAlign: 'center', padding: 20 }}>
           <div style={{ fontSize: 40 }}>✅</div>
@@ -160,18 +213,26 @@ export default function Battle() {
       )}
       {(phase === 'select-pack' || phase === 'accept') && (
         <>
-          <p style={{ color: '#8888aa', fontSize: 13, marginBottom: 14 }}>Choose your pack:</p>
+          <p style={{ color: '#8888aa', fontSize: 13, marginBottom: 14 }}>
+            Choose your battle entry (pack or single card):
+          </p>
           {packs.map(pack => (
-            <div key={pack.pack_id} onClick={() => setSelectedPackId(pack.pack_id)} style={{
+            <div key={pack.pack_id} onClick={() => {
+              setSelectedPackId(pack.pack_id)
+              setSelectionType((pack._type === 'card' || String(pack.pack_id).startsWith('card:')) ? 'card' : 'pack')
+            }} style={{
               background: selectedPackId === pack.pack_id ? '#2a1760' : '#1a1740',
               border: `2px solid ${selectedPackId === pack.pack_id ? '#F4A800' : '#2a2760'}`,
               borderRadius: 10, padding: 12, marginBottom: 8, cursor: 'pointer',
             }}>
               <div style={{ fontWeight: 700 }}>{pack.pack_name || pack.name || pack.pack_id}</div>
-              <div style={{ fontSize: 12, color: '#8888aa' }}>{(pack.pack_tier || pack.tier || 'community').toUpperCase()} • {(pack.cards || []).length} cards</div>
+              <div style={{ fontSize: 12, color: '#8888aa' }}>
+                {(pack.pack_tier || pack.tier || 'community').toUpperCase()} • {(pack.cards || []).length} card{(pack.cards || []).length === 1 ? '' : 's'}
+                {(pack._type === 'card' || String(pack.pack_id).startsWith('card:')) ? ' • Auto-build squad' : ''}
+              </div>
             </div>
           ))}
-          {packs.length === 0 && <p style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>You need packs to battle! Claim your daily reward first.</p>}
+          {packs.length === 0 && <p style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>No packs or cards found yet. Open/claim cards first, then try battle again.</p>}
           {packs.length > 0 && !mountMainButton.isAvailable() && (
             <button
               onClick={phase === 'accept' ? handleAccept : handleChallenge}
@@ -184,8 +245,8 @@ export default function Battle() {
               }}
             >
               {phase === 'accept'
-                ? (selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Pack')
-                : (selectedPackId ? '⚔️ Create Challenge' : 'Select a Pack First')}
+                ? (selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Card or Pack')
+                : (selectedPackId ? '⚔️ Create Challenge' : 'Select a Card or Pack')}
             </button>
           )}
         </>
