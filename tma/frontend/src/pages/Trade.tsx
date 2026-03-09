@@ -28,7 +28,7 @@ export default function Trade() {
   const [myCardSearch, setMyCardSearch] = useState('')
   const [partnerCardSearch, setPartnerCardSearch] = useState('')
   const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
-  const autoResolvedPartner = selectedPartner || (partnerResults.length === 1 ? partnerResults[0] : null)
+  const autoResolvedPartner = selectedPartner || resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
 
   const myTopCards = useMemo(
     () => filterCards(myCards, myRarity, myCardSearch).slice(0, 40),
@@ -115,11 +115,12 @@ export default function Trade() {
   }
 
   useEffect(() => {
-    // Auto-load partner cards when a single search result is present and user hasn't manually picked.
-    if (selectedPartner || !autoResolvedPartner?.telegram_id || !normalizedPartnerQuery) return
+    // Auto-load partner cards when an exact/single search match is present.
+    if (!autoResolvedPartner?.telegram_id || !normalizedPartnerQuery) return
+    if (selectedPartner?.telegram_id === autoResolvedPartner.telegram_id) return
     pickPartner(autoResolvedPartner).catch(() => undefined)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partnerResults, normalizedPartnerQuery])
+  }, [partnerResults, normalizedPartnerQuery, selectedPartner?.telegram_id])
 
   const onAccept = async (tradeId: string) => {
     setBusyTradeId(tradeId)
@@ -345,6 +346,18 @@ const filterCards = (cards: any[], rarity: string, query: string) => {
     const id = String(c?.card_id || '').toLowerCase()
     return name.includes(q) || id.includes(q)
   })
+}
+
+const resolvePartnerFromQuery = (results: any[], normalizedQuery: string) => {
+  if (!normalizedQuery) return null
+  const exactUser = results.find((p: any) => String(p?.username || '').toLowerCase() === normalizedQuery)
+  if (exactUser) return exactUser
+  const digitsOnly = normalizedQuery.replace(/\D/g, '')
+  if (digitsOnly) {
+    const exactId = results.find((p: any) => String(p?.telegram_id || '') === digitsOnly)
+    if (exactId) return exactId
+  }
+  return results.length === 1 ? results[0] : null
 }
 
 const chipStyle = (active: boolean) => ({

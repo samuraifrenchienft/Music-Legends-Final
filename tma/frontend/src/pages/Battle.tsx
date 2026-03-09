@@ -29,9 +29,7 @@ export default function Battle() {
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
-  const autoResolvedPartner = selectedPartner || (
-    partnerResults.length === 1 ? partnerResults[0] : null
-  )
+  const autoResolvedPartner = selectedPartner || resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
 
   const loadIncoming = async () => {
     try {
@@ -364,9 +362,9 @@ export default function Battle() {
               Challenging: <b>@{selectedPartner.username}</b>
             </div>
           )}
-          {!selectedPartner && partnerResults.length === 1 && normalizedPartnerQuery && (
+          {!selectedPartner && autoResolvedPartner && normalizedPartnerQuery && (
             <div style={{ color: '#2ECC71', fontSize: 12 }}>
-              Auto-selected: <b>@{partnerResults[0].username}</b>
+              Auto-selected: <b>@{autoResolvedPartner.username}</b>
             </div>
           )}
         </div>
@@ -473,4 +471,16 @@ export default function Battle() {
       )}
     </div>
   )
+}
+
+const resolvePartnerFromQuery = (results: any[], normalizedQuery: string) => {
+  if (!normalizedQuery) return null
+  const exactUser = results.find((p: any) => String(p?.username || '').toLowerCase() === normalizedQuery)
+  if (exactUser) return exactUser
+  const digitsOnly = normalizedQuery.replace(/\D/g, '')
+  if (digitsOnly) {
+    const exactId = results.find((p: any) => String(p?.telegram_id || '') === digitsOnly)
+    if (exactId) return exactId
+  }
+  return results.length === 1 ? results[0] : null
 }
