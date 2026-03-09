@@ -3,9 +3,11 @@ import axios from 'axios'
 // In production FastAPI serves both API and frontend on same origin.
 // In dev, Vite proxy forwards /api → localhost:8001.
 const api = axios.create({ baseURL: '' })
-const INIT_DATA_KEY = 'ml_tma_init_data'
 
-function readInitDataFromUrl(): string {
+function getInitData(): string {
+  const tg = (window as any)?.Telegram?.WebApp
+  const fromTg = (tg?.initData || '').trim()
+  if (fromTg) return fromTg
   try {
     const fromSearch = new URLSearchParams(window.location.search).get('tgWebAppData')
     if (fromSearch) return fromSearch
@@ -15,61 +17,22 @@ function readInitDataFromUrl(): string {
       if (fromHash) return fromHash
     }
   } catch {
-    // ignore
-  }
-  return ''
-}
-
-function getStableInitData(): string {
-  const tg = (window as any)?.Telegram?.WebApp
-  const fromTg = (tg?.initData || '').trim()
-  if (fromTg) {
-    try { window.sessionStorage.setItem(INIT_DATA_KEY, fromTg) } catch { /* ignore */ }
-    return fromTg
-  }
-
-  const fromUrl = readInitDataFromUrl().trim()
-  if (fromUrl) {
-    try { window.sessionStorage.setItem(INIT_DATA_KEY, fromUrl) } catch { /* ignore */ }
-    return fromUrl
-  }
-
-  try {
-    return (window.sessionStorage.getItem(INIT_DATA_KEY) || '').trim()
-  } catch {
-    return ''
-  }
-}
-
-async function waitForInitData(maxWaitMs = 2000): Promise<string> {
-  const existing = getStableInitData()
-  if (existing) return existing
-
-  const started = Date.now()
-  while (Date.now() - started < maxWaitMs) {
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    const next = getStableInitData()
-    if (next) return next
+    /* ignore */
   }
   return ''
 }
 
 api.interceptors.request.use(config => {
-  return Promise.resolve().then(async () => {
-    // Keep a stable initData token across route changes and SDK timing quirks.
-    const initDataRaw = await waitForInitData()
-
-    if (initDataRaw) {
-      config.headers['Authorization'] = `tma ${initDataRaw}`
-      // Proxy-safe fallback in case Authorization is stripped upstream.
-      config.headers['X-Telegram-Init-Data'] = initDataRaw
-    } else if (import.meta.env.DEV) {
-      const devInitData = import.meta.env.VITE_DEV_INIT_DATA || 'dev'
-      config.headers['Authorization'] = `tma ${devInitData}`
-      config.headers['X-Telegram-Init-Data'] = devInitData
-    }
-    return config
-  })
+  const initDataRaw = getInitData()
+  if (initDataRaw) {
+    config.headers['Authorization'] = `tma ${initDataRaw}`
+    config.headers['X-Telegram-Init-Data'] = initDataRaw
+  } else if (import.meta.env.DEV) {
+    const devInitData = import.meta.env.VITE_DEV_INIT_DATA || 'dev'
+    config.headers['Authorization'] = `tma ${devInitData}`
+    config.headers['X-Telegram-Init-Data'] = devInitData
+  }
+  return config
 })
 
 export default api
