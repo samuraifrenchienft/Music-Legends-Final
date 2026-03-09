@@ -162,6 +162,19 @@ def search_trade_partners(
                 "username": username or f"user_{tg_id}",
             })
 
+        if q:
+            # Prioritize exact username/id matches at the top.
+            exact = []
+            partial = []
+            for p in out:
+                u = str(p.get("username") or "").lower()
+                tid = str(p.get("telegram_id") or "")
+                if u == q or tid == q:
+                    exact.append(p)
+                else:
+                    partial.append(p)
+            out = exact + partial
+
         # Live Telegram lookup fallback for typed @username queries.
         # This helps when the target user isn't yet in local DB search results.
         if q and not q.isdigit():

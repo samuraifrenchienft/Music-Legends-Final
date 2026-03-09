@@ -49,6 +49,20 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     url = _tma_url(start_param)
     tma_configured = bool((os.environ.get("TMA_URL") or "").strip())
 
+    # Persist/refresh Telegram users when they hit /start so partner search can find them.
+    try:
+        from database import get_db
+        db = get_db()
+        u = update.effective_user
+        if u:
+            db.get_or_create_telegram_user(
+                telegram_id=u.id,
+                telegram_username=u.username or "",
+                first_name=u.first_name or "",
+            )
+    except Exception as e:
+        logger.warning("cmd_start user persist failed: %s", e)
+
     chat_type = getattr(update.effective_chat, "type", "")
     if chat_type in {"group", "supergroup"}:
         await update.message.reply_text(
