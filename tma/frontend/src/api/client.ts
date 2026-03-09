@@ -12,8 +12,12 @@ api.interceptors.request.use(config => {
 
   if (initDataRaw) {
     config.headers['Authorization'] = `tma ${initDataRaw}`
+    // Proxy-safe fallback in case Authorization is stripped upstream.
+    config.headers['X-Telegram-Init-Data'] = initDataRaw
   } else if (import.meta.env.DEV) {
-    config.headers['Authorization'] = `tma ${import.meta.env.VITE_DEV_INIT_DATA || 'dev'}`
+    const devInitData = import.meta.env.VITE_DEV_INIT_DATA || 'dev'
+    config.headers['Authorization'] = `tma ${devInitData}`
+    config.headers['X-Telegram-Init-Data'] = devInitData
   }
   return config
 })

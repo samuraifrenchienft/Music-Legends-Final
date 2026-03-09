@@ -80,6 +80,7 @@ def _parse_user_from_raw(
 
 def get_tg_user(
     authorization: str = Header(default=""),
+    x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data"),
     x_forwarded_for: str = Header(default="", alias="X-Forwarded-For"),
     user_agent: str = Header(default="", alias="User-Agent"),
 ) -> dict:
@@ -87,9 +88,27 @@ def get_tg_user(
     skip_hmac = os.environ.get("TMA_SKIP_HMAC", "").lower() == "true"
     allow_synth = os.environ.get("TMA_ALLOW_SYNTHETIC_DEV_USER", "").lower() == "true"
 
+    def _extract_raw_init_data() -> str:
+        """Support multiple header styles used by clients/proxies."""
+        auth = (authorization or "").strip()
+        if auth:
+            lower = auth.lower()
+            if lower.startswith("tma "):
+                return auth[4:].strip()
+            if lower.startswith("bearer "):
+                token = auth[7:].strip()
+                if token.lower().startswith("tma "):
+                    return token[4:].strip()
+                return token
+            # Some clients send raw initData directly in Authorization.
+            if "user=" in auth or "hash=" in auth:
+                return auth
+        return (x_telegram_init_data or "").strip()
+
+    raw = _extract_raw_init_data()
+
     # Dev bypass: skip HMAC, just parse user from initData
     if skip_hmac:
-        raw = authorization[4:] if authorization.startswith("tma ") else authorization
         try:
             return _parse_user_from_raw(
                 raw,
@@ -100,9 +119,13 @@ def get_tg_user(
         except ValueError as e:
             raise HTTPException(401, str(e))
 
-    if not authorization.startswith("tma "):
-        raise HTTPException(401, "Authorization must start with 'tma '")
+    if not raw:
+        raise HTTPException(
+            401,
+            "Missing Telegram initData. Send 'Authorization: tma <initData>' "
+            "or 'X-Telegram-Init-Data: <initData>'.",
+        )
     try:
-        return validate_init_data(authorization[4:])
+        return validate_init_data(raw)
     except ValueError as e:
         raise HTTPException(401, str(e))
