@@ -1,4 +1,8 @@
 """Trade router — manage player-to-player trades."""
+import json
+import os
+from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import List
@@ -33,6 +37,34 @@ def _extract_telegram_id(db, user: User) -> int | None:
         return uid
 
     return None
+
+
+def _lookup_telegram_user_live(query: str) -> dict | None:
+    """
+    Best-effort live Telegram lookup by @username using Bot API getChat.
+    Returns {telegram_id, username} or None when unavailable/unresolvable.
+    """
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    username = (query or "").strip().lstrip("@")
+    if not token or not username:
+        return None
+    if any(ch.isspace() for ch in username):
+        return None
+    try:
+        url = f"https://api.telegram.org/bot{token}/getChat?chat_id=%40{quote_plus(username)}"
+        req = Request(url, method="GET")
+        with urlopen(req, timeout=4) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="ignore") or "{}")
+        if not payload.get("ok"):
+            return None
+        result = payload.get("result") or {}
+        tg_id = result.get("id")
+        if not isinstance(tg_id, int):
+            return None
+        out_username = (result.get("username") or username).strip()
+        return {"telegram_id": tg_id, "username": out_username or f"user_{tg_id}"}
+    except Exception:
+        return None
 
 class CreateTradeRequest(BaseModel):
     partner_id: int
@@ -129,6 +161,14 @@ def search_trade_partners(
                 "telegram_id": tg_id_int,
                 "username": username or f"user_{tg_id}",
             })
+
+        # Live Telegram lookup fallback for typed @username queries.
+        # This helps when the target user isn't yet in local DB search results.
+        if q and not q.isdigit():
+            live = _lookup_telegram_user_live(q)
+            if live and str(live["telegram_id"]) != str(tg["id"]):
+                if all(int(p.get("telegram_id", 0)) != int(live["telegram_id"]) for p in out):
+                    out.insert(0, live)
 
         return {"partners": out[:25]}
     finally:
