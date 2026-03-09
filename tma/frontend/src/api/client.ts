@@ -3,6 +3,7 @@ import axios from 'axios'
 // In production FastAPI serves both API and frontend on same origin.
 // In dev, Vite proxy forwards /api → localhost:8001.
 const api = axios.create({ baseURL: '' })
+const INIT_DATA_KEY = 'ml_tma_init_data'
 
 function readInitDataFromUrl(): string {
   try {
@@ -19,11 +20,30 @@ function readInitDataFromUrl(): string {
   return ''
 }
 
-api.interceptors.request.use(config => {
-  // Read initData directly from Telegram's injected global — always available
-  // inside a Mini App regardless of SDK initialization state.
+function getStableInitData(): string {
   const tg = (window as any)?.Telegram?.WebApp
-  const initDataRaw = tg?.initData || readInitDataFromUrl()
+  const fromTg = (tg?.initData || '').trim()
+  if (fromTg) {
+    try { window.sessionStorage.setItem(INIT_DATA_KEY, fromTg) } catch { /* ignore */ }
+    return fromTg
+  }
+
+  const fromUrl = readInitDataFromUrl().trim()
+  if (fromUrl) {
+    try { window.sessionStorage.setItem(INIT_DATA_KEY, fromUrl) } catch { /* ignore */ }
+    return fromUrl
+  }
+
+  try {
+    return (window.sessionStorage.getItem(INIT_DATA_KEY) || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+api.interceptors.request.use(config => {
+  // Keep a stable initData token across route changes and SDK timing quirks.
+  const initDataRaw = getStableInitData()
 
   if (initDataRaw) {
     config.headers['Authorization'] = `tma ${initDataRaw}`
