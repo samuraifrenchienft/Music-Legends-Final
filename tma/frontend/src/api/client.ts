@@ -6,14 +6,16 @@ const api = axios.create({ baseURL: '' })
 
 function getInitData(): string {
   const tg = (window as any)?.Telegram?.WebApp
-  const fromTg = (tg?.initData || '').trim()
+  const fromTg = (tg?.initData || tg?.initDataUnsafe || '').trim()
   if (fromTg) return fromTg
   try {
-    const fromSearch = new URLSearchParams(window.location.search).get('tgWebAppData')
+    const params = new URLSearchParams(window.location.search)
+    const fromSearch = params.get('tgWebAppData') || params.get('initData')
     if (fromSearch) return fromSearch
     const hash = (window.location.hash || '').replace(/^#/, '')
     if (hash) {
-      const fromHash = new URLSearchParams(hash).get('tgWebAppData')
+      const hashParams = new URLSearchParams(hash)
+      const fromHash = hashParams.get('tgWebAppData') || hashParams.get('initData')
       if (fromHash) return fromHash
     }
   } catch {

@@ -125,11 +125,13 @@ def get_tg_user(
     # Dev bypass: skip HMAC, just parse user from initData
     if skip_hmac:
         try:
+            # When initData is empty, we must allow synthetic or the app cannot load.
+            use_synthetic = allow_synth or not raw.strip()
             return _parse_user_from_raw(
                 raw,
                 x_forwarded_for=x_forwarded_for,
                 user_agent=user_agent,
-                allow_synthetic=allow_synth,
+                allow_synthetic=use_synthetic,
             )
         except ValueError as e:
             raise HTTPException(401, str(e))
