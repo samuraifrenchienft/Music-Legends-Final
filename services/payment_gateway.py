@@ -15,7 +15,7 @@ class PaymentGateway:
     
     def __init__(self):
         # Initialize Stripe with API key from environment
-        self.api_key = os.getenv('STRIPE_SECRET_KEY')
+        self.api_key = os.getenv('STRIPE_SECRET')
         if self.api_key:
             stripe.api_key = self.api_key
         else:

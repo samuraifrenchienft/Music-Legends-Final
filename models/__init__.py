@@ -28,7 +28,8 @@ class UUIDType(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None:
             return value
-        # Backward compatibility: tolerate legacy non-UUID identifiers.
+        # Backward compatibility: some legacy rows still store non-UUID ids.
+        # Returning a string keeps reads working while newer rows stay UUID objects.
         try:
             return uuid.UUID(str(value))
         except (ValueError, TypeError, AttributeError):
