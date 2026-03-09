@@ -28,6 +28,11 @@ export default function Battle() {
   const [loadingBattle, setLoadingBattle] = useState(!!battleIdParam)
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
+  const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
+  const autoResolvedPartner = selectedPartner || (
+    partnerResults.length === 1 ? partnerResults[0] : null
+  )
+
   const loadIncoming = async () => {
     try {
       const r = await getIncomingBattles()
@@ -119,15 +124,16 @@ export default function Battle() {
 
   const handleChallenge = async () => {
     if (!selectedPackId) return
-    if (!selectedPartner?.telegram_id) {
+    const partner = autoResolvedPartner
+    if (!partner?.telegram_id) {
       alert('Select who to challenge first')
       return
     }
     const selected = packs.find((p: any) => String(p.pack_id) === String(selectedPackId))
     const label = selected?.pack_name || selected?.name || selectedPackId
-    if (!window.confirm(`Challenge @${selectedPartner.username || selectedPartner.telegram_id} using "${label}"?`)) return
+    if (!window.confirm(`Challenge @${partner.username || partner.telegram_id} using "${label}"?`)) return
     try {
-      const body: any = { opponent_telegram_id: Number(selectedPartner.telegram_id), wager_tier: 'casual' }
+      const body: any = { opponent_telegram_id: Number(partner.telegram_id), wager_tier: 'casual' }
       if (selectionType === 'card' || selectedPackId.startsWith('card:')) body.card_id = selectedPackId.replace('card:', '')
       else body.pack_id = selectedPackId
       const r = await createChallenge(body)
@@ -200,7 +206,7 @@ export default function Battle() {
     if (!mountMainButton.isAvailable()) return
     mountMainButton()
     if (phase === 'select-pack') {
-      const canCreate = !!selectedPackId && !!selectedPartner?.telegram_id
+      const canCreate = !!selectedPackId && !!autoResolvedPartner?.telegram_id
       setMainButtonParams({
         text: canCreate ? '⚔️ Create Challenge' : 'Pick Opponent + Card/Pack',
         isEnabled: canCreate,
@@ -245,7 +251,7 @@ export default function Battle() {
       return () => { off(); unmountMainButton() }
     }
     unmountMainButton()
-  }, [phase, selectedPackId, battleLink]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, selectedPackId, battleLink, selectedPartner, partnerResults]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (phase === 'result' && result) {
     const c = result.challenger, o = result.opponent, winner = result.winner
@@ -358,6 +364,11 @@ export default function Battle() {
               Challenging: <b>@{selectedPartner.username}</b>
             </div>
           )}
+          {!selectedPartner && partnerResults.length === 1 && normalizedPartnerQuery && (
+            <div style={{ color: '#2ECC71', fontSize: 12 }}>
+              Auto-selected: <b>@{partnerResults[0].username}</b>
+            </div>
+          )}
         </div>
       )}
       {phase === 'select-pack' && incomingChallenges.length > 0 && (
@@ -443,12 +454,12 @@ export default function Battle() {
           {packs.length > 0 && !mountMainButton.isAvailable() && (
             <button
               onClick={phase === 'accept' ? handleAccept : handleChallenge}
-              disabled={phase === 'accept' ? !selectedPackId : (!selectedPackId || !selectedPartner?.telegram_id)}
+              disabled={phase === 'accept' ? !selectedPackId : (!selectedPackId || !autoResolvedPartner?.telegram_id)}
               style={{
                 width: '100%', padding: '14px 0', marginTop: 16,
                 background: (phase === 'accept'
                   ? !!selectedPackId
-                  : !!selectedPackId && !!selectedPartner?.telegram_id) ? '#E74C3C' : '#4a2a4a',
+                  : !!selectedPackId && !!autoResolvedPartner?.telegram_id) ? '#E74C3C' : '#4a2a4a',
                 color: '#fff', border: 'none', borderRadius: 12,
                 fontWeight: 700, fontSize: 15, cursor: selectedPackId ? 'pointer' : 'not-allowed',
               }}

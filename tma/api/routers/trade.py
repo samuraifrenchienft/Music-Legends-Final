@@ -71,7 +71,7 @@ def search_trade_partners(
     db = get_db()
     me = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
     me_user_id = str(me["user_id"])
-    q = (query or "").strip().lower()
+    q = (query or "").strip().lower().lstrip("@")
 
     session = db.get_session()
     try:
