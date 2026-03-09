@@ -1,92 +1,27 @@
-# database.py
-import sqlite3
+"""Database access helpers used by TMA routers."""
+
+from __future__ import annotations
+
 import json
 import os
-import urllib.parse
-from typing import List, Dict, Optional, Tuple
+import random
+import sqlite3
+import string
+import hashlib
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from contextlib import contextmanager
-
-
-def _parse_db_url(url: str) -> dict:
-    """Parse a DATABASE_URL into psycopg2 keyword arguments.
-
-    Handles passwords with special characters that break naive URL parsing.
-    Adds sslmode=require for Railway external proxy connections.
-    """
-    parsed = urllib.parse.urlparse(url)
-    params = {
-        'host': parsed.hostname,
-        'port': parsed.port or 5432,
-        'dbname': parsed.path.lstrip('/'),
-        'user': parsed.username,
-        'password': urllib.parse.unquote(parsed.password or ''),
-        'sslmode': 'require',
-    }
-    return params
-
-
-class _PgCursorWrapper:
-    """Wraps a psycopg2 cursor to translate ? placeholders to %s."""
-
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def execute(self, query, params=None):
-        # Translate SQLite syntax to PostgreSQL
-        query = query.replace('?', '%s')
-
-        # INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
-        if 'INSERT OR IGNORE' in query:
-            query = query.replace('INSERT OR IGNORE', 'INSERT')
-            if 'ON CONFLICT' not in query:
-                # Append ON CONFLICT DO NOTHING before any trailing whitespace
-                query = query.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
-
-        # INSERT OR REPLACE → INSERT ... ON CONFLICT DO NOTHING
-        if 'INSERT OR REPLACE' in query:
-            query = query.replace('INSERT OR REPLACE', 'INSERT')
-            if 'ON CONFLICT' not in query:
-                query = query.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
-
-        if params:
-            self._cursor.execute(query, params)
-        else:
-            self._cursor.execute(query)
-
-    def fetchone(self):
-        return self._cursor.fetchone()
-
-    def fetchall(self):
-        return self._cursor.fetchall()
-
-    @property
-    def rowcount(self):
-        return self._cursor.rowcount
-
-    @property
-    def lastrowid(self):
-        return self._cursor.lastrowid
-
-    @property
-    def description(self):
-        return self._cursor.description
+from typing import Optional
 
 
 class _PgConnectionWrapper:
-    """Wraps a psycopg2 connection so existing SQLite code works unchanged.
-
-    - cursor() returns a _PgCursorWrapper (auto-translates ? to %s)
-    - Context manager commits on success, rolls back on error (matches SQLite)
-    - execute() is forwarded through the wrapper
-    """
+    """Minimal wrapper to keep legacy imports working."""
 
     def __init__(self, conn):
         self._conn = conn
 
     def cursor(self):
-        return _PgCursorWrapper(self._conn.cursor())
+        return self._conn.cursor()
 
     def commit(self):
         self._conn.commit()
@@ -97,423 +32,521 @@ class _PgConnectionWrapper:
     def close(self):
         self._conn.close()
 
-    def execute(self, query, params=None):
-        cur = self.cursor()
-        cur.execute(query, params)
-        return cur
-
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            self._conn.commit()
-        else:
+        if exc_type:
             self._conn.rollback()
+        else:
+            self._conn.commit()
         self._conn.close()
         return False
-
-
-class PooledConnectionWrapper:
-    """Wrapper for pooled connections that returns to pool on close.
-
-    This wrapper behaves like _PgConnectionWrapper but returns the connection
-    to the pool instead of closing it.
-    """
-
-    def __init__(self, conn, pool, is_overflow: bool = False):
-        self._conn = conn
-        self._pool = pool
-        self._is_overflow = is_overflow
-
-    def cursor(self):
-        return _PgCursorWrapper(self._conn.cursor())
-
-    def commit(self):
-        self._conn.commit()
-
-    def rollback(self):
-        self._conn.rollback()
-
-    def close(self):
-        """Return connection to pool instead of closing."""
-        if self._is_overflow:
-            # Overflow connection - close it and decrement counter
-            with self._pool._lock:
-                self._pool._overflow_count -= 1
-            try:
-                self._conn.close()
-            except:
-                pass
-        else:
-            # Regular pool connection - return to pool
-            try:
-                self._conn.rollback()  # Clear any uncommitted transaction
-                wrapped = _PgConnectionWrapper(self._conn)
-                self._pool._pool.put(wrapped, block=False)
-            except:
-                # Pool full (shouldn't happen) - close connection
-                try:
-                    self._conn.close()
-                except:
-                    pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            self._conn.commit()
-        else:
-            self._conn.rollback()
-        self.close()  # Return to pool
-        return False
-
-
-class ConnectionPool:
-    """Thread-safe connection pool for PostgreSQL using psycopg2.
-
-    Maintains a pool of persistent connections to avoid the overhead of
-    creating new connections for every query (~50ms per connection).
-
-    Pool configuration:
-    - pool_size: 10 persistent connections
-    - max_overflow: 5 additional connections during spikes
-    - Total max: 15 concurrent connections
-    """
-
-    def __init__(self, database_url: str, pool_size: int = 10, max_overflow: int = 5):
-        import psycopg2
-        from queue import Queue, Empty
-        import threading
-
-        self.database_url = database_url
-        self.pool_size = pool_size
-        self.max_overflow = max_overflow
-        self._pool = Queue(maxsize=pool_size)
-        self._overflow_count = 0
-        self._lock = threading.Lock()
-
-        # Pre-populate pool with connections (keepalives keep idle sockets healthy)
-        self._conn_params = {
-            **_parse_db_url(database_url),
-            'keepalives': 1,
-            'keepalives_idle': 60,
-            'keepalives_interval': 10,
-            'keepalives_count': 3,
-        }
-        for _ in range(pool_size):
-            try:
-                conn = psycopg2.connect(**self._conn_params)
-                self._pool.put(_PgConnectionWrapper(conn))
-            except Exception as e:
-                print(f"[POOL] Error creating initial connection: {e}")
-                # Continue - pool will create on-demand if needed
-
-    def get_connection(self, timeout: float = 30.0):
-        """Get a connection from the pool.
-
-        Args:
-            timeout: Seconds to wait for available connection
-
-        Returns:
-            PooledConnectionWrapper: Database connection that returns to pool on close
-
-        Raises:
-            Exception: If no connection available within timeout
-        """
-        from queue import Empty
-        import psycopg2
-
-        # Try to get from pool first
-        try:
-            conn = self._pool.get(block=True, timeout=timeout)
-            # Verify connection is still alive
-            try:
-                conn._conn.isolation_level  # Simple check
-                return PooledConnectionWrapper(conn._conn, self, is_overflow=False)
-            except:
-                # Connection dead, create new one
-                conn = psycopg2.connect(**self._conn_params)
-                return PooledConnectionWrapper(conn, self, is_overflow=False)
-        except Empty:
-            # Pool exhausted, check if we can create overflow connection
-            with self._lock:
-                if self._overflow_count < self.max_overflow:
-                    self._overflow_count += 1
-                    try:
-                        conn = psycopg2.connect(**self._conn_params)
-                        return PooledConnectionWrapper(conn, self, is_overflow=True)
-                    except Exception as e:
-                        self._overflow_count -= 1
-                        raise Exception(f"Failed to create overflow connection: {e}")
-                else:
-                    raise Exception(
-                        f"Connection pool exhausted (pool_size={self.pool_size}, "
-                        f"max_overflow={self.max_overflow}, timeout={timeout}s)"
-                    )
-
-    def return_connection(self, conn):
-        """Return a connection to the pool.
-
-        Args:
-            conn: _PgConnectionWrapper to return
-        """
-        if hasattr(conn, '_is_overflow') and conn._is_overflow:
-            # Overflow connection - close it
-            with self._lock:
-                self._overflow_count -= 1
-            try:
-                conn._conn.close()
-            except:
-                pass
-        else:
-            # Regular pool connection - return to pool
-            try:
-                # Reset connection state
-                conn._conn.rollback()  # Clear any uncommitted transaction
-                self._pool.put(conn, block=False)
-            except:
-                # Pool full (shouldn't happen) - close connection
-                try:
-                    conn._conn.close()
-                except:
-                    pass
-
-    def close_all(self):
-        """Close all connections in the pool. Call on shutdown."""
-        while not self._pool.empty():
-            try:
-                conn = self._pool.get(block=False)
-                conn._conn.close()
-            except:
-                pass
 
 
 class DatabaseManager:
-    _instance = None
-    _pool: Optional[ConnectionPool] = None
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(DatabaseManager, cls).__new__(cls)
-        return cls._instance
-
-    def __init__(self, database_url: str = "sqlite:///music_legends.db"):
-        if hasattr(self, 'database_url') and self.database_url == database_url:
-            return
-
-        self.database_url = database_url
-        self.is_postgres = database_url.startswith('postgres')
-
-        if self.is_postgres:
-            if not self.__class__._pool:
-                self.__class__._pool = ConnectionPool(database_url)
+    def __init__(self, db_path: Optional[str] = None, test_database_url: Optional[str] = None, **_: object):
+        if test_database_url and test_database_url.startswith("sqlite:///"):
+            raw = test_database_url.replace("sqlite:///", "")
+            self._db_path = ":memory:" if raw == ":memory:" else raw
         else:
-            # For SQLite, ensure the database file exists
-            db_path = database_url.replace("sqlite:///", "")
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            if db_path:
+                self._db_path = db_path
+            else:
+                self._db_path = os.environ.get("DB_PATH", "music_legends.db")
+        if self._db_path != ":memory:":
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.init_database()
 
     @contextmanager
-    def get_connection(self):
-        if self.is_postgres:
-            if not self._pool:
-                raise Exception("Connection pool not initialized.")
-            conn = self._pool.get_connection()
-            try:
-                yield conn
-            finally:
-                conn.close()
-        else:
-            conn = sqlite3.connect(self.database_url.replace("sqlite:///", ""))
-            conn.row_factory = sqlite3.Row
-            try:
-                yield conn
-            finally:
-                conn.close()
+    def _get_connection(self):
+        conn = sqlite3.connect(self._db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def init_database(self):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if not self.is_postgres:
-                # Enable foreign keys for SQLite
-                cursor.execute("PRAGMA foreign_keys = ON;")
-            
-            # Schema is now managed by Alembic.
-            # This method can be used for any initial data seeding if required.
-            print("✅ [DATABASE] Initialized (Alembic handles schema)")
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    telegram_id INTEGER UNIQUE,
+                    last_active TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    total_battles INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_inventory (
+                    user_id INTEGER PRIMARY KEY,
+                    gold INTEGER DEFAULT 0,
+                    xp INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 1
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_claims (
+                    user_id INTEGER PRIMARY KEY,
+                    last_claim_date TEXT
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tma_link_codes (
+                    user_id INTEGER PRIMARY KEY,
+                    code TEXT UNIQUE,
+                    expires_at TEXT
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS creator_packs (
+                    pack_id TEXT PRIMARY KEY,
+                    pack_name TEXT,
+                    pack_tier TEXT DEFAULT 'community',
+                    status TEXT DEFAULT 'LIVE',
+                    cards_data TEXT DEFAULT '[]'
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pack_purchases (
+                    user_id INTEGER,
+                    pack_id TEXT,
+                    purchased_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pending_tma_battles (
+                    battle_id TEXT PRIMARY KEY,
+                    challenger_id INTEGER NOT NULL,
+                    opponent_id INTEGER NOT NULL,
+                    challenger_pack TEXT NOT NULL,
+                    opponent_pack TEXT,
+                    wager_tier TEXT DEFAULT 'casual',
+                    status TEXT DEFAULT 'waiting',
+                    expires_at TEXT,
+                    result_json TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    waiting_pair_key TEXT
+                )
+                """
+            )
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS api_idempotency (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    status_code INTEGER,
+                    response_json TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT
+                )
+                """
+            )
+            self._ensure_column(conn, "users", "telegram_id", "INTEGER")
+            self._ensure_column(conn, "users", "last_active", "TEXT")
+            self._ensure_column(conn, "users", "total_battles", "INTEGER DEFAULT 0")
+            self._ensure_column(conn, "users", "wins", "INTEGER DEFAULT 0")
+            self._ensure_column(conn, "users", "losses", "INTEGER DEFAULT 0")
 
-    def execute(self, query: str, params: tuple = (), *, commit: bool = False) -> sqlite3.Cursor:
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            if commit:
+            self._ensure_column(conn, "user_inventory", "xp", "INTEGER DEFAULT 0")
+            self._ensure_column(conn, "user_inventory", "level", "INTEGER DEFAULT 1")
+
+            self._ensure_column(conn, "creator_packs", "pack_name", "TEXT")
+            self._ensure_column(conn, "creator_packs", "pack_tier", "TEXT DEFAULT 'community'")
+            self._ensure_column(conn, "creator_packs", "status", "TEXT DEFAULT 'LIVE'")
+            self._ensure_column(conn, "creator_packs", "cards_data", "TEXT DEFAULT '[]'")
+            self._ensure_column(conn, "pack_purchases", "purchased_at", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
+            self._ensure_column(conn, "pending_tma_battles", "battle_id", "TEXT")
+            self._ensure_column(conn, "pending_tma_battles", "challenger_id", "INTEGER")
+            self._ensure_column(conn, "pending_tma_battles", "opponent_id", "INTEGER")
+            self._ensure_column(conn, "pending_tma_battles", "challenger_pack", "TEXT")
+            self._ensure_column(conn, "pending_tma_battles", "opponent_pack", "TEXT")
+            self._ensure_column(conn, "pending_tma_battles", "wager_tier", "TEXT DEFAULT 'casual'")
+            self._ensure_column(conn, "pending_tma_battles", "status", "TEXT DEFAULT 'waiting'")
+            self._ensure_column(conn, "pending_tma_battles", "expires_at", "TEXT")
+            self._ensure_column(conn, "pending_tma_battles", "result_json", "TEXT")
+            self._ensure_column(conn, "pending_tma_battles", "created_at", "TEXT DEFAULT CURRENT_TIMESTAMP")
+            self._ensure_column(conn, "pending_tma_battles", "waiting_pair_key", "TEXT")
+            self._ensure_column(conn, "api_idempotency", "status_code", "INTEGER")
+            self._ensure_column(conn, "api_idempotency", "response_json", "TEXT")
+            self._ensure_column(conn, "api_idempotency", "created_at", "TEXT DEFAULT CURRENT_TIMESTAMP")
+            self._ensure_column(conn, "api_idempotency", "updated_at", "TEXT")
+
+            # Ensure legacy waiting rows have a stable pair key before creating uniqueness.
+            self._normalize_waiting_pair_uniqueness(conn)
+            self._ensure_indexes(conn)
+            conn.commit()
+
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, column_type: str):
+        c = conn.cursor()
+        c.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in c.fetchall()}
+        if column not in existing:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+    def _ensure_indexes(self, conn: sqlite3.Connection):
+        c = conn.cursor()
+        c.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_tma_waiting_pair_key "
+            "ON pending_tma_battles(waiting_pair_key)"
+        )
+        c.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_api_idempotency_user_action_key "
+            "ON api_idempotency(user_id, action, idempotency_key)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_tma_status_expires "
+            "ON pending_tma_battles(status, expires_at)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_tma_challenger_status "
+            "ON pending_tma_battles(challenger_id, status)"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pending_tma_opponent_status "
+            "ON pending_tma_battles(opponent_id, status)"
+        )
+
+    def _normalize_waiting_pair_uniqueness(self, conn: sqlite3.Connection):
+        c = conn.cursor()
+        # Keep newest waiting row per pair and expire older duplicates.
+        c.execute(
+            """
+            SELECT challenger_id, opponent_id
+            FROM pending_tma_battles
+            WHERE status='waiting'
+            GROUP BY challenger_id, opponent_id
+            HAVING COUNT(*) > 1
+            """
+        )
+        duplicate_pairs = c.fetchall()
+        for pair in duplicate_pairs:
+            challenger_id = pair["challenger_id"]
+            opponent_id = pair["opponent_id"]
+            c.execute(
+                """
+                SELECT battle_id
+                FROM pending_tma_battles
+                WHERE challenger_id=? AND opponent_id=? AND status='waiting'
+                ORDER BY COALESCE(created_at, expires_at) DESC, rowid DESC
+                """,
+                (challenger_id, opponent_id),
+            )
+            rows = c.fetchall()
+            keep_battle_id = rows[0]["battle_id"] if rows else None
+            for row in rows[1:]:
+                c.execute(
+                    "UPDATE pending_tma_battles "
+                    "SET status='expired', waiting_pair_key=NULL "
+                    "WHERE battle_id=?",
+                    (row["battle_id"],),
+                )
+            if keep_battle_id:
+                c.execute(
+                    "UPDATE pending_tma_battles "
+                    "SET waiting_pair_key=? "
+                    "WHERE battle_id=?",
+                    (f"{challenger_id}:{opponent_id}", keep_battle_id),
+                )
+
+        c.execute(
+            """
+            UPDATE pending_tma_battles
+            SET waiting_pair_key = CAST(challenger_id AS TEXT) || ':' || CAST(opponent_id AS TEXT)
+            WHERE status='waiting' AND (waiting_pair_key IS NULL OR waiting_pair_key='')
+            """
+        )
+        c.execute(
+            "UPDATE pending_tma_battles "
+            "SET waiting_pair_key=NULL "
+            "WHERE status!='waiting' AND waiting_pair_key IS NOT NULL"
+        )
+
+    def get_or_create_telegram_user(self, telegram_id: int, telegram_username: str = "", first_name: str = ""):
+        now = datetime.utcnow().isoformat()
+        username = telegram_username or first_name or f"tg_{telegram_id}"
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT user_id, username FROM users WHERE telegram_id = ?", (telegram_id,))
+            row = c.fetchone()
+            if row:
+                c.execute(
+                    "UPDATE users SET username = ?, last_active = ? WHERE telegram_id = ?",
+                    (username, now, telegram_id),
+                )
                 conn.commit()
-            return cursor
+                return {"user_id": row["user_id"], "username": username, "is_new": False}
 
-    def fetchone(self, query: str, params: tuple = ()) -> Optional[sqlite3.Row]:
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchone()
+            user_id = int(telegram_id)
+            c.execute(
+                "INSERT INTO users (user_id, username, telegram_id, last_active, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, username, telegram_id, now, now),
+            )
+            c.execute("INSERT OR IGNORE INTO user_inventory (user_id, gold, xp, level) VALUES (?, 0, 0, 1)", (user_id,))
+            conn.commit()
+            return {"user_id": user_id, "username": username, "is_new": True}
 
-    def fetchall(self, query: str, params: tuple = ()) -> List[sqlite3.Row]:
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchall()
+    def get_user_purchased_packs(self, user_id: int, limit: int = 50):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT cp.pack_id, cp.pack_name, cp.pack_tier, cp.cards_data
+                FROM pack_purchases pp
+                JOIN creator_packs cp ON cp.pack_id = pp.pack_id
+                WHERE pp.user_id = ?
+                ORDER BY pp.purchased_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            )
+            rows = c.fetchall()
+        packs = []
+        for r in rows:
+            cards = json.loads(r["cards_data"] or "[]")
+            packs.append(
+                {
+                    "pack_id": r["pack_id"],
+                    "pack_name": r["pack_name"],
+                    "pack_tier": r["pack_tier"],
+                    "cards": cards,
+                }
+            )
+        return packs
 
-    def get_user(self, user_id: int) -> Optional[dict]:
-        query = "SELECT * FROM users WHERE user_id = ?"
-        row = self.fetchone(query, (user_id,))
-        return dict(row) if row else None
+    def update_user_economy(self, user_id: int, gold_change: int = 0, xp_change: int = 0):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO user_inventory (user_id, gold, xp, level) VALUES (?, 0, 0, 1)", (user_id,))
+            c.execute(
+                "UPDATE user_inventory SET gold = COALESCE(gold, 0) + ?, xp = COALESCE(xp, 0) + ? WHERE user_id = ?",
+                (gold_change, xp_change, user_id),
+            )
+            conn.commit()
 
-    def create_user(self, user_id: int, username: str, telegram_id: Optional[int] = None) -> None:
-        query = "INSERT OR IGNORE INTO users (user_id, username, telegram_id) VALUES (?, ?, ?)"
-        self.execute(query, (user_id, username, telegram_id), commit=True)
+    def get_user_economy(self, user_id: int):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT gold, xp, level FROM user_inventory WHERE user_id = ?", (user_id,))
+            row = c.fetchone()
+        if not row:
+            return {"gold": 0, "xp": 0, "level": 1}
+        return {"gold": row["gold"] or 0, "xp": row["xp"] or 0, "level": row["level"] or 1}
 
-    def get_card_by_id(self, card_id: str) -> Optional[dict]:
-        query = "SELECT * FROM cards WHERE card_id = ?"
-        row = self.fetchone(query, (card_id,))
-        return dict(row) if row else None
+    def claim_daily_reward(self, user_id: int):
+        today = datetime.utcnow().date().isoformat()
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT last_claim_date FROM daily_claims WHERE user_id = ?", (user_id,))
+            row = c.fetchone()
+            if row and row["last_claim_date"] == today:
+                return {"success": False, "message": "Already claimed today"}
+            c.execute(
+                "INSERT OR REPLACE INTO daily_claims (user_id, last_claim_date) VALUES (?, ?)",
+                (user_id, today),
+            )
+            c.execute("INSERT OR IGNORE INTO user_inventory (user_id, gold, xp, level) VALUES (?, 0, 0, 1)", (user_id,))
+            c.execute("UPDATE user_inventory SET gold = COALESCE(gold, 0) + 500 WHERE user_id = ?", (user_id,))
+            conn.commit()
+        return {"success": True, "gold_reward": 500}
 
-    def get_user_inventory(self, user_id: int) -> List[dict]:
-        query = """
-            SELECT c.card_id, c.name, c.rarity, c.artist, inv.quantity
-            FROM user_inventory inv
-            JOIN cards c ON inv.card_id = c.card_id
-            WHERE inv.user_id = ?
-        """
-        rows = self.fetchall(query, (user_id,))
-        return [dict(row) for row in rows]
+    def get_user_stats(self, user_id: int):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT total_battles, wins, losses FROM users WHERE user_id = ?", (user_id,))
+            row = c.fetchone()
+        if not row:
+            return {"total_battles": 0, "wins": 0, "losses": 0}
+        return {
+            "total_battles": row["total_battles"] or 0,
+            "wins": row["wins"] or 0,
+            "losses": row["losses"] or 0,
+        }
 
-    def add_card_to_inventory(self, user_id: int, card_id: str, quantity: int = 1) -> None:
-        query = """
-            INSERT INTO user_inventory (user_id, card_id, quantity)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, card_id) DO UPDATE SET quantity = quantity + excluded.quantity
-        """
-        self.execute(query, (user_id, card_id, quantity), commit=True)
+    def generate_tma_link_code(self, user_id: int) -> str:
+        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        expires_at = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO tma_link_codes (user_id, code, expires_at) VALUES (?, ?, ?)",
+                (user_id, code, expires_at),
+            )
+            conn.commit()
+        return code
 
-    def remove_card_from_inventory(self, user_id: int, card_id: str, quantity: int = 1) -> bool:
-        # Check current quantity
-        current_quantity_row = self.fetchone("SELECT quantity FROM user_inventory WHERE user_id = ? AND card_id = ?", (user_id, card_id))
-        if not current_quantity_row or current_quantity_row['quantity'] < quantity:
-            return False
+    # Convenience methods used by other routers
+    def get_user_collection(self, user_id: int):
+        return []
 
-        if current_quantity_row['quantity'] == quantity:
-            # Remove row if quantity becomes zero
-            self.execute("DELETE FROM user_inventory WHERE user_id = ? AND card_id = ?", (user_id, card_id), commit=True)
-        else:
-            # Decrement quantity
-            self.execute("UPDATE user_inventory SET quantity = quantity - ? WHERE user_id = ? AND card_id = ?", (quantity, user_id, card_id), commit=True)
+    def get_live_packs(self, limit: int = 20):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT pack_id, pack_name, pack_tier, cards_data FROM creator_packs WHERE status = 'LIVE' LIMIT ?",
+                (limit,),
+            )
+            rows = c.fetchall()
+        return [
+            {
+                "pack_id": r["pack_id"],
+                "pack_name": r["pack_name"],
+                "pack_tier": r["pack_tier"],
+                "cards": json.loads(r["cards_data"] or "[]"),
+            }
+            for r in rows
+        ]
+
+    def open_pack_for_drop(self, pack_id: str, user_id: int):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("INSERT INTO pack_purchases (user_id, pack_id) VALUES (?, ?)", (user_id, pack_id))
+            conn.commit()
+        return {"success": True, "pack_id": pack_id}
+
+    def get_leaderboard(self, metric: str = "wins", limit: int = 50):
+        allowed = {"wins", "total_battles", "gold", "xp"}
+        field = metric if metric in allowed else "wins"
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            if field in {"gold", "xp"}:
+                c.execute(
+                    f"SELECT u.user_id, u.username, i.{field} as value FROM users u LEFT JOIN user_inventory i ON i.user_id=u.user_id ORDER BY value DESC LIMIT ?",
+                    (limit,),
+                )
+            else:
+                c.execute(
+                    f"SELECT user_id, username, {field} as value FROM users ORDER BY value DESC LIMIT ?",
+                    (limit,),
+                )
+            rows = c.fetchall()
+        return [{"user_id": r["user_id"], "username": r["username"], "value": r["value"] or 0} for r in rows]
+
+    def get_battle_pass_status(self, user_id: int, season_id: str):
+        return {"season_id": season_id, "current_tier": 0, "claimed_tiers": []}
+
+    def claim_battle_pass_tier(self, user_id: int, season_id: str, tier: int):
+        return True, "Tier claimed"
+
+    def get_vip_status(self, user_id: int):
+        return {"is_vip": False, "tier": 0, "expires_at": None}
+
+    def set_vip_status(self, user_id: int, is_vip: bool, tier: int, expiration_date: str):
         return True
 
-    def get_pack(self, pack_id: str) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM packs WHERE pack_id = ?", (pack_id,))
-        return dict(row) if row else None
+    def create_user_pack(self, pack_id: str, name: str, user_id: int, card_ids):
+        cards_data = json.dumps([{"card_id": cid} for cid in card_ids])
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO creator_packs (pack_id, pack_name, pack_tier, status, cards_data) VALUES (?, ?, 'custom', 'LIVE', ?)",
+                (pack_id, name, cards_data),
+            )
+            c.execute("INSERT INTO pack_purchases (user_id, pack_id) VALUES (?, ?)", (user_id, pack_id))
+            conn.commit()
+        return pack_id
 
-    def get_user_packs(self, user_id: int) -> List[dict]:
-        rows = self.fetchall("SELECT p.pack_id, p.name, up.quantity FROM user_packs up JOIN packs p ON up.pack_id = p.pack_id WHERE up.user_id = ?", (user_id,))
-        return [dict(row) for row in rows]
+    def get_user_pack(self, pack_id: str):
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT pack_id, pack_name, cards_data FROM creator_packs WHERE pack_id = ?", (pack_id,))
+            row = c.fetchone()
+        if not row:
+            return None
+        return {"pack_id": row["pack_id"], "name": row["pack_name"], "cards": json.loads(row["cards_data"] or "[]")}
 
-    def add_pack_to_user(self, user_id: int, pack_id: str, quantity: int = 1) -> None:
-        query = """
-            INSERT INTO user_packs (user_id, pack_id, quantity)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, pack_id) DO UPDATE SET quantity = quantity + excluded.quantity
-        """
-        self.execute(query, (user_id, pack_id, quantity), commit=True)
+    def reserve_idempotency_key(self, user_id: int, action: str, idempotency_key: str, request_payload) -> dict:
+        request_hash = hashlib.sha256(
+            json.dumps(request_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        ).hexdigest()
+        now = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("BEGIN IMMEDIATE")
+            c.execute(
+                """
+                SELECT request_hash, status_code, response_json
+                FROM api_idempotency
+                WHERE user_id=? AND action=? AND idempotency_key=?
+                """,
+                (user_id, action, idempotency_key),
+            )
+            existing = c.fetchone()
+            if existing:
+                conn.commit()
+                if existing["request_hash"] != request_hash:
+                    return {"state": "payload_conflict"}
+                if existing["response_json"] is None:
+                    return {"state": "in_progress"}
+                return {
+                    "state": "replay",
+                    "status_code": existing["status_code"] or 200,
+                    "response": json.loads(existing["response_json"]),
+                }
+            c.execute(
+                """
+                INSERT INTO api_idempotency (user_id, action, idempotency_key, request_hash, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, action, idempotency_key, request_hash, now),
+            )
+            conn.commit()
+        return {"state": "reserved"}
 
-    def use_user_pack(self, user_id: int, pack_id: str) -> bool:
-        # Check current quantity
-        current_quantity_row = self.fetchone("SELECT quantity FROM user_packs WHERE user_id = ? AND pack_id = ?", (user_id, pack_id))
-        if not current_quantity_row or current_quantity_row['quantity'] < 1:
-            return False
+    def finalize_idempotency_key(
+        self, user_id: int, action: str, idempotency_key: str, status_code: int, response_payload
+    ) -> None:
+        now = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                UPDATE api_idempotency
+                SET status_code=?, response_json=?, updated_at=?
+                WHERE user_id=? AND action=? AND idempotency_key=?
+                """,
+                (status_code, json.dumps(response_payload), now, user_id, action, idempotency_key),
+            )
+            conn.commit()
 
-        if current_quantity_row['quantity'] == 1:
-            self.execute("DELETE FROM user_packs WHERE user_id = ? AND pack_id = ?", (user_id, pack_id), commit=True)
-        else:
-            self.execute("UPDATE user_packs SET quantity = quantity - 1 WHERE user_id = ? AND pack_id = ?", (user_id, pack_id), commit=True)
-        return True
+    def release_idempotency_key(self, user_id: int, action: str, idempotency_key: str) -> None:
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                "DELETE FROM api_idempotency WHERE user_id=? AND action=? AND idempotency_key=? AND response_json IS NULL",
+                (user_id, action, idempotency_key),
+            )
+            conn.commit()
 
-    def create_trade(self, user1_id: int, user2_id: int, user1_cards: List[str], user2_cards: List[str], user1_gold: int, user2_gold: int) -> int:
-        query = """
-            INSERT INTO trades (user1_id, user2_id, user1_cards, user2_cards, user1_gold, user2_gold)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """
-        cursor = self.execute(query, (user1_id, user2_id, json.dumps(user1_cards), json.dumps(user2_cards), user1_gold, user2_gold), commit=True)
-        return cursor.lastrowid
 
-    def get_trade(self, trade_id: int) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM trades WHERE trade_id = ?", (trade_id,))
-        return dict(row) if row else None
+Database = DatabaseManager
+_db_instance: Optional[DatabaseManager] = None
 
-    def update_trade_status(self, trade_id: int, status: str) -> None:
-        self.execute("UPDATE trades SET status = ? WHERE trade_id = ?", (status, trade_id), commit=True)
 
-    def get_marketplace_listings(self) -> List[dict]:
-        rows = self.fetchall("SELECT * FROM marketplace_listings WHERE status = 'active'")
-        return [dict(row) for row in rows]
-
-    def create_marketplace_listing(self, seller_id: int, card_id: str, price: int) -> int:
-        cursor = self.execute("INSERT INTO marketplace_listings (seller_id, card_id, price) VALUES (?, ?, ?)", (seller_id, card_id, price), commit=True)
-        return cursor.lastrowid
-
-    def get_listing(self, listing_id: int) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM marketplace_listings WHERE listing_id = ?", (listing_id,))
-        return dict(row) if row else None
-
-    def update_listing_status(self, listing_id: int, status: str) -> None:
-        self.execute("UPDATE marketplace_listings SET status = ? WHERE listing_id = ?", (status, listing_id), commit=True)
-
-    def get_pending_tma_battle(self, user_id: int) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM pending_tma_battles WHERE user_id = ?", (user_id,))
-        return dict(row) if row else None
-
-    def create_pending_tma_battle(self, user_id: int, deck: List[str], bet_amount: int) -> None:
-        self.execute("INSERT OR REPLACE INTO pending_tma_battles (user_id, deck, bet_amount) VALUES (?, ?, ?)", (user_id, json.dumps(deck), bet_amount), commit=True)
-
-    def delete_pending_tma_battle(self, user_id: int) -> None:
-        self.execute("DELETE FROM pending_tma_battles WHERE user_id = ?", (user_id,), commit=True)
-
-    def get_season_progress(self, user_id: int, season_id: int) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM season_progress WHERE user_id = ? AND season_id = ?", (user_id, season_id))
-        return dict(row) if row else None
-
-    def update_season_progress(self, user_id: int, season_id: int, xp: int, tier: int, claimed_tiers: List[int]) -> None:
-        query = """
-            INSERT INTO season_progress (user_id, season_id, xp, tier, claimed_tiers)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, season_id) DO UPDATE SET
-                xp = excluded.xp,
-                tier = excluded.tier,
-                claimed_tiers = excluded.claimed_tiers
-        """
-        self.execute(query, (user_id, season_id, xp, tier, json.dumps(claimed_tiers)), commit=True)
-
-    def get_vip_status(self, user_id: int) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM vip_status WHERE user_id = ?", (user_id,))
-        return dict(row) if row else None
-
-    def update_vip_status(self, user_id: int, is_vip: bool, vip_tier: int, expiration_date: Optional[datetime]) -> None:
-        query = """
-            INSERT INTO vip_status (user_id, is_vip, vip_tier, expiration_date)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                is_vip = excluded.is_vip,
-                vip_tier = excluded.vip_tier,
-                expiration_date = excluded.expiration_date
-        """
-        self.execute(query, (user_id, is_vip, vip_tier, expiration_date), commit=True)
-
-    def create_user_pack(self, pack_id: str, name: str, creator_id: int, cards: List[str]) -> None:
-        self.execute("INSERT INTO user_created_packs (pack_id, name, creator_id, cards) VALUES (?, ?, ?, ?)", (pack_id, name, creator_id, json.dumps(cards)), commit=True)
-
-    def get_user_created_pack(self, pack_id: str) -> Optional[dict]:
-        row = self.fetchone("SELECT * FROM user_created_packs WHERE pack_id = ?", (pack_id,))
-        return dict(row) if row else None
-
-    def get_all_user_created_packs(self) -> List[dict]:
-        rows = self.fetchall("SELECT * FROM user_created_packs")
-        return [dict(row) for row in rows]
+def get_db() -> DatabaseManager:
+    global _db_instance
+    if _db_instance is None:
+        _db_instance = DatabaseManager()
+    return _db_instance

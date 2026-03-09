@@ -468,3 +468,9 @@ def calculate_premium_track_value() -> Dict:
         "price": BattlePass.PREMIUM_PRICE_USD,
         "value_ratio": total_value / BattlePass.PREMIUM_PRICE_USD,
     }
+
+
+class SeasonConfig:
+    """Backward-compatible season constants for older routers."""
+
+    CURRENT_SEASON_ID = "season_1"

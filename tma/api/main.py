@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from tma.api.routers import users, cards, packs, economy, battle, marketplace, trade, dust, battle_pass, vip, user_packs # noqa: E402
+from tma.api.routers import users, cards, packs, economy, battle, battle_pass, vip, user_packs  # noqa: E402
 
 app = FastAPI(title="Music Legends TMA", version="1.0.0", docs_url="/api/docs")
 
@@ -61,9 +61,6 @@ app.include_router(cards.router)
 app.include_router(packs.router)
 app.include_router(economy.router)
 app.include_router(battle.router)
-app.include_router(marketplace.router)
-app.include_router(trade.router)
-app.include_router(dust.router)
 app.include_router(battle_pass.router)
 app.include_router(vip.router)
 app.include_router(user_packs.router)

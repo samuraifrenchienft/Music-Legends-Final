@@ -33,4 +33,5 @@ export const getLeaderboard  = (metric = 'wins')          => api.get(`/api/leade
 export const createChallenge = (body: object)             => api.post('/api/battle/challenge', body)
 export const acceptBattle    = (id: string, body: object) => api.post(`/api/battle/${id}/accept`, body)
 export const getBattle       = (id: string)               => api.get(`/api/battle/${id}`)
+export const searchPlayers   = (q: string, limit = 10)    => api.get(`/api/players/search?q=${encodeURIComponent(q)}&limit=${limit}`)
 export const generateLink    = ()                         => api.post('/api/link/generate')

@@ -2,9 +2,10 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred, openTelegramLink } from '@telegram-apps/sdk'
-import { getPacks, createChallenge, acceptBattle, getBattle } from '../api/client'
+import { getPacks, createChallenge, acceptBattle, getBattle, searchPlayers } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'result'
+type PlayerResult = { user_id: string; username: string; telegram_id: number; active_at?: string }
 
 const RARITY_COLORS: Record<string, string> = {
   common: '#95A5A6', rare: '#4488FF', epic: '#6B2EBE', legendary: '#F4A800', mythic: '#E74C3C',
@@ -16,6 +17,10 @@ export default function Battle() {
   const [phase, setPhase] = useState<Phase>(battleIdParam ? 'accept' : 'select-pack')
   const [packs, setPacks] = useState<any[]>([])
   const [selectedPackId, setSelectedPackId] = useState<string>('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchingPlayers, setSearchingPlayers] = useState(false)
+  const [searchResults, setSearchResults] = useState<PlayerResult[]>([])
+  const [selectedOpponent, setSelectedOpponent] = useState<PlayerResult | null>(null)
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [battleLink, setBattleLink] = useState('')
   const [result, setResult] = useState<any>(null)
@@ -28,10 +33,31 @@ export default function Battle() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
-  const handleChallenge = async () => {
-    if (!selectedPackId) return
+  const handlePlayerSearch = async () => {
+    const q = searchQuery.trim()
+    if (!q) {
+      setSearchResults([])
+      return
+    }
+    setSearchingPlayers(true)
     try {
-      const r = await createChallenge({ pack_id: selectedPackId, opponent_telegram_id: 0, wager_tier: 'casual' })
+      const r = await searchPlayers(q, 12)
+      setSearchResults(r.data.players || [])
+    } catch {
+      setSearchResults([])
+    } finally {
+      setSearchingPlayers(false)
+    }
+  }
+
+  const handleChallenge = async () => {
+    if (!selectedPackId || !selectedOpponent) return
+    try {
+      const r = await createChallenge({
+        pack_id: selectedPackId,
+        opponent_telegram_id: selectedOpponent.telegram_id,
+        wager_tier: 'casual',
+      })
       setBattleId(r.data.battle_id)
       setBattleLink(r.data.link)
       setPhase('challenge-sent')
@@ -70,7 +96,13 @@ export default function Battle() {
     if (!mountMainButton.isAvailable()) return
     mountMainButton()
     if (phase === 'select-pack') {
-      setMainButtonParams({ text: selectedPackId ? '⚔️ Create Challenge' : 'Select a Pack First', isEnabled: !!selectedPackId, isVisible: true, backgroundColor: '#E74C3C' })
+      const isReady = !!selectedPackId && !!selectedOpponent
+      const text = !selectedOpponent
+        ? 'Search & select opponent'
+        : selectedPackId
+          ? '⚔️ Create Challenge'
+          : 'Select a Pack First'
+      setMainButtonParams({ text, isEnabled: isReady, isVisible: true, backgroundColor: '#E74C3C' })
       const off = onMainButtonClick(handleChallenge)
       return () => { off(); unmountMainButton() }
     }
@@ -93,6 +125,9 @@ export default function Battle() {
       const off = onMainButtonClick(() => {
         setResult(null)
         setSelectedPackId('')
+        setSelectedOpponent(null)
+        setSearchResults([])
+        setSearchQuery('')
         setBattleId('')
         setBattleLink('')
         setPhase('select-pack')
@@ -100,7 +135,7 @@ export default function Battle() {
       return () => { off(); unmountMainButton() }
     }
     unmountMainButton()
-  }, [phase, selectedPackId, battleLink]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, selectedPackId, selectedOpponent, battleLink]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (phase === 'result' && result) {
     const c = result.challenger, o = result.opponent, winner = result.winner
@@ -160,6 +195,65 @@ export default function Battle() {
       )}
       {(phase === 'select-pack' || phase === 'accept') && (
         <>
+          {phase === 'select-pack' && (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ color: '#8888aa', fontSize: 13, marginBottom: 8 }}>Challenge a player:</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handlePlayerSearch() }}
+                  placeholder="Search username or Telegram ID"
+                  style={{
+                    flex: 1, borderRadius: 10, border: '1px solid #2a2760',
+                    background: '#1a1740', color: '#fff', padding: '10px 12px',
+                  }}
+                />
+                <button
+                  onClick={() => void handlePlayerSearch()}
+                  disabled={searchingPlayers || !searchQuery.trim()}
+                  style={{
+                    border: 'none', borderRadius: 10, padding: '10px 12px',
+                    background: searchingPlayers ? '#4a2a4a' : '#6B2EBE', color: '#fff',
+                    cursor: searchingPlayers ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {searchingPlayers ? '...' : 'Search'}
+                </button>
+              </div>
+              {searchResults.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {searchResults.map(player => (
+                    <div
+                      key={`${player.telegram_id}`}
+                      onClick={() => setSelectedOpponent(player)}
+                      style={{
+                        background: selectedOpponent?.telegram_id === player.telegram_id ? '#2a1760' : '#1a1740',
+                        border: `2px solid ${selectedOpponent?.telegram_id === player.telegram_id ? '#F4A800' : '#2a2760'}`,
+                        borderRadius: 10,
+                        padding: 10,
+                        marginBottom: 6,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700 }}>@{player.username}</div>
+                      <div style={{ fontSize: 12, color: '#8888aa' }}>Telegram ID: {player.telegram_id}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {searchQuery.trim() && !searchingPlayers && searchResults.length === 0 && (
+                <p style={{ color: '#8888aa', fontSize: 12, marginTop: 8 }}>
+                  No recently active Telegram players found.
+                </p>
+              )}
+              {selectedOpponent && (
+                <p style={{ color: '#2ECC71', fontSize: 12, marginTop: 8 }}>
+                  Opponent selected: @{selectedOpponent.username}
+                </p>
+              )}
+            </div>
+          )}
           <p style={{ color: '#8888aa', fontSize: 13, marginBottom: 14 }}>Choose your pack:</p>
           {packs.map(pack => (
             <div key={pack.pack_id} onClick={() => setSelectedPackId(pack.pack_id)} style={{
@@ -175,17 +269,18 @@ export default function Battle() {
           {packs.length > 0 && !mountMainButton.isAvailable() && (
             <button
               onClick={phase === 'accept' ? handleAccept : handleChallenge}
-              disabled={!selectedPackId}
+              disabled={phase === 'accept' ? !selectedPackId : (!selectedPackId || !selectedOpponent)}
               style={{
                 width: '100%', padding: '14px 0', marginTop: 16,
-                background: selectedPackId ? '#E74C3C' : '#4a2a4a',
+                background: (phase === 'accept' ? !!selectedPackId : (!!selectedPackId && !!selectedOpponent)) ? '#E74C3C' : '#4a2a4a',
                 color: '#fff', border: 'none', borderRadius: 12,
-                fontWeight: 700, fontSize: 15, cursor: selectedPackId ? 'pointer' : 'not-allowed',
+                fontWeight: 700, fontSize: 15,
+                cursor: (phase === 'accept' ? !!selectedPackId : (!!selectedPackId && !!selectedOpponent)) ? 'pointer' : 'not-allowed',
               }}
             >
               {phase === 'accept'
                 ? (selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Pack')
-                : (selectedPackId ? '⚔️ Create Challenge' : 'Select a Pack First')}
+                : (!selectedOpponent ? 'Search & Select Opponent' : (selectedPackId ? '⚔️ Create Challenge' : 'Select a Pack First'))}
             </button>
           )}
         </>
