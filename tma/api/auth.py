@@ -54,12 +54,19 @@ def _synthetic_dev_user(x_forwarded_for: str = "", user_agent: str = "") -> dict
     }
 
 
-def _parse_user_from_raw(raw: str, x_forwarded_for: str = "", user_agent: str = "") -> dict:
+def _parse_user_from_raw(
+    raw: str,
+    x_forwarded_for: str = "",
+    user_agent: str = "",
+    allow_synthetic: bool = True,
+) -> dict:
     """Extract user from initData WITHOUT verifying the HMAC. Dev only."""
     params = dict(urllib.parse.parse_qsl(raw, keep_blank_values=True))
     user_raw = params.get("user", "{}")
     user = json.loads(user_raw) if user_raw else {}
     if not user.get("id"):
+        if not allow_synthetic:
+            raise ValueError("DEV_MODE_NO_INIT_DATA: missing Telegram user context in initData")
         # No user in initData at all — create deterministic synthetic dev user.
         fallback = _synthetic_dev_user(x_forwarded_for=x_forwarded_for, user_agent=user_agent)
         print(
@@ -78,11 +85,20 @@ def get_tg_user(
 ) -> dict:
     """FastAPI dependency. Returns Telegram user dict."""
     skip_hmac = os.environ.get("TMA_SKIP_HMAC", "").lower() == "true"
+    allow_synth = os.environ.get("TMA_ALLOW_SYNTHETIC_DEV_USER", "").lower() == "true"
 
     # Dev bypass: skip HMAC, just parse user from initData
     if skip_hmac:
         raw = authorization[4:] if authorization.startswith("tma ") else authorization
-        return _parse_user_from_raw(raw, x_forwarded_for=x_forwarded_for, user_agent=user_agent)
+        try:
+            return _parse_user_from_raw(
+                raw,
+                x_forwarded_for=x_forwarded_for,
+                user_agent=user_agent,
+                allow_synthetic=allow_synth,
+            )
+        except ValueError as e:
+            raise HTTPException(401, str(e))
 
     if not authorization.startswith("tma "):
         raise HTTPException(401, "Authorization must start with 'tma '")

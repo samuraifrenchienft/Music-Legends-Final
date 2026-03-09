@@ -1,5 +1,6 @@
 """Battle router — in-app PvP battles."""
 import json
+import os
 import secrets
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +30,12 @@ class AcceptRequest(BaseModel):
 
 def _make_battle_id() -> str:
     return secrets.token_hex(3).upper()
+
+
+def _build_bot_start_link(battle_id: str) -> str:
+    """Fallback bot-chat deep link for challenge notifications."""
+    bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
+    return f"https://t.me/{bot_username}?start=battle_{battle_id}"
 
 
 def _extract_telegram_id(db, user: User) -> int | None:
@@ -247,6 +254,19 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
         raise HTTPException(500, f"Failed to create battle: {e}")
     finally:
         session.close()
+
+    # Best-effort Telegram DM notification with an accept button.
+    try:
+        from tma.api.bot.handlers import notify_battle_challenge
+        await notify_battle_challenge(
+            opponent_telegram_id=int(body.opponent_telegram_id),
+            challenger_name=tg.get("username") or tg.get("first_name", "Someone"),
+            battle_id=battle_id,
+            wager_tier=body.wager_tier,
+            link=_build_bot_start_link(battle_id),
+        )
+    except Exception as e:
+        print(f"[BATTLE] Challenge notify failed (non-critical): {e}")
 
     return {
         "battle_id": battle_id,
