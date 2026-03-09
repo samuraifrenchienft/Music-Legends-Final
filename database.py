@@ -252,10 +252,16 @@ class Database:
 
     @staticmethod
     def _user_id_variants(user_id) -> list:
-        """Return compatible user_id values for mixed text/int historical schemas."""
-        values = [str(user_id)]
+        """Return compatible user_id TEXT variants for historical schemas."""
+        base = str(user_id)
+        values = [base]
         try:
-            values.append(int(user_id))
+            n = int(base)
+            tg_offset = 9_000_000_000
+            if n >= tg_offset:
+                values.append(str(n - tg_offset))
+            else:
+                values.append(str(n + tg_offset))
         except (TypeError, ValueError):
             pass
         # Preserve order while deduplicating
@@ -1126,28 +1132,38 @@ class Database:
         """Return (or create) the internal user for a Telegram user.
         user_id = str(9_000_000_000 + telegram_id) — pure digits, fits BIGINT.
         Returns dict: user_id, username, telegram_id, is_new."""
-        user_id = str(self._TG_OFFSET + telegram_id)
+        offset_user_id = str(self._TG_OFFSET + telegram_id)
+        legacy_user_id = str(telegram_id)
         username = telegram_username or first_name or f"user_{telegram_id}"
         session = self.get_session()
         try:
-            user = session.query(User).filter_by(user_id=user_id).first()
+            # Prefer offset ID, but support legacy telegram-id rows for backward compatibility.
+            user = session.query(User).filter_by(user_id=offset_user_id).first()
+            resolved_user_id = offset_user_id
+            if not user:
+                legacy = session.query(User).filter_by(user_id=legacy_user_id).first()
+                if legacy:
+                    user = legacy
+                    resolved_user_id = legacy_user_id
+
             if user:
                 # Use pre-computed user_id string (not user.user_id which may be int if DB column is BIGINT)
-                return {"user_id": user_id, "username": user.username,
+                return {"user_id": resolved_user_id, "username": user.username,
                         "telegram_id": telegram_id, "is_new": False}
             # Create user + balance row
-            user = User(user_id=user_id, username=username, discord_tag=f"telegram:{telegram_id}")
+            user = User(user_id=offset_user_id, username=username, discord_tag=f"telegram:{telegram_id}")
             session.add(user)
             session.flush()
-            balances = UserBalances(user_id=user_id)
+            balances = UserBalances(user_id=offset_user_id)
             session.add(balances)
             session.commit()
-            return {"user_id": user_id, "username": username,
+            return {"user_id": offset_user_id, "username": username,
                     "telegram_id": telegram_id, "is_new": True}
         except IntegrityError:
             session.rollback()
-            user = session.query(User).filter_by(user_id=user_id).first()
-            return {"user_id": user_id, "username": user.username if user else username,
+            user = session.query(User).filter(User.user_id.in_([offset_user_id, legacy_user_id])).first()
+            resolved_user_id = str(user.user_id) if user else offset_user_id
+            return {"user_id": resolved_user_id, "username": user.username if user else username,
                     "telegram_id": telegram_id, "is_new": False}
         except Exception as e:
             session.rollback()
@@ -1158,13 +1174,18 @@ class Database:
 
     def get_telegram_user_by_id(self, telegram_id: int) -> Optional[dict]:
         """Look up an internal user by their Telegram ID."""
-        user_id = str(self._TG_OFFSET + telegram_id)
+        offset_user_id = str(self._TG_OFFSET + telegram_id)
+        legacy_user_id = str(telegram_id)
         session = self.get_session()
         try:
-            user = session.query(User).filter_by(user_id=user_id).first()
+            user = session.query(User).filter_by(user_id=offset_user_id).first()
+            resolved_user_id = offset_user_id
+            if not user:
+                user = session.query(User).filter_by(user_id=legacy_user_id).first()
+                resolved_user_id = legacy_user_id
             if not user:
                 return None
-            return {"user_id": user_id, "username": user.username}
+            return {"user_id": resolved_user_id, "username": user.username}
         finally:
             session.close()
 
@@ -1217,8 +1238,7 @@ class Database:
 
     def get_user_collection(self, user_id) -> List[dict]:
         """Return all cards owned by a user as enrichable dicts."""
-        # PostgreSQL is strict about mixed-type IN clauses; ids are stored as text.
-        user_ids = [str(user_id)]
+        user_ids = self._user_id_variants(user_id)
         session = self.get_session()
         try:
             rows = (
@@ -1296,8 +1316,7 @@ class Database:
 
     def get_user_purchased_packs(self, user_id, limit: int = 50) -> List[dict]:
         """Return packs the user has purchased (opened and unopened)."""
-        # PostgreSQL is strict about mixed-type IN clauses; ids are stored as text.
-        user_ids = [str(user_id)]
+        user_ids = self._user_id_variants(user_id)
         session = self.get_session()
         try:
             purchases = (
@@ -1709,8 +1728,7 @@ class Database:
     def open_pack_for_drop(self, pack_id: str, user_id) -> dict:
         """Open a purchased pack: award its cards and mark the purchase as opened."""
         user_id_str = str(user_id)
-        # PostgreSQL is strict about mixed-type IN clauses; ids are stored as text.
-        user_ids = [user_id_str]
+        user_ids = self._user_id_variants(user_id)
         session = self.get_session()
         try:
             purchase = (
