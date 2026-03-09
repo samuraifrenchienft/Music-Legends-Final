@@ -38,26 +38,51 @@ def validate_init_data(raw: str) -> dict:
     return json.loads(user_raw)
 
 
-def _parse_user_from_raw(raw: str) -> dict:
+def _synthetic_dev_user(x_forwarded_for: str = "", user_agent: str = "") -> dict:
+    """
+    Build a deterministic synthetic user for dev mode when initData is missing.
+    This prevents all browser sessions collapsing into user id=1.
+    """
+    seed = (x_forwarded_for or "").strip() or (user_agent or "").strip() or "dev"
+    digest = hashlib.sha256(seed.encode()).hexdigest()
+    # Keep synthetic IDs away from typical Telegram ids.
+    synthetic_id = 8_000_000_000 + (int(digest[:8], 16) % 999_999_999)
+    return {
+        "id": synthetic_id,
+        "username": f"dev_{digest[:8]}",
+        "first_name": "Dev",
+    }
+
+
+def _parse_user_from_raw(raw: str, x_forwarded_for: str = "", user_agent: str = "") -> dict:
     """Extract user from initData WITHOUT verifying the HMAC. Dev only."""
     params = dict(urllib.parse.parse_qsl(raw, keep_blank_values=True))
     user_raw = params.get("user", "{}")
     user = json.loads(user_raw) if user_raw else {}
     if not user.get("id"):
-        # No user in initData at all — create a synthetic dev user
-        return {"id": 1, "username": "dev_user", "first_name": "Dev"}
+        # No user in initData at all — create deterministic synthetic dev user.
+        fallback = _synthetic_dev_user(x_forwarded_for=x_forwarded_for, user_agent=user_agent)
+        print(
+            f"[AUTH] DEV_MODE synthetic user_id={fallback['id']} "
+            f"seed={'xff' if x_forwarded_for else 'ua' if user_agent else 'default'}"
+        )
+        return fallback
     print(f"[AUTH] DEV_MODE skip_hmac user_id={user.get('id')} username={user.get('username')}")
     return user
 
 
-def get_tg_user(authorization: str = Header(default="")) -> dict:
+def get_tg_user(
+    authorization: str = Header(default=""),
+    x_forwarded_for: str = Header(default="", alias="X-Forwarded-For"),
+    user_agent: str = Header(default="", alias="User-Agent"),
+) -> dict:
     """FastAPI dependency. Returns Telegram user dict."""
     skip_hmac = os.environ.get("TMA_SKIP_HMAC", "").lower() == "true"
 
     # Dev bypass: skip HMAC, just parse user from initData
     if skip_hmac:
         raw = authorization[4:] if authorization.startswith("tma ") else authorization
-        return _parse_user_from_raw(raw)
+        return _parse_user_from_raw(raw, x_forwarded_for=x_forwarded_for, user_agent=user_agent)
 
     if not authorization.startswith("tma "):
         raise HTTPException(401, "Authorization must start with 'tma '")
