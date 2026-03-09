@@ -1147,6 +1147,13 @@ class Database:
                     resolved_user_id = legacy_user_id
 
             if user:
+                # Keep Telegram identity fresh so partner search can prioritize active players.
+                if username:
+                    user.username = username
+                if not (user.discord_tag or "").startswith("telegram:"):
+                    user.discord_tag = f"telegram:{telegram_id}"
+                user.last_active = datetime.utcnow()
+                session.commit()
                 # Use pre-computed user_id string (not user.user_id which may be int if DB column is BIGINT)
                 return {"user_id": resolved_user_id, "username": user.username,
                         "telegram_id": telegram_id, "is_new": False}
@@ -1163,6 +1170,16 @@ class Database:
             session.rollback()
             user = session.query(User).filter(User.user_id.in_([offset_user_id, legacy_user_id])).first()
             resolved_user_id = str(user.user_id) if user else offset_user_id
+            if user:
+                try:
+                    if username:
+                        user.username = username
+                    if not (user.discord_tag or "").startswith("telegram:"):
+                        user.discord_tag = f"telegram:{telegram_id}"
+                    user.last_active = datetime.utcnow()
+                    session.commit()
+                except Exception:
+                    session.rollback()
             return {"user_id": resolved_user_id, "username": user.username if user else username,
                     "telegram_id": telegram_id, "is_new": False}
         except Exception as e:
