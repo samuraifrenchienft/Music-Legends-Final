@@ -183,7 +183,15 @@ export default function Battle() {
 
   const handleChallenge = async () => {
     if (!selectedPackId) return
-    const partner = autoResolvedPartner
+    let partner = autoResolvedPartner
+    if (!partner && normalizedPartnerQuery) {
+      try {
+        const r = await searchTradePartners(normalizedPartnerQuery)
+        partner = resolvePartnerFromQuery(r.data?.partners || [], normalizedPartnerQuery)
+      } catch {
+        partner = null
+      }
+    }
     if (!partner?.telegram_id) {
       alert('Select who to challenge first')
       return

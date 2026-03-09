@@ -85,7 +85,15 @@ export default function Trade() {
   }
 
   const onCreate = async () => {
-    const partner = autoResolvedPartner
+    let partner = autoResolvedPartner
+    if (!partner && normalizedPartnerQuery) {
+      try {
+        const r = await searchTradePartners(normalizedPartnerQuery)
+        partner = resolvePartnerFromQuery(r.data?.partners || [], normalizedPartnerQuery)
+      } catch {
+        partner = null
+      }
+    }
     const pid = Number(partner?.telegram_id)
     if (!Number.isFinite(pid) || pid <= 0) return alert('Select a trade partner')
     setCreating(true)
