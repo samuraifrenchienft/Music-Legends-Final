@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from tma.api.routers import users, cards, packs, economy, battle, marketplace, trade, dust, battle_pass  # noqa: E402
+
 app = FastAPI(title="Music Legends TMA", version="1.0.0", docs_url="/api/docs")
 
 app.add_middleware(
@@ -25,7 +27,6 @@ def health():
 
 
 # ── Routers ───────────────────────────────────────────────────────
-from tma.api.routers import users, cards, packs, economy, battle, marketplace, trade, dust, battle_pass # noqa: E402
 app.include_router(users.router)
 app.include_router(cards.router)
 app.include_router(packs.router)
