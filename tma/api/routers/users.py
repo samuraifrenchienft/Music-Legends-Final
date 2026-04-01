@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query
 from tma.api.auth import get_tg_user
+from tma.api.telegram_identity import extract_telegram_id_from_user
 from database import get_db
 from models import User
 
@@ -76,39 +77,48 @@ def search_players(
         return {"players": []}
 
     cutoff = datetime.utcnow() - timedelta(days=30)
-    is_id_lookup = term.isdigit()
+    term_normalized = term.lower().lstrip("@")
+    is_id_lookup = term_normalized.isdigit()
 
     session = db.get_session()
     try:
-        q_users = session.query(User).filter(User.user_id.isnot(None))
-        q_users = q_users.filter(User.last_active >= cutoff)
-        # Telegram internal ids are offset by 9_000_000_000
-        q_users = q_users.filter(User.user_id >= str(db._TG_OFFSET))
-        q_users = q_users.filter(User.user_id < str(db._TG_OFFSET + 10_000_000_000))
-
-        if is_id_lookup:
-            target_user_id = str(db._TG_OFFSET + int(term))
-            q_users = q_users.filter(User.user_id == target_user_id)
-        else:
-            q_users = q_users.filter(User.username.ilike(f"%{term}%"))
-
-        rows = q_users.order_by(User.last_active.desc()).limit(limit).all()
+        rows = (
+            session.query(User)
+            .filter(User.user_id.isnot(None))
+            .filter(User.last_active >= cutoff)
+            .order_by(User.last_active.desc())
+            .limit(500)
+            .all()
+        )
         players = []
+        me_tg = int(tg["id"])
         for u in rows:
-            if str(u.user_id) == str(db._TG_OFFSET + tg["id"]):
+            telegram_id = extract_telegram_id_from_user(db, u)
+            if not telegram_id or telegram_id == me_tg:
                 continue
-            try:
-                telegram_id = int(str(u.user_id)) - db._TG_OFFSET
-            except Exception:
-                continue
+
+            username = (u.username or f"user_{telegram_id}")
+            if is_id_lookup:
+                if str(telegram_id) != term_normalized:
+                    continue
+            else:
+                if term_normalized not in username.lower():
+                    continue
+
             players.append(
                 {
                     "user_id": str(u.user_id),
-                    "username": u.username or f"user_{telegram_id}",
+                    "username": username,
                     "telegram_id": telegram_id,
                     "active_at": u.last_active.isoformat() if u.last_active else None,
                 }
             )
+            if len(players) >= limit:
+                break
+        if is_id_lookup:
+            players.sort(key=lambda p: 0 if str(p["telegram_id"]) == term_normalized else 1)
+        else:
+            players.sort(key=lambda p: 0 if p["username"].lower() == term_normalized else 1)
         return {"players": players}
     finally:
         session.close()

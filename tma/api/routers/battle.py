@@ -4,9 +4,11 @@ import os
 import secrets
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Query
 from pydantic import BaseModel
 from sqlalchemy import desc
 from tma.api.auth import get_tg_user
+from tma.api.telegram_identity import extract_telegram_id_from_user
 from database import get_db
 from cards_config import compute_card_power, compute_team_power
 from battle_engine import BattleEngine
@@ -36,22 +38,6 @@ def _build_bot_start_link(battle_id: str) -> str:
     """Fallback bot-chat deep link for challenge notifications."""
     bot_username = (os.environ.get("TELEGRAM_BOT_USERNAME") or "MusicLegendsBot").lstrip("@")
     return f"https://t.me/{bot_username}?start=battle_{battle_id}"
-
-
-def _extract_telegram_id(db, user: User) -> int | None:
-    tag = (user.discord_tag or "").strip()
-    if tag.startswith("telegram:"):
-        try:
-            return int(tag.split(":", 1)[1])
-        except Exception:
-            return None
-    try:
-        uid = int(str(user.user_id))
-        if uid >= db._TG_OFFSET:
-            return uid - db._TG_OFFSET
-    except Exception:
-        return None
-    return None
 
 
 def _card_to_artist(card: dict) -> ArtistCard:
@@ -241,6 +227,10 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     selection_ref, _challenger_pack = _resolve_selected_pack(
         db, challenger["user_id"], body.pack_id, body.card_id
     )
+    print(
+        f"[BATTLE] challenge selection challenger_tg={tg['id']} "
+        f"resolved_via={selection_ref}"
+    )
 
     battle_id = _make_battle_id()
     expires = datetime.utcnow() + timedelta(hours=24)
@@ -253,6 +243,10 @@ async def create_challenge(body: ChallengeRequest, tg: dict = Depends(get_tg_use
     # Fallback flow: opponent must explicitly register as battle-ready.
     opponent_user = db.get_registered_battle_player(body.opponent_telegram_id)
     if not opponent_user:
+        print(
+            f"[BATTLE] create_challenge opponent_not_registered "
+            f"challenger_tg={tg['id']} opponent_tg={body.opponent_telegram_id}"
+        )
         raise HTTPException(404, "Opponent is not registered for battle yet")
 
     session = db.get_session()
@@ -304,6 +298,10 @@ def register_for_battle(tg: dict = Depends(get_tg_user)):
         username=tg.get("username", ""),
         first_name=tg.get("first_name", ""),
     )
+    print(
+        f"[BATTLE] register success tg={tg['id']} "
+        f"user_id={result.get('user_id')} username={result.get('username')}"
+    )
     return result
 
 
@@ -314,7 +312,32 @@ def list_registered_opponents(tg: dict = Depends(get_tg_user)):
     # Keep caller's user profile fresh, but don't auto-register for battle.
     db.get_or_create_telegram_user(tg["id"], tg.get("username", ""), tg.get("first_name", ""))
     players = db.list_registered_battle_players(exclude_telegram_id=tg["id"], limit=100)
+    print(f"[BATTLE] opponents caller_tg={tg['id']} count={len(players)}")
     return {"players": players}
+
+
+@router.get("/opponents/search")
+def search_registered_opponents(
+    q: str = Query(default="", max_length=64),
+    tg: dict = Depends(get_tg_user),
+):
+    """Search battle-registered opponents by username/Telegram ID."""
+    db = get_db()
+    db.get_or_create_telegram_user(tg["id"], tg.get("username", ""), tg.get("first_name", ""))
+    term = (q or "").strip().lower().lstrip("@")
+    rows = db.list_registered_battle_players(exclude_telegram_id=tg["id"], limit=200)
+    if not term:
+        return {"players": rows[:50]}
+
+    out = []
+    for p in rows:
+        uname = str(p.get("username") or "").lower()
+        tid = str(p.get("telegram_id") or "")
+        if term in uname or term in tid:
+            out.append(p)
+    exact = [p for p in out if str(p.get("username") or "").lower() == term or str(p.get("telegram_id") or "") == term]
+    partial = [p for p in out if p not in exact]
+    return {"players": (exact + partial)[:50]}
 
 
 @router.get("/incoming")
@@ -350,7 +373,7 @@ def list_incoming_challenges(tg: dict = Depends(get_tg_user)):
                 "battle_id": r.battle_id,
                 "challenger_user_id": str(r.challenger_id),
                 "challenger_username": challenger_name,
-                "challenger_telegram_id": _extract_telegram_id(db, cu) if cu else None,
+                "challenger_telegram_id": extract_telegram_id_from_user(db, cu) if cu else None,
                 "wager_tier": r.wager_tier or "casual",
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "expires_at": r.expires_at.isoformat() if r.expires_at else None,
@@ -418,8 +441,8 @@ def battle_updates(tg: dict = Depends(get_tg_user)):
                 "opponent_user_id": str(r.opponent_id) if r.opponent_id else None,
                 "challenger_username": challenger_name,
                 "opponent_username": opponent_name,
-                "challenger_telegram_id": _extract_telegram_id(db, challenger_user) if challenger_user else None,
-                "opponent_telegram_id": _extract_telegram_id(db, opponent_user) if opponent_user else None,
+                "challenger_telegram_id": extract_telegram_id_from_user(db, challenger_user) if challenger_user else None,
+                "opponent_telegram_id": extract_telegram_id_from_user(db, opponent_user) if opponent_user else None,
             }
 
             if str(r.opponent_id) == me_id and status == "waiting":
@@ -469,6 +492,10 @@ async def accept_challenge(battle_id: str, body: AcceptRequest,
 
     opponent_ref, o_pack = _resolve_selected_pack(
         db, opponent["user_id"], body.pack_id, body.card_id
+    )
+    print(
+        f"[BATTLE] accept selection opponent_tg={tg['id']} "
+        f"resolved_via={opponent_ref}"
     )
     c_pack = _resolve_pack_from_ref(db, battle["challenger_id"], str(battle["challenger_pack"]))
 

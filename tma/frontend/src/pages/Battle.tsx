@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { mountMainButton, setMainButtonParams, onMainButtonClick, unmountMainButton,
          hapticFeedbackNotificationOccurred } from '@telegram-apps/sdk'
-import { getPacks, getCards, createChallenge, acceptBattle, cancelBattle, getBattle, getBattleUpdates, registerBattlePlayer, getBattleOpponents, searchTradePartners } from '../api/client'
+import { getPacks, createChallenge, acceptBattle, cancelBattle, getBattle, getBattleUpdates, registerBattlePlayer, getBattleOpponents, searchBattleOpponents } from '../api/client'
 
 type Phase = 'select-pack' | 'challenge-sent' | 'accept' | 'resolving' | 'result'
 
@@ -24,6 +24,8 @@ export default function Battle() {
   const [outgoingChallenges, setOutgoingChallenges] = useState<any[]>([])
   const [registeringBattle, setRegisteringBattle] = useState(false)
   const [loadingOpponents, setLoadingOpponents] = useState(false)
+  const [registerError, setRegisterError] = useState('')
+  const [opponentError, setOpponentError] = useState('')
   const [battleId, setBattleId] = useState(battleIdParam || '')
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
   const [countdown, setCountdown] = useState('')
@@ -37,13 +39,16 @@ export default function Battle() {
   const normalizedPartnerQuery = partnerQuery.trim().replace(/^@+/, '').toLowerCase()
   const autoResolvedPartner = resolveAutoPartner(selectedPartner, partnerResults, normalizedPartnerQuery)
 
-  const loadOpponents = async () => {
+  const loadOpponents = async (query = '') => {
     setLoadingOpponents(true)
+    setOpponentError('')
     try {
-      const r = await getBattleOpponents()
+      const normalized = query.trim()
+      const r = normalized ? await searchBattleOpponents(normalized) : await getBattleOpponents()
       setPartnerResults(r.data?.players || [])
-    } catch {
+    } catch (e: any) {
       setPartnerResults([])
+      setOpponentError(e?.response?.data?.detail || 'Failed to load opponents')
     } finally {
       setLoadingOpponents(false)
     }
@@ -76,44 +81,8 @@ export default function Battle() {
 
   useEffect(() => {
     getPacks()
-      .then(async r => {
-        const ownedPacks = r.data.packs || []
-        if (ownedPacks.length > 0) {
-          setPacks(ownedPacks)
-          return
-        }
-        // Fallback flow: allow battle from collection when user has cards but no purchased packs.
-        try {
-          const cardsResp = await getCards()
-          const cards = cardsResp.data.cards || []
-          const synthetic = cards.map((c: any) => ({
-            pack_id: `card:${c.card_id}`,
-            pack_name: `Card: ${c.name || c.card_id}`,
-            pack_tier: c.rarity || 'community',
-            cards: [c],
-            _type: 'card',
-          }))
-          setPacks(synthetic)
-        } catch {
-          setPacks([])
-        }
-      })
-      .catch(async () => {
-        try {
-          const cardsResp = await getCards()
-          const cards = cardsResp.data.cards || []
-          const synthetic = cards.map((c: any) => ({
-            pack_id: `card:${c.card_id}`,
-            pack_name: `Card: ${c.name || c.card_id}`,
-            pack_tier: c.rarity || 'community',
-            cards: [c],
-            _type: 'card',
-          }))
-          setPacks(synthetic)
-        } catch {
-          setPacks([])
-        }
-      })
+      .then(r => setPacks(r.data.packs || []))
+      .catch(() => setPacks([]))
     if (battleIdParam) {
       getBattle(battleIdParam)
         .then((r) => {
@@ -135,9 +104,13 @@ export default function Battle() {
     loadBattleUpdates().catch(() => undefined)
     loadOpponents().catch(() => undefined)
     // Keep this user battle-registered while the screen is open.
-    registerBattlePlayer().catch(() => undefined)
+    registerBattlePlayer()
+      .then(() => setRegisterError(''))
+      .catch((e: any) => setRegisterError(e?.response?.data?.detail || 'Battle registration failed'))
     registerPollRef.current = setInterval(() => {
-      registerBattlePlayer().catch(() => undefined)
+      registerBattlePlayer()
+        .then(() => setRegisterError(''))
+        .catch((e: any) => setRegisterError(e?.response?.data?.detail || 'Battle registration failed'))
     }, 30000)
     incomingPollRef.current = setInterval(() => {
       loadBattleUpdates().catch(() => undefined)
@@ -151,31 +124,31 @@ export default function Battle() {
   }, [])
 
   useEffect(() => {
-    loadOpponents().catch(() => undefined)
-  }, [phase])
+    loadOpponents(normalizedPartnerQuery).catch(() => undefined)
+  }, [phase, normalizedPartnerQuery])
 
   useEffect(() => {
-    const next = resolvePartnerFromQuery(partnerResults, normalizedPartnerQuery)
-    setSelectedPartner(next)
-  }, [partnerQuery, partnerResults])
+    if (!selectedPartner?.telegram_id) return
+    const match = partnerResults.find((p: any) => String(p?.telegram_id) === String(selectedPartner.telegram_id))
+    if (match) {
+      setSelectedPartner(match)
+    }
+  }, [partnerResults, selectedPartner?.telegram_id])
 
-  const filteredPartners = normalizedPartnerQuery
-    ? partnerResults.filter((p: any) => {
-        const username = String(p?.username || '').toLowerCase()
-        const tid = String(p?.telegram_id || '')
-        return username.includes(normalizedPartnerQuery) || tid.includes(normalizedPartnerQuery.replace(/\D/g, ''))
-      })
-    : partnerResults
+  const filteredPartners = partnerResults
 
   const handleRegisterForBattle = async () => {
     setRegisteringBattle(true)
+    setRegisterError('')
     try {
       await registerBattlePlayer()
       await loadOpponents()
       if (hapticFeedbackNotificationOccurred.isAvailable()) hapticFeedbackNotificationOccurred('success')
       alert('You are now registered for battle matchmaking.')
     } catch (e: any) {
-      alert(e?.response?.data?.detail || 'Failed to register for battle')
+      const message = e?.response?.data?.detail || 'Failed to register for battle'
+      setRegisterError(message)
+      alert(message)
     } finally {
       setRegisteringBattle(false)
     }
@@ -183,15 +156,7 @@ export default function Battle() {
 
   const handleChallenge = async () => {
     if (!selectedPackId) return
-    let partner = autoResolvedPartner
-    if (!partner && normalizedPartnerQuery) {
-      try {
-        const r = await searchTradePartners(normalizedPartnerQuery)
-        partner = resolvePartnerFromQuery(r.data?.partners || [], normalizedPartnerQuery)
-      } catch {
-        partner = null
-      }
-    }
+    const partner = autoResolvedPartner
     if (!partner?.telegram_id) {
       alert('Select who to challenge first')
       return
@@ -331,7 +296,7 @@ export default function Battle() {
       return () => { off(); unmountMainButton() }
     }
     unmountMainButton()
-  }, [phase, selectedPackId, selectedPartner, partnerResults]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, selectedPackId, autoResolvedPartner?.telegram_id, battleId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (phase === 'result' && result) {
     const c = result.challenger, o = result.opponent, winner = result.winner
@@ -449,6 +414,12 @@ export default function Battle() {
           {loadingOpponents && (
             <div style={{ color: '#8888aa', fontSize: 12, marginBottom: 8 }}>Loading registered opponents...</div>
           )}
+          {!!opponentError && (
+            <div style={{ color: '#ff6b6b', fontSize: 12, marginBottom: 8 }}>{opponentError}</div>
+          )}
+          {!!registerError && (
+            <div style={{ color: '#ff6b6b', fontSize: 12, marginBottom: 8 }}>{registerError}</div>
+          )}
           {filteredPartners.length > 0 && (
             <div style={{ background: '#0f1030', border: '1px solid #2a2760', borderRadius: 8, marginBottom: 8, maxHeight: 140, overflowY: 'auto' }}>
               {filteredPartners.map((p: any) => (
@@ -556,7 +527,7 @@ export default function Battle() {
             >
               {phase === 'accept'
                 ? (selectedPackId ? '⚔️ Accept Battle!' : 'Select Your Card or Pack')
-                : (selectedPackId ? '⚔️ Create Challenge' : 'Select a Card or Pack')}
+                : ((selectedPackId && !!autoResolvedPartner?.telegram_id) ? '⚔️ Create Challenge' : 'Pick Opponent + Card/Pack')}
             </button>
           )}
         </>

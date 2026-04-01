@@ -7,37 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import List
 from tma.api.auth import get_tg_user
+from tma.api.telegram_identity import extract_telegram_id_from_user
 from database import get_db
 from sqlalchemy import desc
 from models import User
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
-
-
-def _extract_telegram_id(db, user: User) -> int | None:
-    """Best-effort Telegram ID extraction across legacy/new schemas."""
-    tag = (user.discord_tag or "").strip()
-    if tag.startswith("telegram:"):
-        try:
-            return int(tag.split(":", 1)[1])
-        except Exception:
-            return None
-
-    try:
-        uid = int(str(user.user_id))
-    except Exception:
-        return None
-
-    # New schema: offset id.
-    if uid >= db._TG_OFFSET:
-        return uid - db._TG_OFFSET
-
-    # Legacy Telegram IDs are much smaller than Discord snowflakes.
-    if 1_000_000 <= uid <= 9_999_999_999:
-        return uid
-
-    return None
-
 
 def _lookup_telegram_user_live(query: str) -> dict | None:
     """
@@ -78,6 +53,8 @@ def create_trade(body: CreateTradeRequest, tg: dict = Depends(get_tg_user)):
     """Create a new trade."""
     db = get_db()
     user = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
+    if int(body.partner_id) == int(tg["id"]):
+        raise HTTPException(400, "You can't trade with yourself")
     result = db.create_trade(
         initiator_id=user["user_id"],
         partner_id=body.partner_id,
@@ -87,6 +64,10 @@ def create_trade(body: CreateTradeRequest, tg: dict = Depends(get_tg_user)):
         requested_gold=body.requested_gold
     )
     if not result.get("success"):
+        print(
+            f"[TRADE] create failed tg={tg['id']} partner={body.partner_id} "
+            f"error={result.get('error', 'unknown')}"
+        )
         raise HTTPException(400, result.get("error", "Failed to create trade."))
     return result
 
@@ -97,6 +78,7 @@ def accept_trade(trade_id: str, tg: dict = Depends(get_tg_user)):
     user = db.get_or_create_telegram_user(tg["id"], tg.get("username", ""))
     result = db.accept_trade(trade_id, user["user_id"])
     if not result.get("success"):
+        print(f"[TRADE] accept failed tg={tg['id']} trade_id={trade_id} error={result.get('error', 'unknown')}")
         raise HTTPException(400, result.get("error", "Failed to accept trade."))
     return result
 
@@ -142,7 +124,7 @@ def search_trade_partners(
         for u in rows:
             if str(u.user_id) == me_user_id:
                 continue
-            tg_id_int = _extract_telegram_id(db, u)
+            tg_id_int = extract_telegram_id_from_user(db, u)
             if not tg_id_int:
                 continue
             tg_id = str(tg_id_int)

@@ -2320,10 +2320,18 @@ class Database:
 
             # Resolve partner user_id (create placeholder if needed)
             partner_user_id = str(partner_id) if discord_mode else str(self._TG_OFFSET + partner_id)
+            if str(initiator_id) == str(partner_user_id):
+                return {"success": False, "error": "You can't trade with yourself"}
             if not session.query(User).filter_by(user_id=partner_user_id).first():
                 session.add(User(user_id=partner_user_id, username=f"user_{partner_id}"))
                 session.add(UserBalances(user_id=partner_user_id))
                 session.flush()
+
+            if int(offered_gold or 0) > 0:
+                ib = session.query(UserBalances).filter_by(user_id=str(initiator_id)).first()
+                have = int((ib.gold if ib else 0) or 0)
+                if have < int(offered_gold or 0):
+                    return {"success": False, "error": "You don't have enough gold"}
 
             trade = Trade(
                 trade_id=Trade._next_trade_id(session),
@@ -2590,6 +2598,22 @@ class Database:
                 return {"success": False, "error": "Trade has expired"}
 
             initiator_id = str(trade.user_a)
+            receiver_id = str(trade.user_b)
+            bal_a = session.query(UserBalances).filter_by(user_id=initiator_id).first()
+            bal_b = session.query(UserBalances).filter_by(user_id=receiver_id).first()
+            if not bal_a:
+                bal_a = UserBalances(user_id=initiator_id)
+                session.add(bal_a)
+                session.flush()
+            if not bal_b:
+                bal_b = UserBalances(user_id=receiver_id)
+                session.add(bal_b)
+                session.flush()
+            if int(trade.gold_a or 0) > int(bal_a.gold or 0):
+                return {"success": False, "error": "Initiator no longer has enough gold"}
+            if int(trade.gold_b or 0) > int(bal_b.gold or 0):
+                return {"success": False, "error": "You no longer have enough gold"}
+
             # Swap cards A → B
             for card_id in (trade.cards_a or []):
                 uc = session.query(UserCard).filter_by(user_id=initiator_id, card_id=card_id).first()
@@ -2598,16 +2622,16 @@ class Database:
                 uc.quantity -= 1
                 if uc.quantity <= 0:
                     session.delete(uc)
-                ex = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+                ex = session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first()
                 if ex:
                     ex.quantity += 1
                 else:
-                    session.add(UserCard(user_id=user_id, card_id=card_id, quantity=1,
+                    session.add(UserCard(user_id=receiver_id, card_id=card_id, quantity=1,
                                          acquired_from="trade", acquired_at=datetime.utcnow()))
 
             # Swap cards B → A
             for card_id in (trade.cards_b or []):
-                uc = session.query(UserCard).filter_by(user_id=user_id, card_id=card_id).first()
+                uc = session.query(UserCard).filter_by(user_id=receiver_id, card_id=card_id).first()
                 if not uc:
                     return {"success": False, "error": f"You no longer own {card_id}"}
                 uc.quantity -= 1
@@ -2622,8 +2646,8 @@ class Database:
 
             # Swap gold
             if trade.gold_a or trade.gold_b:
-                self.update_user_economy(initiator_id, gold_change=-(trade.gold_a or 0) + (trade.gold_b or 0))
-                self.update_user_economy(user_id,       gold_change=-(trade.gold_b or 0) + (trade.gold_a or 0))
+                bal_a.gold = max(0, int(bal_a.gold or 0) - int(trade.gold_a or 0) + int(trade.gold_b or 0))
+                bal_b.gold = max(0, int(bal_b.gold or 0) - int(trade.gold_b or 0) + int(trade.gold_a or 0))
 
             trade.status = "completed"
             session.commit()

@@ -59,6 +59,7 @@ export const getBattleUpdates = ()                        => api.get('/api/battl
 export const searchPlayers   = (q: string, limit = 10)    => api.get(`/api/players/search?q=${encodeURIComponent(q)}&limit=${limit}`)
 export const registerBattlePlayer = ()                    => api.post('/api/battle/register')
 export const getBattleOpponents   = ()                    => api.get('/api/battle/opponents')
+export const searchBattleOpponents = (q: string)         => api.get(`/api/battle/opponents/search?q=${encodeURIComponent(q)}`)
 export const generateLink    = ()                         => api.post('/api/link/generate')
 export const getMarketplace  = ()                         => api.get('/api/marketplace')
 export const sellCard        = (body: object)             => api.post('/api/marketplace/sell', body)
