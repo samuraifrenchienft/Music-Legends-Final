@@ -4,7 +4,7 @@ import os
 import sqlite3
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
 
 from sqlalchemy import (
@@ -1936,15 +1936,37 @@ class Database:
             b = session.query(UserBalances).filter_by(user_id=user_id).first()
             if not b:
                 return {"gold": 0, "tickets": 0, "dust": 0, "xp": 0,
-                        "level": 1, "last_daily_claim": None, "daily_streak": 0}
+                        "level": 1, "last_daily_claim": None, "daily_streak": 0,
+                        "can_claim_daily": True, "daily_cooldown_seconds": 0}
+            now = datetime.utcnow()
+            last_claim_at = b.last_daily_claim
+            cooldown_seconds = 0
+            can_claim = True
+            # Heal obviously invalid future timestamps so users aren't locked out.
+            if last_claim_at and last_claim_at > (now + timedelta(minutes=5)):
+                logger.warning(
+                    f"[TMA] get_user_economy correcting future last_daily_claim "
+                    f"user_id={user_id} last_claim_at={last_claim_at.isoformat()}"
+                )
+                b.last_daily_claim = None
+                b.daily_streak = 0
+                last_claim_at = None
+                session.commit()
+            if last_claim_at:
+                elapsed = (now - last_claim_at).total_seconds()
+                if elapsed < 24 * 3600:
+                    cooldown_seconds = max(0, int((24 * 3600) - elapsed))
+                    can_claim = cooldown_seconds <= 0
             return {
                 "gold":             b.gold or 0,
                 "tickets":          b.tickets or 0,
                 "dust":             b.dust or 0,
                 "xp":               b.xp or 0,
                 "level":            b.level or 1,
-                "last_daily_claim": b.last_daily_claim.isoformat() if b.last_daily_claim else None,
+                "last_daily_claim": last_claim_at.isoformat() if last_claim_at else None,
                 "daily_streak":     b.daily_streak or 0,
+                "can_claim_daily":  can_claim,
+                "daily_cooldown_seconds": cooldown_seconds,
             }
         finally:
             session.close()
@@ -2001,9 +2023,20 @@ class Database:
 
             last_claim_at = b.last_daily_claim
             if last_claim_at:
-                # Guard against clock/timezone drift causing future timestamps
-                # (which can incorrectly show >24h remaining like 28h).
-                effective_last_claim = last_claim_at if last_claim_at <= now else now
+                # Heal obviously invalid future timestamps so users aren't locked out.
+                if last_claim_at > (now + timedelta(minutes=5)):
+                    logger.warning(
+                        f"[TMA] claim_daily_reward correcting future last_daily_claim "
+                        f"user_id={user_id} last_claim_at={last_claim_at.isoformat()}"
+                    )
+                    b.last_daily_claim = None
+                    b.daily_streak = 0
+                    last_claim_at = None
+                    session.flush()
+                # Small clock skew tolerance (few minutes) still clamps to now.
+                effective_last_claim = (
+                    last_claim_at if (last_claim_at and last_claim_at <= (now + timedelta(minutes=5))) else now
+                )
                 hours_since = (now - effective_last_claim).total_seconds() / 3600
                 if hours_since < 24:
                     next_claim = effective_last_claim + timedelta(hours=24)

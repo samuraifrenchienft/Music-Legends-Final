@@ -41,7 +41,8 @@ export default function Daily() {
     getEconomy()
       .then(r => {
         setEconomy(r.data)
-        const remaining = getDailyRemainingSeconds(r.data.last_daily_claim)
+        const serverRemaining = Number(r.data?.daily_cooldown_seconds || 0)
+        const remaining = serverRemaining > 0 ? serverRemaining : getDailyRemainingSeconds(r.data.last_daily_claim)
         setCanClaim(remaining <= 0)
       })
       .catch((e: any) => setError(`API error ${e?.response?.status || 'network'}: ${e?.response?.data?.detail || e?.message || 'Could not load economy data'}`))
