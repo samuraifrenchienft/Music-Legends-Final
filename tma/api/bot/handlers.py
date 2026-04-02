@@ -55,11 +55,16 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         db = get_db()
         u = update.effective_user
         if u:
-            db.get_or_create_telegram_user(
+            row = db.get_or_create_telegram_user(
                 telegram_id=u.id,
                 telegram_username=u.username or "",
                 first_name=u.first_name or "",
             )
+            # Community host attribution: t.me/Bot?start=host_<token>
+            if start_param.startswith("host_"):
+                tok = start_param[5:].strip()
+                if tok:
+                    db.set_user_referrer_host_if_unset(row["user_id"], tok)
     except Exception as e:
         logger.warning("cmd_start user persist failed: %s", e)
 

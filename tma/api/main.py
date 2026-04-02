@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from tma.api.routers import users, cards, packs, economy, battle, marketplace, trade, dust, battle_pass  # noqa: E402
+from tma.api.routers import users, cards, packs, economy, battle, marketplace, trade, dust, battle_pass, stripe_checkout, telegram_hosts  # noqa: E402
 
 app = FastAPI(title="Music Legends TMA", version="1.0.0", docs_url="/api/docs")
 
@@ -36,6 +36,8 @@ app.include_router(marketplace.router)
 app.include_router(trade.router)
 app.include_router(dust.router)
 app.include_router(battle_pass.router)
+app.include_router(stripe_checkout.router)
+app.include_router(telegram_hosts.router)
 
 # ── Telegram Bot webhook ───────────────────────────────────────────
 from tma.api.bot.handlers import setup_webhook_route  # noqa: E402

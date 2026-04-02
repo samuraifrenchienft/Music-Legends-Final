@@ -1,12 +1,17 @@
 """Users router — identity, profile, account linking."""
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from tma.api.auth import get_tg_user
 from tma.api.telegram_identity import extract_telegram_id_from_user
 from database import get_db
 from models import User
 
 router = APIRouter(prefix="/api", tags=["users"])
+
+
+class ReferrerBody(BaseModel):
+    host_token: str = Field(..., min_length=1, max_length=128)
 
 
 @router.get("/me")
@@ -30,6 +35,14 @@ def get_me(tg: dict = Depends(get_tg_user)):
 
     economy = db.get_user_economy(user["user_id"]) or {}
     stats = db.get_user_stats(user["user_id"]) or {}
+    ref_token = None
+    session = db.get_session()
+    try:
+        urow = session.query(User).filter_by(user_id=str(user["user_id"])).first()
+        if urow:
+            ref_token = urow.referrer_host_token
+    finally:
+        session.close()
     return {
         "user_id":       user["user_id"],
         "username":      user["username"],
@@ -41,7 +54,21 @@ def get_me(tg: dict = Depends(get_tg_user)):
         "total_battles": stats.get("total_battles", 0),
         "wins":          stats.get("wins", 0),
         "losses":        stats.get("losses", 0),
+        "referrer_host_token": ref_token,
     }
+
+
+@router.post("/me/referrer")
+def set_referrer_host(body: ReferrerBody, tg: dict = Depends(get_tg_user)):
+    """First-touch: attribute user to a Telegram community host (profit share)."""
+    db = get_db()
+    user = db.get_or_create_telegram_user(
+        telegram_id=tg["id"],
+        telegram_username=tg.get("username", ""),
+        first_name=tg.get("first_name", ""),
+    )
+    ok = db.set_user_referrer_host_if_unset(user["user_id"], body.host_token.strip())
+    return {"set": ok, "host_token": body.host_token.strip()}
 
 
 @router.post("/link/generate")

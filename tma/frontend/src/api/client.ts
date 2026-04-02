@@ -72,3 +72,7 @@ export const searchTradePartners = (query = '')           => api.get(`/api/trade
 export const getPartnerCards = (telegramId: number)       => api.get(`/api/trades/partners/${telegramId}/cards`)
 export const getDust         = ()                         => api.get('/api/dust')
 export const dustCards       = (card_ids: string[])       => api.post('/api/dust/dust_cards', { card_ids })
+
+export const setReferrerHost = (host_token: string)       => api.post('/api/me/referrer', { host_token })
+export const checkoutTierPack = (tier: string)            => api.post('/api/checkout/tier-pack', { tier })
+export const checkoutCreatorPack = (pack_id: string)       => api.post('/api/checkout/creator-pack', { pack_id })

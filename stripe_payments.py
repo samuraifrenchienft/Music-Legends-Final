@@ -2,7 +2,7 @@
 import stripe
 import os
 import uuid
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, Union
 from dotenv import load_dotenv
 
 load_dotenv('.env.txt')
@@ -377,6 +377,114 @@ class StripePaymentManager:
                 'error': str(e)
             }
     
+    def create_tma_pack_purchase_checkout(
+        self,
+        pack_id: str,
+        buyer_id: Union[int, str],
+        pack_name: str,
+        price_cents: int,
+        host_token: Optional[str] = None,
+        host_share_bps: Optional[int] = None,
+    ) -> Dict:
+        """Stripe Checkout for creator pack purchase from Telegram Mini App."""
+        try:
+            success_url, cancel_url = _tma_checkout_urls()
+            buyer = _norm_buyer_id(buyer_id)
+            hm = _host_metadata(host_token, host_share_bps)
+            checkout_session = stripe.checkout.Session.create(
+                payment_intent_data={
+                    "metadata": {
+                        "pack_id": pack_id,
+                        "buyer_id": buyer,
+                        "type": "pack_purchase",
+                        **hm,
+                    }
+                },
+                customer_email=None,
+                line_items=[{
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {
+                            "name": f"Pack: {pack_name}",
+                            "description": f'Purchase the "{pack_name}" card pack',
+                            "images": [],
+                        },
+                        "unit_amount": int(price_cents),
+                    },
+                    "quantity": 1,
+                }],
+                mode="payment",
+                success_url=success_url,
+                cancel_url=cancel_url,
+                metadata={
+                    "pack_id": pack_id,
+                    "buyer_id": buyer,
+                    "type": "pack_purchase",
+                    **hm,
+                },
+            )
+            return {
+                "success": True,
+                "checkout_url": checkout_session.url,
+                "session_id": checkout_session.id,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def create_tma_tier_pack_checkout(
+        self,
+        tier: str,
+        buyer_id: Union[int, str],
+        pack_name: str,
+        price_cents: int,
+        host_token: Optional[str] = None,
+        host_share_bps: Optional[int] = None,
+    ) -> Dict:
+        """Stripe Checkout for built-in tier pack from Telegram Mini App."""
+        try:
+            success_url, cancel_url = _tma_checkout_urls()
+            buyer = _norm_buyer_id(buyer_id)
+            hm = _host_metadata(host_token, host_share_bps)
+            checkout_session = stripe.checkout.Session.create(
+                payment_intent_data={
+                    "metadata": {
+                        "tier": tier,
+                        "buyer_id": buyer,
+                        "type": "tier_pack_purchase",
+                        **hm,
+                    }
+                },
+                customer_email=None,
+                line_items=[{
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {
+                            "name": pack_name,
+                            "description": f"Purchase a {pack_name} — random cards from the master collection",
+                            "images": [],
+                        },
+                        "unit_amount": int(price_cents),
+                    },
+                    "quantity": 1,
+                }],
+                mode="payment",
+                success_url=success_url,
+                cancel_url=cancel_url,
+                metadata={
+                    "tier": tier,
+                    "buyer_id": buyer,
+                    "type": "tier_pack_purchase",
+                    **hm,
+                },
+            )
+            return {
+                "success": True,
+                "checkout_url": checkout_session.url,
+                "session_id": checkout_session.id,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def verify_webhook_signature(self, payload: str, sig_header: str) -> bool:
         """Verify Stripe webhook signature"""
         try:
@@ -445,5 +553,34 @@ class StripePaymentManager:
             'creator_split_percent': self.creator_split * 100
         }
 
+def _tma_checkout_urls() -> Tuple[str, str]:
+    """Success/cancel URLs for Telegram Mini App (env-driven)."""
+    base = (os.getenv("TMA_URL") or os.getenv("TMA_PUBLIC_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+    if not base:
+        base = "https://example.com"
+    if base.startswith("http"):
+        pass
+    else:
+        base = f"https://{base}"
+    base = base.rstrip("/")
+    return f"{base}/?paid=1", f"{base}/?canceled=1"
+
+
+def _norm_buyer_id(buyer_id: Union[int, str]) -> str:
+    return str(buyer_id).strip()
+
+
+def _host_metadata(host_token: Optional[str], host_share_bps: Optional[int]) -> Dict[str, str]:
+    meta: Dict[str, str] = {}
+    if host_token:
+        meta["host_token"] = str(host_token)[:256]
+    if host_share_bps is not None:
+        meta["host_share_bps"] = str(int(host_share_bps))
+    meta["source"] = "tma"
+    return meta
+
+
 # Global instance
 stripe_manager = StripePaymentManager()
+
+

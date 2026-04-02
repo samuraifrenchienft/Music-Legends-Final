@@ -11,6 +11,7 @@ import Daily from './pages/Daily'
 import Store from './pages/Store'
 import Market from './pages/Market'
 import Trade from './pages/Trade'
+import { setReferrerHost } from './api/client'
 
 function Inner() {
   const location = useLocation()
@@ -32,12 +33,18 @@ function Inner() {
     }
   }, [location.pathname, navigate])
 
-  // Handle deep link startParam — e.g. battle_X9K2QR
+  // Handle deep link startParam — e.g. battle_X9K2QR, host_<token>
   const lp = useLaunchParams()
   useEffect(() => {
     const sp: string = (lp as any).startParam || (lp as any).tgWebAppStartParam || ''
     if (sp.startsWith('battle_')) {
       navigate(`/battle?id=${sp.replace('battle_', '')}`)
+    }
+    if (sp.startsWith('host_')) {
+      const token = sp.slice(5).trim()
+      if (token) {
+        setReferrerHost(token).catch(() => {})
+      }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

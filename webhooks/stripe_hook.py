@@ -31,6 +31,32 @@ WH_SECRET = (os.getenv("STRIPE_WEBHOOK_SECRET") or '').strip()
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
+def _record_revenue_ledger(db, session_id: str, user_id: str, product_type: str, gross_cents: int, metadata: Dict[str, Any]) -> None:
+    """Accrue platform vs host split for TMA-attributed checkouts (idempotent on session_id)."""
+    try:
+        host_token = metadata.get("host_token")
+        host_share_bps = int(metadata.get("host_share_bps") or 0)
+        if host_token and host_share_bps > 0 and gross_cents > 0:
+            host_cents = min(gross_cents, gross_cents * host_share_bps // 10000)
+            platform_cents = gross_cents - host_cents
+        else:
+            host_cents = 0
+            platform_cents = gross_cents
+        db.record_revenue_event(
+            stripe_session_id=session_id,
+            user_id=str(user_id),
+            product_type=product_type,
+            gross_cents=int(gross_cents or 0),
+            platform_cents=int(platform_cents),
+            host_cents=int(host_cents),
+            creator_cents=0,
+            host_token=host_token,
+        )
+    except Exception as e:
+        logger.error(f"revenue ledger write failed: {e}")
+
+
 async def stripe_webhook(request):
     """
     Handle Stripe webhook events.
@@ -162,7 +188,7 @@ async def _fulfill_pack_purchase(session: Dict, metadata: Dict, session_id: str)
             logger.error(f"Missing pack_id or buyer_id in session {session_id}")
             return {"error": "Missing pack purchase metadata"}, 400
 
-        buyer_id = int(buyer_id)
+        buyer_id = str(buyer_id).strip()
         logger.info(f"Fulfilling pack purchase: pack={pack_id}, buyer={buyer_id}, session={session_id}")
 
         from database import DatabaseManager
@@ -189,7 +215,7 @@ async def _fulfill_pack_purchase(session: Dict, metadata: Dict, session_id: str)
             if 'card_id' not in card:
                 card['card_id'] = str(_uuid.uuid4())
             db.add_card_to_master(card)
-            db.add_card_to_collection(buyer_id, card['card_id'], 'pack_purchase')
+            db.add_card_to_collection(buyer_id, card['card_id'], acquired_from='pack_purchase')
 
         # Increment total_purchases
         with db._get_connection() as conn:
@@ -213,6 +239,8 @@ async def _fulfill_pack_purchase(session: Dict, metadata: Dict, session_id: str)
             conn.commit()
 
         logger.info(f"Pack purchase fulfilled: {len(cards_data)} cards granted to user {buyer_id}")
+
+        _record_revenue_ledger(db, session_id, buyer_id, "pack_purchase", int(amount_cents or 0), metadata)
 
         return {
             "status": "fulfilled",
@@ -241,7 +269,7 @@ async def _fulfill_tier_pack_purchase(session: Dict, metadata: Dict, session_id:
             logger.error(f"Missing tier or buyer_id in session {session_id}")
             return {"error": "Missing tier pack metadata"}, 400
 
-        buyer_id = int(buyer_id)
+        buyer_id = str(buyer_id).strip()
         logger.info(f"Fulfilling tier pack purchase: tier={tier}, buyer={buyer_id}, session={session_id}")
 
         from database import DatabaseManager
@@ -274,6 +302,8 @@ async def _fulfill_tier_pack_purchase(session: Dict, metadata: Dict, session_id:
             conn.commit()
 
         logger.info(f"Tier pack fulfilled: {len(cards)} cards granted to user {buyer_id}, tier={tier}")
+
+        _record_revenue_ledger(db, session_id, buyer_id, "tier_pack_purchase", int(amount_cents or 0), metadata)
 
         return {
             "status": "fulfilled",

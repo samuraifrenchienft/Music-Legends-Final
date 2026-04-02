@@ -29,7 +29,7 @@ from models import (
     DevPackSupply, CardInstance, CreatorPackLimits, TradeHistory,
     UserBattleStats, CosmeticCatalog, UserCosmetic, CardCosmetic, BattleLog,
     TmaLinkCode, MarketplaceListings, VipStatus, PendingTmaBattle,
-    CreatorPackCards,
+    CreatorPackCards, TelegramHost, RevenueEvent,
 )
 from models.trade import Trade
 
@@ -1290,6 +1290,131 @@ class Database:
                 "last_seen": r[3].isoformat() if r[3] else None,
             })
         return out
+
+    def generate_tier_pack_cards(self, user_id, tier: str) -> List[Dict]:
+        """Generate random cards for a tier pack, grant to user, return card dicts for UI."""
+        import random
+
+        from config.economy import PACK_PRICING
+
+        pricing = PACK_PRICING.get(tier, {})
+        n = int(pricing.get("cards_per_pack", 5))
+        user_id_str = str(user_id)
+        rarity_pool = {
+            "community": ["common"] * 4 + ["rare"] * 1,
+            "gold": ["rare"] * 2 + ["epic"] * 2 + ["legendary"] * 1,
+            "platinum": ["epic"] * 5 + ["legendary"] * 4 + ["mythic"] * 1,
+        }.get(tier, ["common"] * 5)
+
+        session = self.get_session()
+        try:
+            card_ids: List[str] = []
+            out: List[Dict] = []
+            for _ in range(n):
+                target = random.choice(rarity_pool).lower()
+                rows = (
+                    session.query(Card)
+                    .filter(func.lower(Card.rarity) == target)
+                    .limit(300)
+                    .all()
+                )
+                if not rows:
+                    rows = session.query(Card).limit(300).all()
+                if not rows:
+                    logger.warning("[tier_pack] No cards in master table")
+                    return []
+                pick = random.choice(rows)
+                card_ids.append(pick.card_id)
+                out.append(pick.to_dict())
+        except Exception as e:
+            logger.error(f"[tier_pack] generate_tier_pack_cards error: {e}")
+            return []
+        finally:
+            session.close()
+
+        for cid in card_ids:
+            self.add_card_to_collection(
+                user_id_str, cid, quantity=1, acquired_from="tier_pack"
+            )
+        return out
+
+    def set_user_referrer_host_if_unset(self, user_id: str, host_token: str) -> bool:
+        """First-touch: store referrer host token on user if empty."""
+        if not host_token or not str(host_token).strip():
+            return False
+        token = str(host_token).strip()[:128]
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(user_id=str(user_id)).first()
+            if not user:
+                return False
+            if user.referrer_host_token:
+                return False
+            user.referrer_host_token = token
+            user.referrer_set_at = datetime.utcnow()
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[host] set_user_referrer_host_if_unset: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_telegram_host_by_token(self, host_token: Optional[str]) -> Optional[dict]:
+        if not host_token:
+            return None
+        session = self.get_session()
+        try:
+            row = session.query(TelegramHost).filter_by(host_token=str(host_token).strip()).first()
+            if not row:
+                return None
+            return {
+                "host_token": row.host_token,
+                "owner_telegram_id": int(row.owner_telegram_id),
+                "share_bps": int(row.share_bps or 0),
+                "label": row.label,
+            }
+        finally:
+            session.close()
+
+    def record_revenue_event(
+        self,
+        stripe_session_id: str,
+        user_id: str,
+        product_type: str,
+        gross_cents: int,
+        platform_cents: int,
+        host_cents: int,
+        creator_cents: int = 0,
+        host_token: Optional[str] = None,
+    ) -> bool:
+        """Insert revenue_events row if session id not seen (idempotent)."""
+        session = self.get_session()
+        try:
+            exists = session.query(RevenueEvent).filter_by(stripe_session_id=stripe_session_id).first()
+            if exists:
+                return False
+            session.add(
+                RevenueEvent(
+                    stripe_session_id=stripe_session_id,
+                    user_id=str(user_id),
+                    product_type=product_type,
+                    gross_cents=gross_cents,
+                    platform_cents=platform_cents,
+                    host_cents=host_cents,
+                    creator_cents=creator_cents,
+                    host_token=host_token,
+                )
+            )
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[revenue] record_revenue_event: {e}")
+            return False
+        finally:
+            session.close()
 
     def generate_tma_link_code(self, user_id: str) -> str:
         """Generate a 6-char uppercase code for Telegram↔Discord linking (10 min TTL)."""

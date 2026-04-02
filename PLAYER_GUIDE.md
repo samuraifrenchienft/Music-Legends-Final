@@ -1,108 +1,102 @@
 # Music Legends Player Guide
 
-Last updated: 2026-03-07
+Last updated: 2026-04-02
 
-This guide reflects the current live gameplay surfaces.
+This guide reflects the intended live gameplay surfaces: Discord (full command set) and Telegram Mini App (mobile-first UI with API-backed features).
 
 ## Where To Play
 
-- `Discord`: full feature set and fastest progression.
-- `Telegram`: use the bot DM + Mini App for mobile play.
+- **Discord:** Full command set, menus, and fastest access to every loop.
+- **Telegram:** Open the bot DM and use the Mini App for cards, packs, battles, daily rewards, and linked economy flows.
 
 Recommended flow:
 
-1. Discover the game in a group/server.
+1. Discover the game in a group or server.
 2. Open the bot private chat.
-3. Tap Play / open Mini App.
+3. Use `/menu` (Discord) or **Play** / Mini App (Telegram).
 
 ## Quick Start
 
 ### Discord
 
-1. Join a server that has Music Legends.
-2. Run `/menu` (or use the User Hub posted by admins).
-3. Claim daily rewards.
-4. Buy/open packs.
-5. Start battling and trading.
+1. Join a server that has Music Legends (or ask an admin to run `/start_game` to set the bot up).
+2. Run `/menu` or use the **User Hub** posted with `/setup_user_hub`.
+3. Claim rewards with `/daily`, browse `/collection`, and use `/packs` / `/open_pack` as you progress.
+4. Use `/battle` and `/trade` when you are ready for PvP and player trades.
 
 ### Telegram
 
-1. Open private chat with the bot.
-2. Use `/start` to open the Mini App.
-3. Use tabs: `Home`, `Cards`, `Packs`, `Battle`, `Daily`.
-4. Use `/link` to connect Telegram profile to Discord account if needed.
+1. Open a private chat with the bot.
+2. Use `/start` to launch the Mini App (or your bot’s configured entry).
+3. Use the app sections: Home, Cards, Packs, Battle, Daily.
+4. Use `/link` if you need to connect Telegram to an existing Discord account.
 
-## Current Command Set (Discord)
+## Discord Commands (current production load)
 
-### Core
+Slash names are unique—there is no duplicate command for the same name. The list below is grouped for readability; optional dev-only commands are omitted here (see `GAME_DOCUMENTATION.md` if `ENABLE_DEV_COMMANDS` is on).
 
-- `/menu`
-- `/start_game`
-- `/deck`
-- `/stats`
-- `/leaderboard`
+### Menu and server
 
-### Packs and Collection
+- `/menu` — main menu  
+- `/start_game` — **server setup** (onboard the game to a server; not the same as daily rewards)  
+- `/setup_user_hub` — post the persistent hub (admins)  
+- `/post_game_info` — post the full guide (admins)
 
-- `/pack`
-- `/packs`
-- `/buy_pack`
-- `/open_pack`
+### Collection, profile, and daily
+
+- `/collection`, `/view`, `/card`, `/lookup`  
+- `/deck`, `/stats`, `/leaderboard`, `/rank`  
+- `/daily` — claim daily rewards on Discord  
+
+### Packs and card actions
+
+- `/pack`, `/packs`, `/buy_pack`, `/open_pack`  
+- `/burn`, `/upgrade`, `/quicksell`  
+- `/create_pack` — pack creation where enabled  
 
 ### Marketplace
 
-- `/market`
-- `/buy`
-- `/sell`
-- `/delist`
+- `/market`, `/buy`, `/sell`, `/delist`
 
-### Battles
+### Battles and progression
 
-- `/battle`
-- `/battle_stats`
+- `/battle`, `/battle_stats`  
+- `/battlepass`, `/claim_bp`  
 
-### Battle Pass
+### Trades
 
-- `/battlepass`
-- `/claim_bp`
+- `/trade`, `/trade_history`
 
-### Trade
+### Dust economy
 
-- `/trade`
-- `/trade_history`
+- `/dust`, `/craft`, `/boost`, `/reroll`, `/buy_pack_dust`, `/dust_shop`
 
-### Dust Economy
+### Server premium (where applicable)
 
-- `/dust`
-- `/craft`
-- `/boost`
-- `/reroll`
-- `/buy_pack_dust`
-- `/dust_shop`
+- `/premium_subscribe`, `/server_info`
 
 ## Gameplay Loops
 
-- `Daily loop`: claim daily reward, keep streak alive, gain currency/cards.
-- `Collection loop`: buy packs, open packs, improve deck quality.
-- `PvP loop`: challenge players, wager, earn gold/XP.
-- `Economy loop`: trade, market buy/sell, dust conversion/upgrades.
-- `Progression loop`: battle pass tiers and claims.
+- **Daily loop:** claim on Discord (`/daily`) or in the Telegram Mini App; keep streaks and currency flowing.  
+- **Collection loop:** acquire packs, open them, refine your deck.  
+- **PvP loop:** challenges and wagers on Discord or in the Mini App.  
+- **Economy loop:** marketplace, trades, dust—Discord has the full command set; Telegram uses in-app flows backed by `/api/marketplace`, `/api/trades`, `/api/dust` where implemented in the UI.  
+- **Progression loop:** battle pass tiers (`/battlepass` / `/claim_bp` on Discord; Telegram battle pass API may still be partial—check in-app behavior).
 
 ## Important Telegram Notes
 
-- Group chats are best for announcements and discovery.
-- Actual gameplay should happen in bot DM + Mini App.
-- Some advanced systems are Discord-first and may not have full Telegram parity yet.
+- Groups are best for discovery; play from the bot DM + Mini App.  
+- Feature parity with Discord is intentionally broader on Discord; the Mini App focuses on touch-friendly flows.  
 
 ## FAQ
 
 **Do I play in Telegram groups directly?**  
-No. Use groups for discovery/social, then play from bot private chat.
+No. Use groups for discovery, then open the bot privately.
 
 **What should new players do first?**  
-Claim daily, open packs, run a first battle, then start trading.
+Claim daily rewards, open packs, run a battle, then explore market/trade/dust as you like.
 
 **Where are all options easiest to access?**  
-Discord `/menu` and Telegram Mini App tabs.
+Discord `/menu` and the Telegram Mini App navigation.
 
-For technical references, see `GAME_DOCUMENTATION.md`.
+For technical detail and admin/dev command listings, see `GAME_DOCUMENTATION.md`.

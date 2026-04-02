@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, Float, ForeignKey
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, Text, Float, ForeignKey
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects import postgresql
@@ -88,6 +88,9 @@ class User(Base):
     losses = Column(Integer, default=0)
     packs_opened = Column(Integer, default=0)
     victory_tokens = Column(Integer, default=0)
+    # Telegram community host attribution (first-touch referral)
+    referrer_host_token = Column(String, nullable=True)
+    referrer_set_at = Column(DateTime, nullable=True)
     
     # Relationships
     card_instances = relationship("CardInstance", back_populates="owner")
@@ -470,6 +473,36 @@ class PendingTmaBattle(Base):
     result_json = Column(Text) # JSON blob of battle results
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
+
+
+class TelegramHost(Base):
+    """Registered Telegram community hosts for revenue share attribution."""
+    __tablename__ = "telegram_hosts"
+
+    host_token = Column(String, primary_key=True)
+    owner_telegram_id = Column(BigInteger, nullable=False)
+    chat_id = Column(BigInteger, nullable=True)
+    label = Column(String, nullable=True)
+    share_bps = Column(Integer, default=1000)  # basis points (1000 = 10%)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    stripe_connect_account_id = Column(String, nullable=True)
+
+
+class RevenueEvent(Base):
+    """Idempotent ledger row per Stripe Checkout session (profit sharing audit)."""
+    __tablename__ = "revenue_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stripe_session_id = Column(String, unique=True, nullable=False)
+    user_id = Column(String, nullable=False)
+    product_type = Column(String, nullable=False)
+    gross_cents = Column(Integer, default=0)
+    platform_cents = Column(Integer, default=0)
+    host_cents = Column(Integer, default=0)
+    creator_cents = Column(Integer, default=0)
+    host_token = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 # Aliases for backward compatibility (database.py uses singular names)
 CosmeticCatalog = CosmeticsCatalog
