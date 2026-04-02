@@ -41,6 +41,12 @@ export default function Daily() {
     getEconomy()
       .then(r => {
         setEconomy(r.data)
+        const serverCanClaim = Boolean(r.data?.can_claim_daily)
+        if (serverCanClaim) {
+          setCanClaim(true)
+          setTimeLeft('')
+          return
+        }
         const serverRemaining = Number(r.data?.daily_cooldown_seconds || 0)
         const remaining = serverRemaining > 0 ? serverRemaining : getDailyRemainingSeconds(r.data.last_daily_claim)
         setCanClaim(remaining <= 0)
@@ -53,6 +59,11 @@ export default function Daily() {
   // Live countdown ticker
   useEffect(() => {
     const tick = () => {
+      if (economy?.can_claim_daily) {
+        setCanClaim(true)
+        setTimeLeft('')
+        return
+      }
       const remaining = getDailyRemainingSeconds(economy?.last_daily_claim)
       if (remaining <= 0) { setCanClaim(true); setTimeLeft(''); return }
       setCanClaim(false)
